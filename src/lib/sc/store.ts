@@ -2,12 +2,20 @@ import { create } from "zustand";
 import {
   type Asset,
   type Brief,
+  type Gate,
   type Phase,
   type StageId,
   type StageState,
   STAGE_ORDER,
 } from "./types";
 import { SAMPLE_KEYFRAME, SAMPLE_VIDEO } from "./samples";
+import { inferTaskTitle } from "./intake-engine";
+
+interface RailState {
+  open: boolean;
+  flashId?: string;
+  focusedAssetId?: string;
+}
 
 interface SCState {
   phase: Phase;
@@ -16,29 +24,37 @@ interface SCState {
   stages: Record<StageId, StageState>;
   assets: Asset[];
   taskTitle: string;
+  gate: Gate;
+  rail: RailState;
   timers: number[];
 
   setPrompt: (v: string) => void;
   submit: (prompt: string) => void;
-  startIntake: (prompt: string) => void;
   confirmBrief: (brief: Brief) => void;
   skipIntake: () => void;
+  approveScript: () => void;
+  tweakScript: () => void;
+  approveKeyframe: () => void;
+  regenerateKeyframe: () => void;
   cancel: () => void;
   reset: () => void;
+  toggleStage: (id: StageId) => void;
+  setRailOpen: (v: boolean) => void;
+  focusAsset: (id: string) => void;
   forceState: (s: string) => void;
 }
 
 const initialStages = (): Record<StageId, StageState> =>
   STAGE_ORDER.reduce(
     (acc, id) => {
-      acc[id] = { status: "pending", summary: [] };
+      acc[id] = { status: "pending", summary: [], expanded: true };
       return acc;
     },
     {} as Record<StageId, StageState>,
   );
 
 const isFullAuto = (text: string) =>
-  /(全自动|full[\s-]?auto|你决定|直接生成|按默认)/i.test(text);
+  /(全自动|full[\s-]?auto|你决定|直接生成|按默认|auto[\s-]?run)/i.test(text);
 
 export const useSC = create<SCState>((set, get) => {
   const clearTimers = () => {
@@ -61,91 +77,130 @@ export const useSC = create<SCState>((set, get) => {
       assets: s.assets.map((a) => (a.id === id ? { ...a, ...patch } : a)),
     }));
 
-  const runFullAuto = () => {
-    set({ phase: "running" });
+  const markStageReady = (
+    id: StageId,
+    summary: string[],
+    autoCollapseAfter = 1400,
+  ) => {
+    updateStage(id, { status: "ready", summary, expanded: true });
+    schedule(() => updateStage(id, { expanded: false }), autoCollapseAfter);
+  };
 
-    // Stage: scene
-    updateStage("scene", { status: "running", summary: ["分析品牌调性…"] });
+  const runScene = () => {
+    updateStage("scene", {
+      status: "running",
+      summary: ["分析品牌调性…", "锁定情绪与受众…"],
+      expanded: true,
+    });
     schedule(() => {
-      updateStage("scene", {
-        status: "ready",
-        summary: [
-          "方向：Luxury / Premium，蓝色暮光，巴黎公寓",
-          "镜头语言：缓推 + 侧跟 + 微距旋转",
-          "受众：25–40，都市女性，追求自由与质感",
+      markStageReady("scene", [
+        "方向：Premium · 暮光质感",
+        "镜头语言：缓推 + 侧跟 + 微距旋转",
+        "受众：25–40，都市，追求质感",
+      ]);
+    }, 1100);
+  };
+
+  const runStructure = () => {
+    updateStage("structure", {
+      status: "running",
+      summary: ["撰写脚本与分镜…"],
+      expanded: true,
+    });
+    schedule(() => {
+      markStageReady(
+        "structure",
+        [
+          "30s · 9:16 · 5 个镜头，单条连续叙事",
+          "VO 中性低音，弦乐 + 鼓点过渡",
         ],
-      });
-    }, 900);
+        1800,
+      );
+      // gate: wait for user approval unless full-auto
+      const auto = isFullAuto(get().brief?.mode ?? "");
+      if (auto) {
+        schedule(() => runPaint(), 1900);
+      } else {
+        set({ gate: "script" });
+      }
+    }, 1600);
+  };
 
-    // Stage: structure
-    schedule(() => {
-      updateStage("structure", {
-        status: "running",
-        summary: ["撰写脚本与分镜…"],
-      });
-    }, 1000);
-    schedule(() => {
-      updateStage("structure", {
-        status: "ready",
-        summary: [
-          "30s 9:16，5 个镜头，单条连续叙事",
-          "VO 中性低音，配乐弦乐 + 鼓点过渡",
-        ],
-      });
-    }, 2400);
+  const runPaint = () => {
+    set({ gate: null });
+    updateStage("paint", {
+      status: "running",
+      summary: ["生成 A01 关键帧…"],
+      expanded: true,
+    });
+    set((s) => ({
+      assets: [
+        ...s.assets,
+        {
+          id: "A01",
+          kind: "image",
+          label: "A01",
+          caption: "Keyframe · Hero shot",
+          status: "Generating",
+          stageId: "paint",
+          width: 1080,
+          height: 1920,
+        },
+      ],
+      // first asset → flash & open rail
+      rail: { ...s.rail, open: true, flashId: "A01" },
+    }));
 
-    // Stage: paint
+    schedule(() => updateAsset("A01", { status: "Processing" }), 1800);
     schedule(() => {
-      updateStage("paint", {
-        status: "running",
-        summary: ["生成 A01 关键帧…"],
+      updateAsset("A01", {
+        status: "Ready",
+        url: SAMPLE_KEYFRAME,
       });
-      set((s) => ({
-        assets: [
-          ...s.assets,
-          {
-            id: "A01",
-            kind: "image",
-            label: "A01 Keyframe",
-            status: "Generating",
-          },
-        ],
-      }));
-    }, 2600);
-
-    schedule(() => updateAsset("A01", { status: "Processing" }), 4200);
-    schedule(() => {
-      updateAsset("A01", { status: "Ready", url: SAMPLE_KEYFRAME });
       updateStage("paint", {
         status: "ready",
         summary: [
           "A01 已就绪，构图与色温符合 brief",
           "已锁定为 V01 的 image_url",
         ],
+        expanded: true,
       });
-    }, 5800);
+      // for media stages, collapse the prompt-detail toggle area only;
+      // assets stay visible. We collapse summary list after a moment.
+      schedule(() => updateStage("paint", { expanded: false }), 1600);
 
-    // Stage: life
-    schedule(() => {
-      updateStage("life", {
-        status: "running",
-        summary: ["提交 V01 first-frame-to-video…"],
-      });
-      set((s) => ({
-        assets: [
-          ...s.assets,
-          {
-            id: "V01",
-            kind: "video",
-            label: "V01 Video",
-            status: "Queued",
-          },
-        ],
-      }));
-    }, 6000);
+      const auto = isFullAuto(get().brief?.mode ?? "");
+      if (auto) {
+        schedule(() => runLife(), 1700);
+      } else {
+        set({ gate: "keyframe" });
+      }
+    }, 3600);
+  };
 
-    schedule(() => updateAsset("V01", { status: "Processing" }), 7200);
-    schedule(() => updateAsset("V01", { status: "Status checked" }), 9000);
+  const runLife = () => {
+    set({ gate: null });
+    updateStage("life", {
+      status: "running",
+      summary: ["提交 V01 first-frame-to-video…"],
+      expanded: true,
+    });
+    set((s) => ({
+      assets: [
+        ...s.assets,
+        {
+          id: "V01",
+          kind: "video",
+          label: "V01",
+          caption: "Hero film · 30s",
+          status: "Queued",
+          stageId: "life",
+          duration: "0:30",
+        },
+      ],
+    }));
+    schedule(() => updateAsset("V01", { status: "Processing" }), 1200);
+    schedule(() => updateAsset("V01", { status: "Status checked" }), 2900);
     schedule(() => {
       updateAsset("V01", {
         status: "Ready",
@@ -158,19 +213,31 @@ export const useSC = create<SCState>((set, get) => {
           "V01 已就绪，关键帧来源一致",
           "时长 30s，9:16，画质验证通过",
         ],
+        expanded: true,
       });
-    }, 11000);
+      schedule(() => updateStage("life", { expanded: false }), 1600);
+      schedule(() => runDetails(), 1500);
+    }, 4600);
+  };
 
-    // Stage: details
+  const runDetails = () => {
+    updateStage("details", {
+      status: "running",
+      summary: ["运行质量检查与下一步建议…"],
+      expanded: true,
+    });
     schedule(() => {
-      updateStage("details", {
-        status: "ready",
-        summary: [
-          "QC：9:16 ✓  产品可见 ✓  无违规宣称 ✓  视频链接已验证 ✓",
-        ],
-      });
+      markStageReady("details", [
+        "QC：9:16 ✓  产品可见 ✓  无违规宣称 ✓  视频链接已验证 ✓",
+      ]);
       set({ phase: "done" });
-    }, 11500);
+    }, 1100);
+  };
+
+  const startRunning = () => {
+    set({ phase: "running" });
+    runScene();
+    schedule(() => runStructure(), 1300);
   };
 
   return {
@@ -180,6 +247,8 @@ export const useSC = create<SCState>((set, get) => {
     stages: initialStages(),
     assets: [],
     taskTitle: "New chat",
+    gate: null,
+    rail: { open: false },
     timers: [],
 
     setPrompt: (v) => set({ prompt: v }),
@@ -187,35 +256,34 @@ export const useSC = create<SCState>((set, get) => {
     submit: (prompt) => {
       const text = prompt.trim();
       if (!text) return;
-      set({ prompt: "", taskTitle: text.slice(0, 28) || "New chat" });
-      if (isFullAuto(text)) {
-        set({
-          brief: {
-            prompt: text,
-            adType: "Luxury / Premium",
-            format: "30s 9:16",
-            visualSource: "自动生成场景",
-            mode: "全自动，连续推进",
-          },
-        });
-        runFullAuto();
-      } else {
-        set({ phase: "intake", brief: { prompt: text, adType: "", format: "", visualSource: "", mode: "" } });
-      }
-    },
-
-    startIntake: (prompt) => {
       set({
-        phase: "intake",
         prompt: "",
-        taskTitle: prompt.slice(0, 28) || "New chat",
-        brief: { prompt, adType: "", format: "", visualSource: "", mode: "" },
+        taskTitle: inferTaskTitle(text),
+        phase: "thinking",
+        brief: { prompt: text, adType: "", format: "", visualSource: "", mode: "" },
       });
+      const delay = 900 + Math.random() * 700;
+      schedule(() => {
+        if (isFullAuto(text)) {
+          set((s) => ({
+            brief: {
+              prompt: s.brief?.prompt ?? text,
+              adType: "Premium / Cinematic",
+              format: "9:16 · 30s",
+              visualSource: "Generate from prompt",
+              mode: "Auto · 全自动连续推进",
+            },
+          }));
+          startRunning();
+        } else {
+          set({ phase: "intake" });
+        }
+      }, delay);
     },
 
     confirmBrief: (brief) => {
       set({ brief });
-      runFullAuto();
+      startRunning();
     },
 
     skipIntake: () => {
@@ -223,13 +291,26 @@ export const useSC = create<SCState>((set, get) => {
       set({
         brief: {
           prompt: b?.prompt ?? "",
-          adType: "Luxury / Premium",
-          format: "30s 9:16",
-          visualSource: "自动生成场景",
-          mode: "全自动，连续推进",
+          adType: "Premium / Cinematic",
+          format: "9:16 · 30s",
+          visualSource: "Generate from prompt",
+          mode: "Auto · 全自动连续推进",
         },
       });
-      runFullAuto();
+      startRunning();
+    },
+
+    approveScript: () => runPaint(),
+    tweakScript: () => set({ phase: "intake", gate: null }),
+    approveKeyframe: () => runLife(),
+    regenerateKeyframe: () => {
+      // simple re-run of paint
+      set((s) => ({
+        assets: s.assets.filter((a) => a.id !== "A01"),
+        gate: null,
+        stages: { ...s.stages, paint: { status: "pending", summary: [], expanded: true } },
+      }));
+      runPaint();
     },
 
     cancel: () => {
@@ -242,6 +323,7 @@ export const useSC = create<SCState>((set, get) => {
               ...stages[id],
               status: "recovering",
               summary: [...stages[id].summary, "用户已取消，进入 Recovering"],
+              expanded: true,
             };
           }
         }
@@ -255,6 +337,7 @@ export const useSC = create<SCState>((set, get) => {
               : a,
           ),
           phase: "failed",
+          gate: null,
         };
       });
     },
@@ -268,8 +351,22 @@ export const useSC = create<SCState>((set, get) => {
         stages: initialStages(),
         assets: [],
         taskTitle: "New chat",
+        gate: null,
+        rail: { open: false },
       });
     },
+
+    toggleStage: (id) =>
+      set((s) => ({
+        stages: {
+          ...s.stages,
+          [id]: { ...s.stages[id], expanded: !s.stages[id].expanded },
+        },
+      })),
+
+    setRailOpen: (v) => set((s) => ({ rail: { ...s.rail, open: v } })),
+    focusAsset: (id) =>
+      set((s) => ({ rail: { ...s.rail, open: true, focusedAssetId: id } })),
 
     forceState: (s) => {
       clearTimers();
@@ -279,16 +376,23 @@ export const useSC = create<SCState>((set, get) => {
         assets: [] as Asset[],
         brief: {
           prompt: "Demo: YSL Libre 30s",
-          adType: "Luxury / Premium",
-          format: "30s 9:16",
-          visualSource: "自动生成场景",
-          mode: "全自动",
+          adType: "Premium",
+          format: "9:16 · 30s",
+          visualSource: "Generate from prompt",
+          mode: "Auto",
         },
         taskTitle: "Demo task",
+        gate: null as Gate,
+        rail: { open: true } as RailState,
       };
+      const ready = (summary: string[]): StageState => ({
+        status: "ready",
+        summary,
+        expanded: false,
+      });
       switch (s) {
         case "empty":
-          set({ ...base, phase: "empty", brief: null, taskTitle: "New chat" });
+          set({ ...base, phase: "empty", brief: null, taskTitle: "New chat", rail: { open: false } });
           break;
         case "intake":
           set({ ...base, phase: "intake" });
@@ -298,12 +402,12 @@ export const useSC = create<SCState>((set, get) => {
             ...base,
             stages: {
               ...base.stages,
-              scene: { status: "ready", summary: ["方向已锁定"] },
-              structure: { status: "ready", summary: ["脚本/分镜就绪"] },
-              paint: { status: "running", summary: ["生成 A01…"] },
+              scene: ready(["方向已锁定"]),
+              structure: ready(["脚本/分镜就绪"]),
+              paint: { status: "running", summary: ["生成 A01…"], expanded: true },
             },
             assets: [
-              { id: "A01", kind: "image", label: "A01 Keyframe", status: "Generating" },
+              { id: "A01", kind: "image", label: "A01", caption: "Keyframe", status: "Generating", stageId: "paint", width: 1080, height: 1920 },
             ],
           });
           break;
@@ -312,14 +416,14 @@ export const useSC = create<SCState>((set, get) => {
             ...base,
             stages: {
               ...base.stages,
-              scene: { status: "ready", summary: ["方向已锁定"] },
-              structure: { status: "ready", summary: ["脚本/分镜就绪"] },
-              paint: { status: "ready", summary: ["A01 Ready"] },
-              life: { status: "running", summary: ["V01 Processing…"] },
+              scene: ready(["方向已锁定"]),
+              structure: ready(["脚本/分镜就绪"]),
+              paint: ready(["A01 Ready"]),
+              life: { status: "running", summary: ["V01 Processing…"], expanded: true },
             },
             assets: [
-              { id: "A01", kind: "image", label: "A01 Keyframe", status: "Ready", url: SAMPLE_KEYFRAME },
-              { id: "V01", kind: "video", label: "V01 Video", status: "Processing" },
+              { id: "A01", kind: "image", label: "A01", caption: "Keyframe", status: "Ready", url: SAMPLE_KEYFRAME, stageId: "paint", width: 1080, height: 1920 },
+              { id: "V01", kind: "video", label: "V01", caption: "Hero film", status: "Processing", stageId: "life", duration: "0:30" },
             ],
           });
           break;
@@ -328,15 +432,15 @@ export const useSC = create<SCState>((set, get) => {
             ...base,
             phase: "done",
             stages: {
-              scene: { status: "ready", summary: ["方向已锁定"] },
-              structure: { status: "ready", summary: ["脚本/分镜就绪"] },
-              paint: { status: "ready", summary: ["A01 Ready"] },
-              life: { status: "ready", summary: ["V01 Ready"] },
-              details: { status: "ready", summary: ["QC 通过"] },
+              scene: ready(["方向已锁定"]),
+              structure: ready(["脚本/分镜就绪"]),
+              paint: ready(["A01 Ready"]),
+              life: ready(["V01 Ready"]),
+              details: ready(["QC 通过"]),
             },
             assets: [
-              { id: "A01", kind: "image", label: "A01 Keyframe", status: "Ready", url: SAMPLE_KEYFRAME },
-              { id: "V01", kind: "video", label: "V01 Video", status: "Ready", url: SAMPLE_VIDEO, poster: SAMPLE_KEYFRAME },
+              { id: "A01", kind: "image", label: "A01", caption: "Keyframe", status: "Ready", url: SAMPLE_KEYFRAME, stageId: "paint", width: 1080, height: 1920 },
+              { id: "V01", kind: "video", label: "V01", caption: "Hero film", status: "Ready", url: SAMPLE_VIDEO, poster: SAMPLE_KEYFRAME, stageId: "life", duration: "0:30" },
             ],
           });
           break;
@@ -345,12 +449,12 @@ export const useSC = create<SCState>((set, get) => {
             ...base,
             stages: {
               ...base.stages,
-              scene: { status: "ready", summary: ["方向已锁定"] },
-              structure: { status: "ready", summary: ["脚本/分镜就绪"] },
-              paint: { status: "recovering", summary: ["未返回可用 URL，重试中"] },
+              scene: ready(["方向已锁定"]),
+              structure: ready(["脚本/分镜就绪"]),
+              paint: { status: "recovering", summary: ["未返回可用 URL，重试中"], expanded: true },
             },
             assets: [
-              { id: "A01", kind: "image", label: "A01 Keyframe", status: "Recovering" },
+              { id: "A01", kind: "image", label: "A01", caption: "Keyframe", status: "Recovering", stageId: "paint" },
             ],
           });
           break;
@@ -359,15 +463,15 @@ export const useSC = create<SCState>((set, get) => {
             ...base,
             phase: "failed",
             stages: {
-              scene: { status: "ready", summary: ["方向已锁定"] },
-              structure: { status: "ready", summary: ["脚本/分镜就绪"] },
-              paint: { status: "ready", summary: ["A01 Ready"] },
-              life: { status: "failed", summary: ["返回内容不是可播放视频"] },
-              details: { status: "pending", summary: [] },
+              scene: ready(["方向已锁定"]),
+              structure: ready(["脚本/分镜就绪"]),
+              paint: ready(["A01 Ready"]),
+              life: { status: "failed", summary: ["返回内容不是可播放视频"], expanded: true },
+              details: { status: "pending", summary: [], expanded: true },
             },
             assets: [
-              { id: "A01", kind: "image", label: "A01 Keyframe", status: "Ready", url: SAMPLE_KEYFRAME },
-              { id: "V01", kind: "video", label: "V01 Video", status: "Failed" },
+              { id: "A01", kind: "image", label: "A01", caption: "Keyframe", status: "Ready", url: SAMPLE_KEYFRAME, stageId: "paint", width: 1080, height: 1920 },
+              { id: "V01", kind: "video", label: "V01", caption: "Hero film", status: "Failed", stageId: "life" },
             ],
           });
           break;

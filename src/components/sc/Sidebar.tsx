@@ -12,6 +12,13 @@ import {
 import { SCButton } from "./Button";
 import { useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
+import { Logo } from "./Logo";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const navItems = [
   { id: "new", icon: Plus, label: "New task" },
@@ -28,6 +35,9 @@ const recentTasks = [
   { id: "xiaomi", label: "Xiaomi Car Ad" },
 ];
 
+const USER_NAME = "Victoria";
+const USER_EMAIL = "Victoria@gmail.com";
+
 export function Sidebar() {
   const { reset, taskTitle, phase } = useSC();
 
@@ -36,11 +46,9 @@ export function Sidebar() {
       {/* Logo */}
       <div className="flex h-12 items-center justify-between px-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-accent/15 text-accent">
-            <Sparkles className="h-3.5 w-3.5" />
-          </div>
+          <Logo size={22} loading={phase === "running" || phase === "thinking"} />
           <span className="text-[13px] font-semibold tracking-tight">
-            Supercomputer
+            Vibe Aideo
           </span>
         </div>
         <SCButton variant="icon" size="icon" aria-label="collapse">
@@ -116,15 +124,30 @@ export function Sidebar() {
 
       {/* User footer */}
       <div className="border-t border-border px-3 py-2">
-        <div className="flex items-center gap-2">
-          <div className="h-7 w-7 rounded-full bg-gradient-to-br from-status-ready to-accent" />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[12px]">galileo_slug_…</div>
-          </div>
-          <SCButton variant="icon" size="icon" aria-label="settings">
-            <Settings className="h-3.5 w-3.5" />
-          </SCButton>
-        </div>
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex cursor-default items-center gap-2">
+                <div className="h-7 w-7 shrink-0 rounded-full bg-gradient-to-br from-status-ready to-accent" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[12px] text-foreground/90">
+                    {USER_NAME}
+                  </div>
+                  <div className="truncate text-[10.5px] text-muted-foreground">
+                    {USER_EMAIL}
+                  </div>
+                </div>
+                <SCButton variant="icon" size="icon" aria-label="settings">
+                  <Settings className="h-3.5 w-3.5" />
+                </SCButton>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="start" className="text-[11.5px]">
+              <div className="font-medium text-foreground">{USER_NAME}</div>
+              <div className="text-muted-foreground">{USER_EMAIL}</div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
     </aside>
   );

@@ -17,7 +17,7 @@ export function QualityCheck() {
         {checks.map((c) => (
           <div
             key={c}
-            className="flex items-center gap-2 rounded-md border border-border bg-surface-2 px-2.5 py-1.5 text-[12px]"
+            className="flex items-center gap-2 rounded-xl bg-surface-2 px-2.5 py-1.5 text-[12px]"
           >
             <Check className="h-3.5 w-3.5 text-status-ready" />
             {c}

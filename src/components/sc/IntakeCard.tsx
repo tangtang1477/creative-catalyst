@@ -1,45 +1,31 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { SCButton } from "./Button";
 import { useSC } from "@/lib/sc/store";
 import { Loader2 } from "lucide-react";
+import { inferIntake } from "@/lib/sc/intake-engine";
 
-const groups = [
-  {
-    key: "adType" as const,
-    title: "1. 你想要哪种风格的广告？",
-    options: [
-      "Problem-Solution（15s，旁白叙述）",
-      "Lifestyle（15s，主角出镜说话）",
-      "High Energy（15s，动感节奏 + 标语主导）",
-      "Other",
-    ],
-    default: "Lifestyle（15s，主角出镜说话）",
-  },
-  {
-    key: "visualSource" as const,
-    title: "2. 你有产品图片或品牌URL吗？",
-    options: ["上传产品图片", "粘贴产品/品牌URL", "自动生成一张香水棚拍图", "Other"],
-    default: "上传产品图片",
-  },
-  {
-    key: "format" as const,
-    title: "3. 广告的主角人物如何确定？",
-    options: ["上传人物照片", "根据脚本自动生成匹配角色", "Other"],
-    default: "根据脚本自动生成匹配角色",
-  },
-  {
-    key: "mode" as const,
-    title: "4. 有什么具体的场景或创意想法吗？（选填，留空则全自动发挥）",
-    options: ["我有想法，我来描述", "全自动发挥，给我惊喜", "Other"],
-    default: "全自动发挥，给我惊喜",
-  },
-];
+const titles = {
+  adType: "1. 你想要哪种风格的广告？",
+  format: "2. 视频比例与时长？",
+  visualSource: "3. 视觉素材从哪里来？",
+  mode: "4. 推进模式？",
+} as const;
+
+type Key = keyof typeof titles;
 
 export function IntakeCard() {
   const { brief, confirmBrief, skipIntake } = useSC();
-  const [sel, setSel] = useState<Record<string, string>>(() =>
-    Object.fromEntries(groups.map((g) => [g.key, g.default])),
+  const intake = useMemo(
+    () => inferIntake(brief?.prompt ?? ""),
+    [brief?.prompt],
   );
+
+  const [sel, setSel] = useState<Record<Key, string>>({
+    adType: intake.defaults.adType,
+    format: intake.defaults.format,
+    visualSource: intake.defaults.visualSource,
+    mode: intake.defaults.mode,
+  });
 
   const onContinue = () => {
     confirmBrief({
@@ -51,24 +37,29 @@ export function IntakeCard() {
     });
   };
 
+  const groups: { key: Key; options: string[] }[] = [
+    { key: "adType", options: intake.adType },
+    { key: "format", options: intake.format },
+    { key: "visualSource", options: intake.visualSource },
+    { key: "mode", options: intake.mode },
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="ml-auto w-fit max-w-[80%] rounded-lg bg-surface-2 px-3 py-2 text-[13px]">
+      <div className="ml-auto w-fit max-w-[80%] rounded-2xl bg-surface-2 px-3.5 py-2 text-[13px]">
         {brief?.prompt}
       </div>
 
-      <div className="rounded-lg border border-border bg-surface px-4 py-4">
-        <div className="text-[13px] text-foreground/85">
-          好的，我来帮你制作一支{brief?.prompt ?? "广告片"}，按照下流程，先确认几个关键信息：
-        </div>
+      <div className="rounded-2xl border border-border bg-surface px-4 py-4">
+        <div className="text-[13px] text-foreground/85">{intake.greeting}</div>
 
         <div className="mt-4 space-y-4">
           {groups.map((g) => (
             <div key={g.key}>
               <div className="text-[12.5px] font-medium text-foreground/90">
-                {g.title}
+                {titles[g.key]}
               </div>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
+              <div className="mt-2 flex flex-wrap gap-1.5">
                 {g.options.map((opt) => (
                   <SCButton
                     key={opt}

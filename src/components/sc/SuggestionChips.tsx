@@ -21,7 +21,11 @@ const chips = [
 const followups = [
   { icon: ArrowRight, text: "Create a marketing video using /ugc-flow" },
   { icon: ArrowRight, text: "Discover skills from the community" },
-  { icon: Import, text: "Import skills & memory from Claude, ChatGPT, Codex, Hermes Agent and OpenClaw", accent: true },
+  {
+    icon: Import,
+    text: "Import skills & memory from Claude, ChatGPT, Codex, Hermes Agent and OpenClaw",
+    accent: true,
+  },
 ];
 
 export function SuggestionChips() {
@@ -37,17 +41,17 @@ export function SuggestionChips() {
             onClick={() => setPrompt(c.label)}
             className="gap-1.5"
           >
-            <c.icon className="h-3.5 w-3.5 text-muted-foreground" />
+            <c.icon className="h-3.5 w-3.5" />
             <span>{c.label}</span>
             {c.badge && (
-              <span className="ml-0.5 rounded bg-accent/20 px-1 py-0.5 text-[10px] text-accent">
+              <span className="ml-0.5 rounded bg-accent/25 px-1 py-0.5 text-[10px] text-accent-foreground">
                 {c.badge}
               </span>
             )}
           </SCButton>
         ))}
         <SCButton variant="chip" size="sm" className="gap-1.5">
-          <Import className="h-3.5 w-3.5 text-muted-foreground" />
+          <Import className="h-3.5 w-3.5" />
           <span>Import skills & memory</span>
         </SCButton>
       </div>
@@ -56,7 +60,7 @@ export function SuggestionChips() {
         {followups.map((f, i) => (
           <button
             key={i}
-            className="group flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="group flex w-full items-center gap-2 rounded-xl px-2 py-1 text-left text-[13px] text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             <f.icon
               className={
