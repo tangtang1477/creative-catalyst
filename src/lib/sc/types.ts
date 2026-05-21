@@ -41,15 +41,21 @@ export interface StageState {
   status: StageStatus;
   summary: string[];
   details?: string;
+  expanded: boolean;
 }
 
 export interface Asset {
   id: string;
   kind: "image" | "video";
   label: string;
+  caption?: string;
   status: AssetStatus;
   url?: string;
   poster?: string;
+  width?: number;
+  height?: number;
+  duration?: string;
+  stageId?: StageId;
 }
 
 export interface Brief {
@@ -62,7 +68,10 @@ export interface Brief {
 
 export type Phase =
   | "empty"
+  | "thinking"
   | "intake"
   | "running"
   | "done"
   | "failed";
+
+export type Gate = "script" | "keyframe" | null;

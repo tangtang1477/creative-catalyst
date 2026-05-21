@@ -12,7 +12,6 @@ interface Props extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 
 /**
  * SC button with full three-state: default / hover / active(pressed) / focus / disabled.
- * Uses Tailwind utilities mapped to design tokens.
  */
 export const SCButton = React.forwardRef<HTMLButtonElement, Props>(
   (
@@ -28,47 +27,48 @@ export const SCButton = React.forwardRef<HTMLButtonElement, Props>(
     ref,
   ) => {
     const base =
-      "relative inline-flex select-none items-center justify-center gap-1.5 rounded-md border text-[12.5px] font-medium leading-none outline-none transition-[background-color,border-color,color,transform,box-shadow] duration-100 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
+      "relative inline-flex select-none items-center justify-center gap-1.5 rounded-xl text-[12.5px] font-medium leading-none outline-none transition-[background-color,color,transform,box-shadow] duration-150 ease-out focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50";
 
     const sizes: Record<Size, string> = {
-      sm: "h-7 px-2.5",
-      md: "h-8 px-3",
+      sm: "h-7 px-3",
+      md: "h-8 px-3.5",
       icon: "h-8 w-8 p-0",
     };
 
     const variants: Record<Variant, string> = {
       primary: cn(
-        "border-transparent bg-accent text-accent-foreground shadow-[0_0_0_1px_color-mix(in_oklab,var(--accent)_40%,transparent)]",
+        "bg-accent text-accent-foreground shadow-[0_0_0_1px_color-mix(in_oklab,var(--accent)_40%,transparent),0_4px_18px_-6px_rgba(113,240,246,0.55)]",
         "hover:bg-[color-mix(in_oklab,var(--accent)_88%,white)]",
-        "active:scale-[0.98] active:bg-[color-mix(in_oklab,var(--accent)_75%,black)]",
+        "active:scale-[0.98] active:bg-[color-mix(in_oklab,var(--accent)_72%,black)]",
       ),
       ghost: cn(
-        "border-transparent bg-transparent text-foreground/85",
+        "bg-transparent text-foreground/80",
         "hover:bg-surface-2 hover:text-foreground",
         "active:scale-[0.98] active:bg-[color-mix(in_oklab,var(--surface-2)_70%,black)]",
       ),
       outline: cn(
-        "border-border bg-surface text-foreground/90",
+        "border border-border bg-surface text-foreground/90",
         "hover:bg-surface-2 hover:border-border-strong",
         "active:scale-[0.98] active:bg-[color-mix(in_oklab,var(--surface-2)_70%,black)]",
       ),
       icon: cn(
-        "border-transparent bg-transparent text-foreground/70",
+        "bg-transparent text-foreground/70",
         "hover:bg-surface-2 hover:text-foreground",
         "active:scale-[0.95] active:bg-[color-mix(in_oklab,var(--surface-2)_70%,black)]",
       ),
       destructive: cn(
-        "border-transparent bg-status-failed/15 text-status-failed",
+        "bg-status-failed/15 text-status-failed",
         "hover:bg-status-failed/25",
         "active:scale-[0.98] active:bg-status-failed/35",
       ),
       chip: cn(
-        selected
-          ? "border-accent/60 bg-[color-mix(in_oklab,var(--accent)_18%,var(--surface))] text-foreground"
-          : "border-border bg-surface text-foreground/85",
-        !selected && "hover:bg-surface-2 hover:border-border-strong",
-        selected && "hover:bg-[color-mix(in_oklab,var(--accent)_24%,var(--surface))]",
-        "active:scale-[0.98]",
+        // default solid pill, no border
+        !selected && "bg-surface-2 text-foreground/85",
+        !selected && "hover:bg-[color-mix(in_oklab,var(--accent)_18%,var(--surface-2))] hover:text-accent",
+        // selected: solid accent
+        selected && "bg-accent text-accent-foreground shadow-[0_0_0_1px_color-mix(in_oklab,var(--accent)_50%,transparent),0_3px_14px_-6px_rgba(113,240,246,0.6)]",
+        selected && "hover:bg-[color-mix(in_oklab,var(--accent)_92%,white)]",
+        "active:scale-[0.97]",
       ),
     };
 

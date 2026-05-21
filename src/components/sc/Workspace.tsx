@@ -6,28 +6,34 @@ import { StageRow } from "./StageRow";
 import { ScriptTable, StoryboardTable } from "./ScriptTable";
 import { AssetCard } from "./AssetCard";
 import { QualityCheck } from "./QualityCheck";
+import { ApprovalChips } from "./ApprovalChips";
 import { STAGE_ORDER } from "@/lib/sc/types";
 import { KEYFRAME_PROMPT_DETAIL, RECOVERY_NOTES } from "@/lib/sc/samples";
 import { SCButton } from "./Button";
-import { Sparkles, Calendar, GalleryHorizontal, Zap } from "lucide-react";
+import { Calendar, GalleryHorizontal, Zap, Loader2 } from "lucide-react";
+import { Logo } from "./Logo";
+import { DotGridBackground } from "./DotGridBackground";
 
 export function Workspace() {
-  const { phase, taskTitle, brief, stages, assets } = useSC();
+  const { phase, taskTitle, brief, stages, assets, gate } = useSC();
   const a01 = assets.find((a) => a.id === "A01");
   const v01 = assets.find((a) => a.id === "V01");
 
   return (
-    <div className="flex h-screen min-w-0 flex-1 flex-col">
+    <div className="relative flex h-screen min-w-0 flex-1 flex-col">
       {/* Top bar */}
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-background px-4">
+      <header className="z-10 flex h-12 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur">
         <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
           {phase === "empty" ? (
             <span className="flex items-center gap-1.5">
-              <Sparkles className="h-3.5 w-3.5 text-status-ready" />
-              Claude, GPT, and Gemini consume credits
+              <Logo size={14} />
+              Vibe Aideo · Premium AI ad-video agent
             </span>
           ) : (
-            <span className="text-foreground">{taskTitle}</span>
+            <span className="flex items-center gap-2 text-foreground">
+              <Logo size={14} loading={phase === "running" || phase === "thinking"} />
+              {taskTitle}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-1">
@@ -51,123 +57,146 @@ export function Workspace() {
       </header>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex min-h-full w-full max-w-[760px] flex-col px-6 py-6">
-          {phase === "empty" && (
-            <div className="flex flex-1 flex-col justify-center pb-20">
-              <div className="mb-5 flex items-start gap-3">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-surface-2 ring-1 ring-border-strong">
-                  <Sparkles className="h-5 w-5 text-status-ready" />
+      <div className="relative flex-1 overflow-hidden">
+        {phase === "empty" && <DotGridBackground />}
+        <div className="relative z-10 h-full overflow-y-auto">
+          <div className="mx-auto flex min-h-full w-full max-w-[760px] flex-col px-6 py-6">
+            {phase === "empty" && (
+              <div className="flex flex-1 flex-col justify-center pb-20">
+                <div className="mb-5 flex items-start gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface-2/70 backdrop-blur ring-1 ring-border-strong">
+                    <Logo size={28} />
+                  </div>
+                  <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-foreground">
+                    Vic, what are we creating today?
+                  </h1>
                 </div>
-                <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-foreground">
-                  Kai, what are we creating today?
-                </h1>
+                <CommandInput placeholder="做一个香奈儿香水的广告" />
+                <div className="mt-4">
+                  <SuggestionChips />
+                </div>
               </div>
-              <CommandInput placeholder="做一个香奈儿香水的广告" />
-              <div className="mt-4">
-                <SuggestionChips />
+            )}
+
+            {phase === "thinking" && (
+              <div className="flex-1 space-y-3">
+                {brief?.prompt && (
+                  <div className="ml-auto w-fit max-w-[80%] rounded-2xl bg-surface-2 px-3.5 py-2 text-[13px]">
+                    {brief.prompt}
+                  </div>
+                )}
+                <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-3.5 py-3">
+                  <Logo size={20} loading />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+                  <span className="text-[12.5px] text-muted-foreground">
+                    Thinking…
+                  </span>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {phase === "intake" && (
-            <div className="flex-1 space-y-4">
-              <IntakeCard />
-            </div>
-          )}
+            {phase === "intake" && (
+              <div className="flex-1 space-y-4">
+                <IntakeCard />
+              </div>
+            )}
 
-          {(phase === "running" || phase === "done" || phase === "failed") && (
-            <div className="flex-1 space-y-3">
-              {/* User bubble */}
-              {brief?.prompt && (
-                <div className="ml-auto w-fit max-w-[80%] rounded-lg bg-surface-2 px-3 py-2 text-[13px]">
-                  {brief.prompt}
-                </div>
-              )}
+            {(phase === "running" || phase === "done" || phase === "failed") && (
+              <div className="flex-1 space-y-3">
+                {brief?.prompt && (
+                  <div className="ml-auto w-fit max-w-[80%] rounded-2xl bg-surface-2 px-3.5 py-2 text-[13px]">
+                    {brief.prompt}
+                  </div>
+                )}
 
-              {brief && brief.adType && (
-                <div className="rounded-lg border border-border bg-surface px-3.5 py-3 text-[12.5px]">
-                  <div className="mb-1.5 font-medium">Selected Brief</div>
-                  <ul className="space-y-0.5 text-muted-foreground">
-                    <li>· Ad type: {brief.adType}</li>
-                    <li>· Format: {brief.format}</li>
-                    <li>· Visual: {brief.visualSource}</li>
-                    <li>· Mode: {brief.mode}</li>
-                  </ul>
-                </div>
-              )}
+                {brief && brief.adType && (
+                  <div className="rounded-2xl border border-border bg-surface px-3.5 py-3 text-[12.5px]">
+                    <div className="mb-1.5 font-medium">Selected Brief</div>
+                    <ul className="space-y-0.5 text-muted-foreground">
+                      <li>· Ad type: {brief.adType}</li>
+                      <li>· Format: {brief.format}</li>
+                      <li>· Visual: {brief.visualSource}</li>
+                      <li>· Mode: {brief.mode}</li>
+                    </ul>
+                  </div>
+                )}
 
-              {STAGE_ORDER.map((id) => {
-                const st = stages[id];
-                if (st.status === "pending") return null;
+                {STAGE_ORDER.map((id) => {
+                  const st = stages[id];
+                  if (st.status === "pending") return null;
 
-                if (id === "structure" && st.status === "ready") {
-                  return (
-                    <StageRow
-                      key={id}
-                      id={id}
-                      state={st}
-                      details={
-                        <pre className="whitespace-pre-wrap font-sans">
-                          脚本完整版（含分镜机位、镜头时长、音效层、混音建议）。
-                        </pre>
-                      }
-                      detailsLabel="Full scene plan"
-                    >
-                      <div className="space-y-2">
-                        <ScriptTable />
-                        <StoryboardTable />
-                      </div>
-                    </StageRow>
-                  );
-                }
+                  if (id === "structure") {
+                    return (
+                      <StageRow
+                        key={id}
+                        id={id}
+                        state={st}
+                        details={
+                          <pre className="whitespace-pre-wrap font-sans">
+                            脚本完整版（含分镜机位、镜头时长、音效层、混音建议）。
+                          </pre>
+                        }
+                        detailsLabel="Full scene plan"
+                      >
+                        <div className="space-y-2">
+                          <ScriptTable />
+                          <StoryboardTable />
+                        </div>
+                      </StageRow>
+                    );
+                  }
 
-                if (id === "paint") {
-                  return (
-                    <StageRow
-                      key={id}
-                      id={id}
-                      state={st}
-                      details={KEYFRAME_PROMPT_DETAIL}
-                      detailsLabel="Prompt details"
-                    >
-                      {a01 && <AssetCard asset={a01} />}
-                    </StageRow>
-                  );
-                }
+                  if (id === "paint") {
+                    return (
+                      <StageRow
+                        key={id}
+                        id={id}
+                        state={st}
+                        details={KEYFRAME_PROMPT_DETAIL}
+                        detailsLabel="Prompt details"
+                        keepChildrenWhenCollapsed
+                      >
+                        {a01 && <AssetCard asset={a01} />}
+                      </StageRow>
+                    );
+                  }
 
-                if (id === "life") {
-                  return (
-                    <StageRow
-                      key={id}
-                      id={id}
-                      state={st}
-                      details={RECOVERY_NOTES}
-                      detailsLabel="Recovery notes"
-                    >
-                      {v01 && <AssetCard asset={v01} />}
-                    </StageRow>
-                  );
-                }
+                  if (id === "life") {
+                    return (
+                      <StageRow
+                        key={id}
+                        id={id}
+                        state={st}
+                        details={RECOVERY_NOTES}
+                        detailsLabel="Recovery notes"
+                        keepChildrenWhenCollapsed
+                      >
+                        {v01 && <AssetCard asset={v01} />}
+                      </StageRow>
+                    );
+                  }
 
-                if (id === "details" && st.status === "ready") {
-                  return (
-                    <StageRow key={id} id={id} state={st}>
-                      <QualityCheck />
-                    </StageRow>
-                  );
-                }
+                  if (id === "details" && st.status === "ready") {
+                    return (
+                      <StageRow key={id} id={id} state={st} keepChildrenWhenCollapsed>
+                        <QualityCheck />
+                      </StageRow>
+                    );
+                  }
 
-                return <StageRow key={id} id={id} state={st} />;
-              })}
-            </div>
-          )}
+                  return <StageRow key={id} id={id} state={st} />;
+                })}
+
+                {gate && <ApprovalChips />}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Bottom command bar (only when not empty) */}
       {phase !== "empty" && (
-        <div className="border-t border-border bg-background px-4 py-3">
+        <div className="z-10 border-t border-border bg-background px-4 py-3">
           <div className="mx-auto max-w-[760px]">
             <CommandInput compact />
           </div>
