@@ -65,11 +65,11 @@ export interface IntakeOptions {
 export function inferIntake(prompt: string): IntakeOptions {
   const hits = detectCategories(prompt);
   const primary: Category = hits[0] ?? "luxury";
-  const neighborSet = unique([
+  const neighborSet: Category[] = unique([
     ...hits.flatMap((h) => NEIGHBORS[h]),
-    "luxury",
-    "fashion",
-    "beauty",
+    "luxury" as Category,
+    "fashion" as Category,
+    "beauty" as Category,
   ]).filter((c) => !hits.includes(c));
 
   const adType = unique([
