@@ -398,6 +398,9 @@ export const useSC = create<SCState>((set, get) => {
         gate: null,
         rail: { open: false, flashId: undefined, focusedAssetId: undefined },
         brief: { prompt: text, adType: "", format: "", visualSource: "", mode: "" },
+        intakeSel: {},
+        intakeCustoms: {},
+        intakeOthers: null,
       }));
       const delay = 1500 + Math.random() * 1000;
       schedule(() => {
