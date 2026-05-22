@@ -64,7 +64,6 @@ export function DotGridBackground() {
       const h = canvas.clientHeight;
       ctx.clearRect(0, 0, w, h);
 
-      // ease cursor + intensity
       if (cur.current.x === -9999) {
         cur.current.x = target.current.x;
         cur.current.y = target.current.y;
@@ -76,15 +75,37 @@ export function DotGridBackground() {
 
       const mx = cur.current.x;
       const my = cur.current.y;
-      const baseAlpha = isDark() ? 0.05 : 0.08;
+      const baseAlpha = isDark() ? 0.035 : 0.055;
       const baseRGB = isDark() ? "255,255,255" : "15,23,42";
       const i = cur.current.intensity;
 
       for (let y = 0; y < h + spacing; y += spacing) {
         for (let x = 0; x < w + spacing; x += spacing) {
           let opacity = baseAlpha;
-          let radius = 1;
+          let radius = 0.7;
           let fill = `rgba(${baseRGB},${opacity})`;
+
+          if (i > 0.01) {
+            const dx = x - mx;
+            const dy = y - my;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < glowRadius) {
+              const t = (1 - dist / glowRadius) * i;
+              const intensity = t * t;
+              opacity = baseAlpha + intensity * 0.45;
+              radius = 0.7 + intensity * 0.9;
+              fill = `rgba(${accentRGB[0]},${accentRGB[1]},${accentRGB[2]},${opacity})`;
+            }
+          }
+
+          ctx.beginPath();
+          ctx.fillStyle = fill;
+          ctx.arc(x, y, radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      raf = requestAnimationFrame(draw);
+    };
 
           if (i > 0.01) {
             const dx = x - mx;
