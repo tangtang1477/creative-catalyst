@@ -52,28 +52,26 @@
 :root {
   --radius: 0.5rem;
 
-  --background: oklch(0.155 0.005 260);
-  --foreground: oklch(0.95 0.005 260);
+  /* DEFAULT = light theme */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.18 0.01 260);
+  --surface: oklch(0.985 0.002 260);
+  --surface-2: oklch(0.955 0.003 260);
+  --border: oklch(0.92 0.004 260);
+  --border-strong: oklch(0.84 0.006 260);
+  --muted-foreground: oklch(0.5 0.01 260);
 
-  --surface: oklch(0.195 0.006 260);
-  --surface-2: oklch(0.235 0.007 260);
-
-  --border: oklch(0.295 0.008 260);
-  --border-strong: oklch(0.38 0.01 260);
-
-  --muted-foreground: oklch(0.62 0.012 260);
-
-  /* #71F0F6 — bright cyan brand accent */
+  /* #71F0F6 — bright cyan brand accent (constant) */
   --accent: oklch(0.886 0.108 197);
   --accent-rgb: 113 240 246;
   --accent-foreground: oklch(0.18 0.02 240);
 
-  --status-generating: oklch(0.886 0.108 197);
-  --status-processing: oklch(0.78 0.13 75);
-  --status-ready: oklch(0.78 0.14 155);
-  --status-failed: oklch(0.68 0.2 25);
-  --status-recovering: oklch(0.72 0.15 295);
-  --status-queued: oklch(0.65 0.015 260);
+  --status-generating: oklch(0.78 0.13 197);
+  --status-processing: oklch(0.7 0.14 75);
+  --status-ready: oklch(0.7 0.15 155);
+  --status-failed: oklch(0.62 0.22 25);
+  --status-recovering: oklch(0.66 0.16 295);
+  --status-queued: oklch(0.7 0.015 260);
 }
 
 .dark {
@@ -86,6 +84,13 @@
   --muted-foreground: oklch(0.62 0.012 260);
   --accent: oklch(0.886 0.108 197);
   --accent-foreground: oklch(0.18 0.02 240);
+
+  --status-generating: oklch(0.886 0.108 197);
+  --status-processing: oklch(0.78 0.13 75);
+  --status-ready: oklch(0.78 0.14 155);
+  --status-failed: oklch(0.68 0.2 25);
+  --status-recovering: oklch(0.72 0.15 295);
+  --status-queued: oklch(0.65 0.015 260);
 }
 
 @keyframes logo-shimmer {
@@ -142,6 +147,12 @@
 .thinking-dots::after {
   content: "";
   animation: ellipsis 1.4s steps(4, end) infinite;
+}
+
+@keyframes pulse-ring {
+  0%   { transform: scale(0.6); opacity: 0.9; }
+  80%  { transform: scale(2.2); opacity: 0; }
+  100% { transform: scale(2.2); opacity: 0; }
 }
 
 @layer base {

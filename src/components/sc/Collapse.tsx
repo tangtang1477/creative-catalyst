@@ -5,37 +5,39 @@ interface Props {
   open: boolean;
   children: ReactNode;
   className?: string;
-  duration?: number;
 }
 
-/**
- * Smooth max-height + opacity collapse using measured content height.
- */
-export function Collapse({ open, children, className, duration = 280 }: Props) {
-  const innerRef = useRef<HTMLDivElement>(null);
-  const [h, setH] = useState<number>(0);
+/** Smooth max-height + opacity collapse. Measures content height on demand. */
+export function Collapse({ open, children, className }: Props) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [h, setH] = useState<number | "auto">(open ? "auto" : 0);
 
   useEffect(() => {
-    const el = innerRef.current;
+    const el = ref.current;
     if (!el) return;
-    const measure = () => setH(el.scrollHeight);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [children]);
+    if (open) {
+      const measured = el.scrollHeight;
+      setH(measured);
+      const t = window.setTimeout(() => setH("auto"), 320);
+      return () => window.clearTimeout(t);
+    } else {
+      // freeze current height then animate to 0
+      const measured = el.scrollHeight;
+      setH(measured);
+      requestAnimationFrame(() => setH(0));
+    }
+  }, [open, children]);
 
   return (
     <div
-      className={cn("overflow-hidden", className)}
-      style={{
-        maxHeight: open ? h : 0,
-        opacity: open ? 1 : 0,
-        transition: `max-height ${duration}ms cubic-bezier(0.22,1,0.36,1), opacity ${duration}ms ease-out`,
-      }}
-      aria-hidden={!open}
+      style={{ maxHeight: h === "auto" ? "none" : `${h}px` }}
+      className={cn(
+        "overflow-hidden transition-[max-height,opacity] duration-300 ease-out",
+        open ? "opacity-100" : "opacity-0",
+        className,
+      )}
     >
-      <div ref={innerRef}>{children}</div>
+      <div ref={ref}>{children}</div>
     </div>
   );
 }

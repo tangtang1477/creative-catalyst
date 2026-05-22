@@ -80,3 +80,41 @@ export const STORYBOARD_ROWS = [
 export const KEYFRAME_PROMPT_DETAIL = `A grand Haussmann-era Parisian apartment interior at blue hour, early evening transitioning into night. Tall ceiling with restored ornate crown molding, wide herringbone oak parquet floor in warm honey-amber, walls in pale champagne with brushed gold trim strips. Floor-to-ceiling casement windows on the right wall open slightly, sheers drifting in cool air, the deep cobalt-navy evening sky visible beyond with the faint silhouette of Paris rooftops. On the polished lacquer dressing table sits the YSL Libre perfume bottle, light catching the gold cap. Cinematic depth of field, editorial luxury photography.`;
 
 export const RECOVERY_NOTES = `如果 MovieFlow 图像端口未返回可用 URL，自动转入 Recovering：保留同一关键帧 prompt，60s 后重试一次；视频端口若返回 task id 但轮询超时，则保持 Status checked，继续轮询不退出。`;
+
+import type { Asset } from "./types";
+
+/** Demo dataset for the ?state=series-demo route — 3 episodes × 4 scenes. */
+export const SERIES_DEMO: Asset[] = (() => {
+  const out: Asset[] = [];
+  for (let ep = 1; ep <= 3; ep++) {
+    for (let sc = 1; sc <= 4; sc++) {
+      out.push({
+        id: `EP${ep}-A${sc.toString().padStart(2, "0")}`,
+        kind: "image",
+        label: `EP${ep}·S${sc.toString().padStart(2, "0")}`,
+        caption: `Episode ${ep} · Scene ${sc} · Keyframe`,
+        status: "Ready",
+        url: keyframe,
+        stageId: "paint",
+        width: 1920,
+        height: 1080,
+        episode: ep,
+        scene: sc,
+      });
+      out.push({
+        id: `EP${ep}-V${sc.toString().padStart(2, "0")}`,
+        kind: "video",
+        label: `EP${ep}·S${sc.toString().padStart(2, "0")}`,
+        caption: `Episode ${ep} · Scene ${sc} · Cut`,
+        status: "Ready",
+        url: SAMPLE_VIDEO,
+        poster: keyframe,
+        stageId: "life",
+        duration: "0:12",
+        episode: ep,
+        scene: sc,
+      });
+    }
+  }
+  return out;
+})();

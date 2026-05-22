@@ -7,12 +7,24 @@ import { SCButton } from "./Button";
 import { Collapse } from "./Collapse";
 
 export function MediaRail() {
-  const { assets, phase, rail, setRailOpen } = useSC();
+  const { assets, phase, rail, setRailOpen, taskKind } = useSC();
   const [imgOpen, setImgOpen] = useState(true);
   const [vidOpen, setVidOpen] = useState(true);
+  const [filter, setFilter] = useState<"all" | "image" | "video">("all");
 
   const images = useMemo(() => assets.filter((a) => a.kind === "image"), [assets]);
   const videos = useMemo(() => assets.filter((a) => a.kind === "video"), [assets]);
+
+  const episodes = useMemo(() => {
+    if (taskKind !== "series") return [];
+    const map = new Map<number, typeof assets>();
+    for (const a of assets) {
+      const ep = a.episode ?? 0;
+      if (!map.has(ep)) map.set(ep, []);
+      map.get(ep)!.push(a);
+    }
+    return [...map.entries()].sort((a, b) => a[0] - b[0]);
+  }, [assets, taskKind]);
 
   const hidden = phase === "empty" || phase === "intake" || phase === "thinking";
 
@@ -52,6 +64,49 @@ export function MediaRail() {
           {assets.length === 0 ? (
             <div className="flex h-full items-center justify-center text-[12px] text-muted-foreground">
               等待生成…
+            </div>
+          ) : taskKind === "series" ? (
+            <div className="space-y-4">
+              {/* sticky filter bar */}
+              <div className="sticky top-0 z-10 -mx-3 mb-2 flex items-center gap-1 border-b border-border bg-surface/95 px-3 py-1.5 backdrop-blur">
+                {(["all", "image", "video"] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={cn(
+                      "rounded-full px-2.5 py-1 text-[11px] capitalize transition-colors",
+                      filter === f
+                        ? "bg-accent text-accent-foreground"
+                        : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
+                    )}
+                  >
+                    {f}
+                  </button>
+                ))}
+                <span className="ml-auto text-[10.5px] text-muted-foreground">
+                  {episodes.length} EP
+                </span>
+              </div>
+
+              {episodes.map(([ep, list]) => {
+                const filtered = list.filter((a) =>
+                  filter === "all" ? true : a.kind === filter,
+                );
+                const scenes = new Map<number, typeof list>();
+                for (const a of filtered) {
+                  const sc = a.scene ?? 0;
+                  if (!scenes.has(sc)) scenes.set(sc, []);
+                  scenes.get(sc)!.push(a);
+                }
+                return (
+                  <EpisodeBlock
+                    key={ep}
+                    episode={ep}
+                    scenes={[...scenes.entries()].sort((a, b) => a[0] - b[0])}
+                    rail={rail}
+                  />
+                );
+              })}
             </div>
           ) : (
             <div className="space-y-4">
@@ -99,6 +154,48 @@ export function MediaRail() {
           {images.length} image · {videos.length} video
         </div>
       </aside>
+    </div>
+  );
+}
+
+function EpisodeBlock({
+  episode,
+  scenes,
+  rail,
+}: {
+  episode: number;
+  scenes: [number, import("@/lib/sc/types").Asset[]][];
+  rail: { flashId?: string };
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between rounded-md bg-surface-2/60 px-2 py-1.5 text-[11.5px] font-semibold uppercase tracking-wider text-foreground hover:bg-surface-2"
+      >
+        <span className="flex items-center gap-1.5">
+          <Film className="h-3 w-3 text-accent" />
+          Episode {episode}
+        </span>
+        <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
+      </button>
+      <Collapse open={open}>
+        <div className="mt-2 space-y-3">
+          {scenes.map(([sc, list]) => (
+            <div key={sc}>
+              <div className="mb-1 px-1 text-[10.5px] uppercase tracking-wider text-muted-foreground">
+                Scene {sc.toString().padStart(2, "0")}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {list.map((a) => (
+                  <AssetCard key={a.id} asset={a} compact highlighted={rail.flashId === a.id} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Collapse>
     </div>
   );
 }
