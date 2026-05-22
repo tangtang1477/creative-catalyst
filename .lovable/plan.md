@@ -1,98 +1,162 @@
-## 本轮改动计划（7 项）
+## 本轮改动计划
 
-### 1. Claude icon 修正
-当前 `BrandIcons.tsx` 中 Claude 是一个橙色八角星，与官方不符。改成 Anthropic 官方的 Claude 标志（橙色螺旋花瓣/星芒，由四个不对称放射形花瓣组成）。SVG 路径替换为官方 Claude logomark 形状，颜色保留 `#D97757`。
+### 一、画布点阵优化（轻量美观）
 
-### 2. 右下角设置 icon → 主题切换太阳/月亮
-`Sidebar.tsx`（或 `UserHoverCard.tsx`）右下角现在的齿轮 icon 替换为太阳/月亮切换按钮：
-- 暗色态显示 `Moon`，亮色态显示 `Sun`（lucide-react）
-- 直接调用 `useTheme().toggle()`，去掉 hover-card 内重复的切换条目（或保留二者同步）
-- 按钮独立可点，不被 hover-card 拦截事件（`stopPropagation` + `onClick`）
+**文件**：`src/components/sc/DotGridBackground.tsx`
 
-### 3. 输入框打字机 placeholder
-`CommandInput.tsx` 在 `value === ''` 且未聚焦/聚焦皆可时，用打字机动画轮播 6 条提示语：
-- "做一个香奈儿香水的高端广告片"
-- "拍一集都市恐怖短剧的第一集"
-- "生成一支美食探店 vlog 的开场"
-- "制作一支运动品牌的 15 秒 TVC"
-- "做一个连续剧的第二集，主角是侦探"
-- "生成一支宠物日常的治愈短片"
+- `spacing` 18 → 14（密度提升约 40%）
+- `glowRadius` 180 → 120（光源范围缩小）
+- 基础半径基数 1 → 0.7（点更细更轻）
+- 鼠标光下最大半径增量 1.3 → 0.9（避免堆头过亮）
+- 基础透明度 0.05/0.08 → 0.04/0.06，光下叠加 0.6 → 0.45
+- mask 渐变收紧：55% → 45%，更聚焦中部
 
-实现：新 hook `useTypewriterPlaceholder(phrases, { typeMs:55, holdMs:1600, eraseMs:30 })`，输出当前字符串，注入到 `<textarea placeholder>`；用户开始输入后停止轮播。
-
-### 4. 点阵密度提升
-`DotGridBackground.tsx`：`spacing` 26 → 18；`glowRadius` 160 → 180；半径基数保持 1，避免过亮。
-
-### 5. AutoRun 文案修复
-`AutoRunMenu.tsx` 触发按钮标签：
-- `autoMode === 'auto'` → 显示 "Auto Run"
-- `autoMode === 'confirm'` → 显示 "Confirm"
-（去掉 "Auto Run · Auto" / "Auto Run · Confirm" 这种连写）
-
-下拉项文案保持「Auto-run without asking」「Confirm before running」不变。
-
-### 6. 用户名改为 Victoria@gmail.com
-全局替换 `Vic` / `galileo_slug_500` 等显示用名 → `Victoria@gmail.com`：
-- `UserHoverCard.tsx`
-- `Sidebar.tsx` 底部用户区
-- `store.ts` 历史 task 作者字段（若展示）
-保留 "Plus Plan" 副标题。
-
-### 7. Intake 卡片流式输出 + 真实 loading + Others 引导输入框 + Auto 模式分段确认
-
-#### 7.1 流式渲染问题选项
-`IntakeCard.tsx` 现在一次性渲染所有问题与 chips。改为：
-- 进入 intake 阶段后先显示一行 loading（"Analyzing your brief..." + shimmer），延迟 1200–1800ms 出现第 1 题；
-- 每个问题的标题先逐字流式打字（复用上面 typewriter 工具，速度 18ms/char），打完后再逐个 chip fade-in（stagger 80ms）；
-- 问题之间间隔 600ms + 800ms loading dot；
-- 全部出现完毕再显示底部 Skip / Continue。
-
-新增内部状态 `revealedQuestions: number`、`revealedTitleChars: number`、`revealedChipsPerQ: number[]`，用 `setInterval` 推进；卸载清理。
-
-#### 7.2 Others → 引导到输入框
-`OthersChip.tsx` 点击行为改为：
-- 不在卡片内插入 input；
-- 调用 store 新 action `focusCommandInputWithHint(questionId)`，把 CommandInput placeholder 临时锁定为 `"输入你想要的「{question 简称}」…"`，并自动 focus；
-- 用户在输入框内输入后回车，作为该题自定义答案写入 intake answers，并解除锁定。
-
-#### 7.3 Auto 模式也分段输出 + 中途询问
-`intake-engine.ts` / `store.ts` 在 `autoMode === 'auto'` 时：
-- 不再跳过 intake 直出全流程；
-- 而是改为：自动选默认答案 → 流式输出剧本（script）→ 暂停弹一条 inline 询问 "剧本已生成，是否继续生成镜头脚本？[继续 / 调整]"；用户确认后 → 流式输出 shotlist → 再次询问 → 流式生成素材 → 最终成片。
-- 每段生成都走真实 loading（2.5–4s）+ 字符级流式追加，禁止瞬时 dump。
-- "Confirm" 模式保持现有"每步手动 approve"。
-
-涉及：`store.ts` 新增 phase `awaiting_continue`，`StageRow.tsx` 追加确认气泡组件 `<ContinuePrompt />`。
+效果：更密、更细、光晕更小更柔，整体观感"轻量美观"。
 
 ---
 
-## 涉及文件
+### 二、按 ai-video-studio skill 重构交互流程
 
-**修改**
-- `src/components/sc/BrandIcons.tsx` — Claude SVG
-- `src/components/sc/Sidebar.tsx` / `UserHoverCard.tsx` — 主题切换按钮 + 用户名
-- `src/components/sc/CommandInput.tsx` — 打字机 placeholder + Others 锁定
-- `src/components/sc/DotGridBackground.tsx` — 密度
-- `src/components/sc/AutoRunMenu.tsx` — 标签文案
-- `src/components/sc/IntakeCard.tsx` — 流式渲染
-- `src/components/sc/OthersChip.tsx` — 改为引导输入框
-- `src/components/sc/StageRow.tsx` — 新增 `<ContinuePrompt />`
-- `src/lib/sc/store.ts` — `awaiting_continue` phase、`focusCommandInput*`、`autoMode='auto'` 分段流程
-- `src/lib/sc/intake-engine.ts` — auto 模式逐段推进
-- `src/lib/sc/samples.ts` — 打字机短语数组（如果集中放）
+skill 的核心契约：**固定阶段名 + 资源卡 + 折叠细节 + 类型自适应 + 集数延续 + 真实生成证据**。当前实现是"广告片单一流程"，需要重构为多类型 + 系列剧 + 严格阶段编排。
+
+#### 2.1 首条响应文案（铁律 1）
+
+`src/components/sc/Workspace.tsx` 空态首屏标题区改为：
+
+> **Using skill ai-video-studio**
+> 你好，我可以帮你把想法、角色、产品或素材做成 AI 视频。告诉我类型和目标，或直接选下面的方向。
+
+下方紧跟 **Create Brief** 4 题（与 skill 一致，覆盖现有 intake）：
+
+1. 视频类型：Short cinema(推荐) / Series·Episodes / Ad·Brand film / Music·Fashion / Documentary·Explainer / UGC·Social / Other
+2. 投放规格：15s 9:16(推荐) / 30s 9:16 / 16:9 / 1:1 / Other
+3. 画面来源：自动生成角色·场景(推荐) / 使用上传素材 / 产品·主体特写 / 无人物 / Other
+4. 创作模式：全自动连续推进(推荐) / 关键阻塞项才问我 / 关键节点确认 / 严格按资料
+
+**改文件**：`src/lib/sc/intake-engine.ts`（重写默认选项与推断）、`src/components/sc/IntakeCard.tsx`（标题与底部状态：`Awaiting your input`）。
+
+#### 2.2 固定 6 阶段标签替换
+
+skill 阶段名是硬规范，当前 store phase 命名不符合。新增映射：
+
+| skill 阶段 | 触发条件 |
+|---|---|
+| Awaiting your input | intake 未完成 |
+| Building the scene | 选定 brief，输出创意方向/世界观/主体策略 |
+| Structuring the film | 剧本/分镜/节奏表 |
+| Painting the frame | 关键帧（A01/C01/E01/P01）生成 |
+| Bringing it to life | first-frame-to-video（V01...） |
+| Adding the details | QC + Next chips |
+
+**改文件**：
+- `src/lib/sc/types.ts`：`Phase` 类型重命名为这 6 个 + 保留 `awaiting_continue`
+- `src/lib/sc/store.ts`：阶段推进与 `autoMode` 分段确认改为以上 6 段
+- `src/components/sc/StageRow.tsx`：标题文案改为新阶段名（中英对照副标题）
+- `src/components/sc/Workspace.tsx`：阶段顺序渲染
+
+#### 2.3 类型自适应（核心新增）
+
+新增 `src/lib/sc/video-types.ts`，按类型返回不同的：
+
+- Building the scene 字段集（如 Series：series premise / world rules / recurring cast / season arc；Narrative：premise / protagonist / conflict / mood；Ad：product / audience / promise / CTA / compliance；等等）
+- Structuring 输出形态（剧本表 vs 节拍表 vs Episode Beats）
+- Asset 资产分类（C01 角色 / E01 环境 / P01 道具 / A01 关键帧 / V01 视频）
+- QC focus
+
+**改文件**：
+- 新建 `src/lib/sc/video-types.ts` — 类型配置表（series/short_cinema/ad/music/doc/ugc/abstract）
+- `src/components/sc/ScriptTable.tsx` — 支持两种表（Script vs Beat Sheet）
+- `src/components/sc/StageRow.tsx` — Building the scene 字段按类型渲染
+
+#### 2.4 Series / Episodic 工作流（新增）
+
+当类型 = Series，新增两块持久数据结构：
+
+- **Series Bible**（卡片）：series / format / logline / world rules / recurring cast / standing sets / core conflict / visual grammar
+- **Episode Registry**（表格）：Episode / Status / Story Function / Cliffhanger·Carryover
+- **当前集 Beats** 表：Beat / Duration / Story·Action / Visual Language / Carryover
+- **Continuity Registry** 表：ID / Type / Description / First Seen / Reuse Rule（C01/E01/P01 永不改名）
+- 资产命名采用 `S01E01-A01` / `S01E01-V01`；C/E/P 跨集复用
+
+新增组件：
+- `src/components/sc/SeriesBible.tsx`
+- `src/components/sc/EpisodeRegistry.tsx`
+- `src/components/sc/ContinuityRegistry.tsx`
+
+store 扩展：
+- `series?: SeriesBible`
+- `episodes: EpisodeRecord[]`
+- `continuity: ContinuityItem[]`
+- action：`continueNextEpisode()` — 复用 Bible/Registry/C·E·P/未解线索/上一集 cliffhanger，从 Selected Brief 起跳，**不重启 intake**
+
+用户输入"继续上一集 / 第 2 集 / 下一集"时由 `intake-engine` 命中并直接走 `continueNextEpisode`。
+
+#### 2.5 Auto Flow 分段确认细化
+
+当前 store 已在 script/keyframe 加 gate。按 skill 改为：
+
+- **全自动模式**：连续推进至交付，仅在真实阻塞（缺凭据/法务声明/不能假设的型号价格/可轮询的供应商任务）时停
+- **关键节点确认模式**：每阶段尾部弹 ContinuePrompt
+- **严格按资料模式**：禁止补全/假设，缺即问
+
+**改文件**：`src/lib/sc/store.ts` 的 `autoMode` 分支按 4 种模式改写（当前只有 auto/confirm 两种，需要扩到 4 种与 intake 一致）。
+
+#### 2.6 资产卡 & Media Proof（视觉契约）
+
+skill 强制资产表格 4 列：Asset / Status / Preview·Link / Source。状态枚举固定为：Generating / Queued / Processing / Status checked / Ready / Recovering / Needs blocker / Failed。
+
+- `src/components/sc/AssetCard.tsx` 改为符合 4 列规范
+- 新增 `src/components/sc/AssetTable.tsx` — 阶段内统一渲染（Painting the frame / Bringing it to life / Final Assets）
+- "Recovering / Failed" 文案符合 skill（如 `未返回可播放 URL`），但内部实现仍是 mock 时序
+
+#### 2.7 折叠细节
+
+skill 要求"完整 prompt / 负 prompt / 长场景描述 / 恢复日志 / 长剧本"默认折叠。新增 `src/components/sc/CollapsibleDetails.tsx`（包装 shadcn collapsible），在 Painting / Structuring 阶段使用。媒体 URL 永远不放在折叠内。
+
+#### 2.8 Next-action chips（按类型自适应）
+
+`src/components/sc/QualityCheck.tsx` 的 Next 数组改为按类型返回：
+
+- Series：`下一集` `角色一致性` `世界观扩展` `字幕/旁白` `封面图` `改节奏`
+- Narrative：`扩展下一场` `角色一致性` `字幕/旁白` `封面图` `改节奏` `比例导出`
+- Ad：`A/B variant` `字幕/旁白` `封面图` `改节奏` `比例导出`
+- 其他类型类似
+
+---
+
+### 三、涉及文件清单
 
 **新建**
-- `src/hooks/use-typewriter.ts` — 通用打字机 hook（placeholder + 标题流式都复用）
-- `src/components/sc/ContinuePrompt.tsx` — 中途"继续 / 调整"询问气泡
+- `src/lib/sc/video-types.ts`
+- `src/components/sc/SeriesBible.tsx`
+- `src/components/sc/EpisodeRegistry.tsx`
+- `src/components/sc/ContinuityRegistry.tsx`
+- `src/components/sc/AssetTable.tsx`
+- `src/components/sc/CollapsibleDetails.tsx`
+
+**修改**
+- `src/components/sc/DotGridBackground.tsx` — 密度/光源/亮度
+- `src/components/sc/Workspace.tsx` — 首屏文案 + 阶段顺序
+- `src/components/sc/IntakeCard.tsx` — 4 题文案/选项对齐 skill
+- `src/components/sc/StageRow.tsx` — 6 阶段标签 + 类型自适应字段
+- `src/components/sc/ScriptTable.tsx` — Script / Beat Sheet 双模式
+- `src/components/sc/AssetCard.tsx` — 4 列规范
+- `src/components/sc/QualityCheck.tsx` — Next chips 按类型
+- `src/lib/sc/types.ts` — Phase 类型 + Series/Episode/Continuity 类型
+- `src/lib/sc/store.ts` — 6 阶段 + 4 种 mode + Series 流转 + continueNextEpisode
+- `src/lib/sc/intake-engine.ts` — 选项/默认值/`继续上一集`命中
+- `src/lib/sc/samples.ts` — 各类型示例 brief
 
 ---
 
-## 验收点
-1. Claude 选项与下拉里的图标为官方 Anthropic Claude 形状。
-2. 右下角点击太阳/月亮可即刻切换亮暗主题，hover 卡片内开关与之同步。
-3. 空输入时输入框 placeholder 在 6 条提示之间打字-停留-擦除-下一条循环；开始输入后立即停止。
-4. 点阵密度明显变密，鼠标光晕仍然柔和。
-5. AutoRun 按钮文字在 "Auto Run" ↔ "Confirm" 之间切换。
-6. 侧边栏 + hover 卡片中所有用户名显示为 `Victoria@gmail.com`。
-7. 进入 intake：先 loading → 第一题标题逐字出现 → chips 逐个淡入 → 下一题，节奏自然；点 Others 不在卡片插 input，而是输入框聚焦并显示对应 hint placeholder，回车后回填该题。
-8. Auto 模式不再一口气走完：剧本流式生成 → 弹"是否继续"→ 用户确认 → 镜头脚本 → 再确认 → 素材生成。每段都是字符级流式 + 2.5s+ 真 loading。
+### 四、验收点
+
+1. 鼠标光晕点阵更密、点更细、光圈更小，整体更精致。
+2. 空态首屏顶部出现 `Using skill ai-video-studio` + 友好句 + Create Brief 4 题，底部 `Awaiting your input`。
+3. Intake 4 题选项与 skill 文案一致；选 Series 后进入剧集分支。
+4. 阶段标签严格为 Building the scene / Structuring the film / Painting the frame / Bringing it to life / Adding the details。
+5. Series 类型显示 Series Bible + Episode Registry + Continuity Registry + 当前集 Beats 表，资产命名为 `S01E01-A01` / `S01E01-V01`。
+6. 输入"继续上一集 / 下一集"不重启 intake，从 Selected Brief 直接续推。
+7. 创作模式 4 选项均生效：全自动一路到底；关键节点确认每阶段询问；严格按资料缺即问。
+8. 资产表 4 列规范，状态使用 skill 枚举；prompt 详情折叠，媒体链接保持可见。
+9. Adding the details 的 Next chips 按视频类型变化（Series 显示 `下一集`）。
