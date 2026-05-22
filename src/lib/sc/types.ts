@@ -89,6 +89,7 @@ export interface Attachment {
   url: string;      // object url or external url
   thumb?: string;
   source: "upload" | "url" | "asset";
+  ref?: string;     // e.g. "A01" for @mention reference
 }
 
 export interface TaskRecord {
