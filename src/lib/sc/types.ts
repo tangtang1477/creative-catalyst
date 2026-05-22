@@ -56,6 +56,8 @@ export interface Asset {
   height?: number;
   duration?: string;
   stageId?: StageId;
+  episode?: number;
+  scene?: number;
 }
 
 export interface Brief {
@@ -77,3 +79,25 @@ export type Phase =
 export type Gate = "script" | "keyframe" | null;
 
 export type AutoMode = "auto" | "confirm";
+
+export type TaskKind = "oneoff" | "series";
+
+export interface Attachment {
+  id: string;
+  kind: "image" | "video";
+  name: string;
+  url: string;      // object url or external url
+  thumb?: string;
+  source: "upload" | "url" | "asset";
+}
+
+export interface TaskRecord {
+  id: string;
+  title: string;
+  prompt: string;
+  createdAt: number;
+  updatedAt: number;
+  status: "running" | "done" | "failed" | "interrupted";
+  kind: TaskKind;
+  assets: Asset[];
+}
