@@ -1,62 +1,12 @@
 /**
- * Infers intake chip options from user prompt.
- * Hit categories rank first, neighbors second, generic fallbacks last.
+ * Intake: 4 questions aligned with ai-video-studio skill spec.
+ *  1) 视频类型  2) 投放规格  3) 画面来源  4) 创作模式
  */
-type Category =
-  | "auto"
-  | "fragrance"
-  | "beauty"
-  | "fashion"
-  | "tech"
-  | "food"
-  | "luxury";
-
-const KEYWORDS: Record<Category, RegExp> = {
-  auto: /(汽车|车|轿车|SUV|新能源|电动车|car|auto|vehicle|drive|test\s*drive)/i,
-  fragrance: /(香水|香氛|fragrance|perfume|cologne|libre|chanel|dior)/i,
-  beauty: /(美妆|彩妆|口红|护肤|cosmetic|makeup|lipstick|skincare|beauty)/i,
-  fashion: /(服装|时装|时尚|fashion|apparel|outfit|runway|手袋|包包|handbag)/i,
-  tech: /(数码|手机|laptop|耳机|电脑|科技|tech|gadget|smartphone|earbuds)/i,
-  food: /(食品|饮料|coffee|咖啡|tea|奶茶|饮食|snack|food|beverage|drink)/i,
-  luxury: /(奢侈|luxury|premium|high[-\s]?end|高端|豪华)/i,
-};
-
-const AD_TYPES: Record<Category, string[]> = {
-  auto: ["汽车广告 / Cinematic Drive", "试驾片 / Performance"],
-  fragrance: ["香水广告 / Editorial Luxury", "香氛叙事 / Story-driven"],
-  beauty: ["美妆广告 / Beauty Close-up", "护肤情绪片"],
-  fashion: ["时尚大片 / Runway", "造型短片"],
-  tech: ["3C 数码广告 / Product Showcase", "科技感氛围片"],
-  food: ["食品饮料广告 / Appetite Appeal", "生活方式短片"],
-  luxury: ["Luxury / Premium 形象片"],
-};
-
 const OTHERS = "Others…";
-
-function unique<T>(arr: T[]): T[] {
-  return Array.from(new Set(arr));
-}
-
-function detectCategories(prompt: string): Category[] {
-  const hits: Category[] = [];
-  (Object.keys(KEYWORDS) as Category[]).forEach((c) => {
-    if (KEYWORDS[c].test(prompt)) hits.push(c);
-  });
-  return hits;
-}
-
-const NEIGHBORS: Record<Category, Category[]> = {
-  auto: ["luxury", "tech"],
-  fragrance: ["beauty", "luxury", "fashion"],
-  beauty: ["fragrance", "fashion"],
-  fashion: ["beauty", "luxury"],
-  tech: ["auto"],
-  food: ["beauty"],
-  luxury: ["fragrance", "fashion", "auto"],
-};
+export const OTHERS_LABEL = OTHERS;
 
 export interface IntakeOptions {
-  adType: string[];
+  adType: string[];        // video type
   format: string[];
   visualSource: string[];
   mode: string[];
@@ -64,68 +14,58 @@ export interface IntakeOptions {
   greeting: string;
 }
 
-export const OTHERS_LABEL = OTHERS;
+const VIDEO_TYPES = [
+  "Short cinema（推荐）",
+  "Series · Episodes",
+  "Ad · Brand film",
+  "Music · Fashion",
+  "Documentary · Explainer",
+  "UGC · Social",
+];
+
+const FORMATS = [
+  "15s · 9:16（推荐）",
+  "30s · 9:16",
+  "60s · 16:9",
+  "30s · 1:1",
+];
+
+const VISUAL_SOURCES = [
+  "自动生成角色/场景（推荐）",
+  "使用上传素材",
+  "产品/主体特写",
+  "无人物",
+];
+
+const MODES = [
+  "全自动，连续推进（推荐）",
+  "关键阻塞项才问我",
+  "关键节点确认",
+  "严格按资料",
+];
 
 export function inferIntake(prompt: string): IntakeOptions {
-  const hits = detectCategories(prompt);
-  const primary: Category = hits[0] ?? "luxury";
-  const neighborSet: Category[] = unique([
-    ...hits.flatMap((h) => NEIGHBORS[h]),
-    "luxury" as Category,
-    "fashion" as Category,
-    "beauty" as Category,
-  ]).filter((c) => !hits.includes(c));
-
-  const adTypeBase = unique([
-    ...hits.flatMap((h) => AD_TYPES[h]),
-    ...neighborSet.slice(0, 2).flatMap((c) => AD_TYPES[c]),
-    "Problem-Solution（15s 旁白叙述）",
-    "Lifestyle（15s 主角出镜）",
-    "High Energy（标语主导）",
-  ]).slice(0, 6);
-
-  const formatBase = [
-    "9:16 · 30s 竖屏",
-    "16:9 · 15s 横屏",
-    "1:1 · 6s 信息流",
-    "9:16 · 60s 长片",
-  ];
-
-  const visualSourceBase = [
-    "Generate from prompt（自动生成）",
-    "Use uploaded reference（上传参考图）",
-    "Brand asset library（品牌素材库）",
-    "Paste product / brand URL",
-  ];
-
-  const modeBase = [
-    "Auto · 全自动连续推进",
-    "Guided · 关键节点确认",
-    "Manual · 我来逐步把关",
-  ];
-
-  const greetingMap: Record<Category, string> = {
-    auto: "好的，我来帮你制作一支汽车广告片。让我们先确认几个关键信息：",
-    fragrance: "好的，我来帮你制作一支香水广告片。让我们先确认几个关键信息：",
-    beauty: "好的，我来帮你制作一支美妆广告片。让我们先确认几个关键信息：",
-    fashion: "好的，我来帮你制作一支时尚短片。让我们先确认几个关键信息：",
-    tech: "好的，我来帮你制作一支 3C 数码广告片。让我们先确认几个关键信息：",
-    food: "好的，我来帮你制作一支食品饮料广告片。让我们先确认几个关键信息：",
-    luxury: "好的，我来帮你制作一支高端广告片。让我们先确认几个关键信息：",
-  };
+  const lower = prompt.toLowerCase();
+  let defaultType = VIDEO_TYPES[0];
+  if (/(剧集|系列|连续剧|短剧|episode|series)/i.test(lower)) defaultType = "Series · Episodes";
+  else if (/(广告|tvc|brand|品牌)/i.test(lower)) defaultType = "Ad · Brand film";
+  else if (/(ugc|vlog|探店|社交)/i.test(lower)) defaultType = "UGC · Social";
+  else if (/(mv|music|时装)/i.test(lower)) defaultType = "Music · Fashion";
+  else if (/(纪录|科普|讲解|documentary)/i.test(lower)) defaultType = "Documentary · Explainer";
 
   return {
-    adType: [...adTypeBase, OTHERS],
-    format: [...formatBase, OTHERS],
-    visualSource: [...visualSourceBase, OTHERS],
-    mode: [...modeBase, OTHERS],
+    adType: [...VIDEO_TYPES, OTHERS],
+    format: [...FORMATS, OTHERS],
+    visualSource: [...VISUAL_SOURCES, OTHERS],
+    mode: [...MODES, OTHERS],
     defaults: {
-      adType: adTypeBase[0],
-      format: formatBase[0],
-      visualSource: visualSourceBase[0],
-      mode: modeBase[0],
+      adType: defaultType,
+      format: FORMATS[0],
+      visualSource: VISUAL_SOURCES[0],
+      mode: MODES[0],
     },
-    greeting: greetingMap[primary],
+    greeting:
+      "告诉我视频类型与目标，或直接按推荐项继续。我会按 ai-video-studio 流程推进。",
   };
 }
 
