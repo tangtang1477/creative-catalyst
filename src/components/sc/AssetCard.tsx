@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Image as ImageIcon,
   Film,
@@ -14,7 +15,6 @@ import { useSC } from "@/lib/sc/store";
 
 interface Props {
   asset: Asset;
-  /** Compact = used inside MediaRail. */
   compact?: boolean;
   highlighted?: boolean;
 }
@@ -22,9 +22,14 @@ interface Props {
 export function AssetCard({ asset, compact = false, highlighted = false }: Props) {
   const Icon = asset.kind === "image" ? ImageIcon : Film;
   const focusAsset = useSC((s) => s.focusAsset);
+  const [loaded, setLoaded] = useState(false);
 
   const dim =
-    asset.width && asset.height ? `${asset.width}×${asset.height}` : asset.kind === "video" ? "1080×1920" : "—";
+    asset.width && asset.height
+      ? `${asset.width}×${asset.height}`
+      : asset.kind === "video"
+        ? "1080×1920"
+        : "—";
 
   const onOpen = () => {
     focusAsset(asset.id);
@@ -45,14 +50,18 @@ export function AssetCard({ asset, compact = false, highlighted = false }: Props
         highlighted && "[animation:rail-flash_1.5s_ease-out_1]",
       )}
     >
-      {/* media */}
       <div className="relative">
         {asset.kind === "image" && asset.url ? (
           <img
             src={asset.url}
             alt={asset.label}
             loading="lazy"
-            className="block w-full object-cover"
+            onLoad={() => setLoaded(true)}
+            className={cn(
+              "block w-full object-cover transition-[filter,opacity] duration-500",
+              !loaded && "scale-[1.02] opacity-60 blur-lg",
+              loaded && "blur-0 opacity-100",
+            )}
             style={{
               aspectRatio: "9 / 16",
               maxHeight: compact ? 240 : 420,
@@ -96,7 +105,6 @@ export function AssetCard({ asset, compact = false, highlighted = false }: Props
         )}
       </div>
 
-      {/* meta */}
       <div className="space-y-1.5 px-3 py-2.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
@@ -120,7 +128,6 @@ export function AssetCard({ asset, compact = false, highlighted = false }: Props
           {asset.duration && <span>· {asset.duration}</span>}
         </div>
 
-        {/* actions */}
         <div className="flex items-center gap-1 pt-1">
           <SCButton
             variant="chip"
