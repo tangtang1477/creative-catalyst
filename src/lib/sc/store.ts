@@ -170,7 +170,8 @@ export const useSC = create<SCState>((set, get) => {
   const collapseAfter = (id: StageId, delay = 1400) =>
     schedule(() => updateStage(id, { expanded: false }), delay);
 
-  const isAutoFlow = () => get().autoMode === "auto";
+  const isContinuousMode = () =>
+    get().autoMode === "auto" || get().autoMode === "blocker";
 
   /** Persist current task snapshot into taskHistory */
   const persistCurrent = (status: TaskRecord["status"]) => {
@@ -218,8 +219,12 @@ export const useSC = create<SCState>((set, get) => {
     ];
     streamLines("structure", lines, 950, 200, () => {
       updateStage("structure", { status: "ready" });
-      // Both auto and confirm modes pause for user check-in
-      set({ gate: "script" });
+      // guided / strict pause for user check-in; auto / blocker keep going
+      if (isContinuousMode()) {
+        schedule(() => runPaint(), 1200);
+      } else {
+        set({ gate: "script" });
+      }
     });
   };
 
@@ -255,8 +260,11 @@ export const useSC = create<SCState>((set, get) => {
       appendSummary("paint", "A01 Ready · 已锁定为 V01 的 image_url");
       collapseAfter("paint", 1800);
       persistCurrent("running");
-      // Always wait for user confirmation before starting video render
-      set({ gate: "keyframe" });
+      if (isContinuousMode()) {
+        schedule(() => runLife(), 1200);
+      } else {
+        set({ gate: "keyframe" });
+      }
     }, 6200);
   };
 
