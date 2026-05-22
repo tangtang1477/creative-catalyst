@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/sc/Sidebar";
 import { Workspace } from "@/components/sc/Workspace";
 import { MediaRail } from "@/components/sc/MediaRail";
 import { useSC } from "@/lib/sc/store";
+import { useTheme } from "@/hooks/use-theme";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -11,11 +12,11 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   const forceState = useSC((s) => s.forceState);
+  // initialise theme class on root <html>
+  useTheme();
 
-  // Demo state override via ?state=ready|recovering|failed|...
   useEffect(() => {
     if (typeof window === "undefined") return;
-    document.documentElement.classList.add("dark");
     const params = new URLSearchParams(window.location.search);
     const s = params.get("state");
     if (s) forceState(s);
