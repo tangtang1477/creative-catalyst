@@ -16,6 +16,7 @@ import type { StageId, StageState } from "@/lib/sc/types";
 import { STAGE_LABEL } from "@/lib/sc/types";
 import { useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
+import { Collapse } from "./Collapse";
 
 const stageIcon: Record<StageId, typeof Layers> = {
   scene: Layers,
@@ -91,45 +92,56 @@ export function StageRow({
             />
             <ChevronDown
               className={cn(
-                "ml-auto h-3.5 w-3.5 text-muted-foreground transition-transform",
+                "ml-auto h-3.5 w-3.5 text-muted-foreground transition-transform duration-300",
                 expanded && "rotate-180",
               )}
             />
           </div>
-          {expanded && state.summary.length > 0 && (
+
+          <Collapse open={expanded && state.summary.length > 0}>
             <ul className="mt-1.5 space-y-0.5 text-[12.5px] text-muted-foreground">
               {state.summary.map((s, i) => (
-                <li key={i} className="leading-snug">
+                <li
+                  key={`${i}-${s.slice(0, 8)}`}
+                  className="leading-snug [animation:stream-fade_320ms_ease-out_both]"
+                >
                   · {s}
                 </li>
               ))}
             </ul>
-          )}
+          </Collapse>
+
           {!expanded && state.summary.length > 0 && (
             <div className="mt-1 truncate text-[12px] text-muted-foreground">
-              · {state.summary[0]}
+              · {state.summary[state.summary.length - 1]}
             </div>
           )}
         </div>
       </button>
 
-      {(expanded || keepChildrenWhenCollapsed) && children && (
-        <div className="px-3.5 pb-3">{children}</div>
+      {keepChildrenWhenCollapsed ? (
+        children && <div className="px-3.5 pb-3">{children}</div>
+      ) : (
+        <Collapse open={expanded && !!children}>
+          {children && <div className="px-3.5 pb-3">{children}</div>}
+        </Collapse>
       )}
 
-      {expanded && details && (
-        <div className="px-3.5 pb-3">
-          <details className="group rounded-xl border border-border bg-background/40 open:bg-background/60">
-            <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2.5 py-1.5 text-[11.5px] text-muted-foreground hover:text-foreground">
-              <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
-              {detailsLabel}
-            </summary>
-            <div className="px-3 pb-2.5 pt-1 text-[12px] leading-relaxed text-muted-foreground">
-              {details}
-            </div>
-          </details>
-        </div>
-      )}
+      <Collapse open={expanded && !!details}>
+        {details && (
+          <div className="px-3.5 pb-3">
+            <details className="group rounded-xl border border-border bg-background/40 open:bg-background/60">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2.5 py-1.5 text-[11.5px] text-muted-foreground hover:text-foreground">
+                <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
+                {detailsLabel}
+              </summary>
+              <div className="px-3 pb-2.5 pt-1 text-[12px] leading-relaxed text-muted-foreground">
+                {details}
+              </div>
+            </details>
+          </div>
+        )}
+      </Collapse>
     </div>
   );
 }

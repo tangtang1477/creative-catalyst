@@ -10,12 +10,13 @@ import { ApprovalChips } from "./ApprovalChips";
 import { STAGE_ORDER } from "@/lib/sc/types";
 import { KEYFRAME_PROMPT_DETAIL, RECOVERY_NOTES } from "@/lib/sc/samples";
 import { SCButton } from "./Button";
-import { Calendar, GalleryHorizontal, Zap, Loader2 } from "lucide-react";
+import { Calendar, GalleryHorizontal, Zap } from "lucide-react";
 import { Logo } from "./Logo";
 import { DotGridBackground } from "./DotGridBackground";
+import { cn } from "@/lib/utils";
 
 export function Workspace() {
-  const { phase, taskTitle, brief, stages, assets, gate } = useSC();
+  const { phase, taskTitle, brief, stages, assets, gate, rail, setRailOpen } = useSC();
   const a01 = assets.find((a) => a.id === "A01");
   const v01 = assets.find((a) => a.id === "V01");
 
@@ -26,12 +27,16 @@ export function Workspace() {
         <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
           {phase === "empty" ? (
             <span className="flex items-center gap-1.5">
-              <Logo size={14} />
+              <Logo size={14} glow />
               Vibe Aideo · Premium AI ad-video agent
             </span>
           ) : (
             <span className="flex items-center gap-2 text-foreground">
-              <Logo size={14} loading={phase === "running" || phase === "thinking"} />
+              <Logo
+                size={14}
+                loading={phase === "running" || phase === "thinking"}
+                glow={phase === "done"}
+              />
               {taskTitle}
             </span>
           )}
@@ -47,7 +52,15 @@ export function Workspace() {
                 <Calendar className="h-3.5 w-3.5" />
                 Scheduled
               </SCButton>
-              <SCButton variant="ghost" size="sm" className="gap-1.5">
+              <SCButton
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "gap-1.5",
+                  rail.open && "bg-accent/15 text-accent",
+                )}
+                onClick={() => setRailOpen(!rail.open)}
+              >
                 <GalleryHorizontal className="h-3.5 w-3.5" />
                 Gallery
               </SCButton>
@@ -65,7 +78,7 @@ export function Workspace() {
               <div className="flex flex-1 flex-col justify-center pb-20">
                 <div className="mb-5 flex items-start gap-3">
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface-2/70 backdrop-blur ring-1 ring-border-strong">
-                    <Logo size={28} />
+                    <Logo size={28} glow />
                   </div>
                   <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-foreground">
                     Vic, what are we creating today?
@@ -85,11 +98,10 @@ export function Workspace() {
                     {brief.prompt}
                   </div>
                 )}
-                <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-3.5 py-3">
+                <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-3.5 py-3 [animation:stream-fade_320ms_ease-out_both]">
                   <Logo size={20} loading />
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
                   <span className="text-[12.5px] text-muted-foreground">
-                    Thinking…
+                    Thinking<span className="thinking-dots" />
                   </span>
                 </div>
               </div>
@@ -110,7 +122,7 @@ export function Workspace() {
                 )}
 
                 {brief && brief.adType && (
-                  <div className="rounded-2xl border border-border bg-surface px-3.5 py-3 text-[12.5px]">
+                  <div className="rounded-2xl border border-border bg-surface px-3.5 py-3 text-[12.5px] [animation:stream-fade_320ms_ease-out_both]">
                     <div className="mb-1.5 font-medium">Selected Brief</div>
                     <ul className="space-y-0.5 text-muted-foreground">
                       <li>· Ad type: {brief.adType}</li>

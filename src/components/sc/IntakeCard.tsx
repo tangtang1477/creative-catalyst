@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { SCButton } from "./Button";
 import { useSC } from "@/lib/sc/store";
 import { Loader2 } from "lucide-react";
-import { inferIntake } from "@/lib/sc/intake-engine";
+import { inferIntake, OTHERS_LABEL } from "@/lib/sc/intake-engine";
+import { OthersChip } from "./OthersChip";
 
 const titles = {
   adType: "1. 你想要哪种风格的广告？",
@@ -27,6 +28,13 @@ export function IntakeCard() {
     mode: intake.defaults.mode,
   });
 
+  const [customs, setCustoms] = useState<Record<Key, string[]>>({
+    adType: [],
+    format: [],
+    visualSource: [],
+    mode: [],
+  });
+
   const onContinue = () => {
     confirmBrief({
       prompt: brief?.prompt ?? "",
@@ -45,7 +53,7 @@ export function IntakeCard() {
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 [animation:stream-fade_320ms_ease-out_both]">
       <div className="ml-auto w-fit max-w-[80%] rounded-2xl bg-surface-2 px-3.5 py-2 text-[13px]">
         {brief?.prompt}
       </div>
@@ -54,26 +62,36 @@ export function IntakeCard() {
         <div className="text-[13px] text-foreground/85">{intake.greeting}</div>
 
         <div className="mt-4 space-y-4">
-          {groups.map((g) => (
-            <div key={g.key}>
-              <div className="text-[12.5px] font-medium text-foreground/90">
-                {titles[g.key]}
+          {groups.map((g) => {
+            const baseOpts = g.options.filter((o) => o !== OTHERS_LABEL);
+            const allOpts = [...baseOpts, ...customs[g.key]];
+            return (
+              <div key={g.key}>
+                <div className="text-[12.5px] font-medium text-foreground/90">
+                  {titles[g.key]}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {allOpts.map((opt) => (
+                    <SCButton
+                      key={opt}
+                      variant="chip"
+                      size="sm"
+                      selected={sel[g.key] === opt}
+                      onClick={() => setSel((p) => ({ ...p, [g.key]: opt }))}
+                    >
+                      {opt}
+                    </SCButton>
+                  ))}
+                  <OthersChip
+                    onConfirm={(v) => {
+                      setCustoms((p) => ({ ...p, [g.key]: [...p[g.key], v] }));
+                      setSel((p) => ({ ...p, [g.key]: v }));
+                    }}
+                  />
+                </div>
               </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {g.options.map((opt) => (
-                  <SCButton
-                    key={opt}
-                    variant="chip"
-                    size="sm"
-                    selected={sel[g.key] === opt}
-                    onClick={() => setSel((p) => ({ ...p, [g.key]: opt }))}
-                  >
-                    {opt}
-                  </SCButton>
-                ))}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="mt-5 flex items-center justify-end gap-2">

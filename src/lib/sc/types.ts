@@ -75,3 +75,5 @@ export type Phase =
   | "failed";
 
 export type Gate = "script" | "keyframe" | null;
+
+export type AutoMode = "auto" | "confirm";

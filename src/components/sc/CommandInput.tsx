@@ -1,9 +1,10 @@
 import { useState, type KeyboardEvent } from "react";
-import { Plus, ArrowUp, ChevronDown, Square } from "lucide-react";
+import { Plus, ArrowUp, Square } from "lucide-react";
 import { SCButton } from "./Button";
 import { useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
-import { Logo } from "./Logo";
+import { ModelMenu } from "./ModelMenu";
+import { AutoRunMenu } from "./AutoRunMenu";
 
 interface Props {
   placeholder?: string;
@@ -11,8 +12,13 @@ interface Props {
 }
 
 export function CommandInput({ placeholder = "Enter Command", compact = false }: Props) {
-  const { submit, phase, cancel } = useSC();
-  const [value, setValue] = useState("");
+  const { submit, phase, cancel, prompt } = useSC();
+  const [value, setValue] = useState(prompt ?? "");
+
+  // sync external prompt setter (e.g. SuggestionChips)
+  if (prompt && prompt !== value && !value) {
+    setValue(prompt);
+  }
 
   const isProcessing = phase === "running";
   const isThinking = phase === "thinking";
@@ -48,44 +54,59 @@ export function CommandInput({ placeholder = "Enter Command", compact = false }:
         )}
       />
       <div className="flex items-center justify-between gap-2 px-2 pb-2">
-        <div className="flex items-center gap-1">
-          <SCButton variant="icon" size="icon" aria-label="attach" disabled={inputDisabled}>
+        <div className="flex items-center gap-1.5">
+          {/* circular outlined Plus */}
+          <button
+            type="button"
+            aria-label="attach"
+            disabled={inputDisabled}
+            className={cn(
+              "inline-flex h-7 w-7 items-center justify-center rounded-full border border-border bg-transparent text-foreground/75 outline-none transition-all",
+              "hover:border-accent/60 hover:bg-surface-2 hover:text-accent",
+              "active:scale-95",
+              "focus-visible:ring-2 focus-visible:ring-accent",
+              "disabled:pointer-events-none disabled:opacity-50",
+            )}
+          >
             <Plus className="h-3.5 w-3.5" />
-          </SCButton>
-          <SCButton variant="ghost" size="sm" className="gap-1.5" disabled={inputDisabled}>
-            <Logo size={14} loading={isThinking || isProcessing} />
-            <span>Vibe Aideo</span>
-            <span className="text-muted-foreground">v1</span>
-            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-          </SCButton>
+          </button>
+          <ModelMenu disabled={inputDisabled} />
         </div>
-        <div className="flex items-center gap-1">
-          <SCButton variant="ghost" size="sm" className="gap-1" disabled={inputDisabled}>
-            <span>Auto Run</span>
-            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-          </SCButton>
+        <div className="flex items-center gap-2">
+          <AutoRunMenu disabled={inputDisabled} />
           {isProcessing ? (
-            <SCButton
-              variant="primary"
-              size="icon"
+            <button
+              type="button"
               aria-label="cancel"
               onClick={cancel}
+              className={cn(
+                "inline-flex h-9 w-9 items-center justify-center rounded-full bg-accent text-accent-foreground outline-none transition-all",
+                "hover:brightness-110 hover:shadow-[0_0_12px_rgba(113,240,246,0.5)]",
+                "active:scale-95",
+                "focus-visible:ring-2 focus-visible:ring-accent",
+              )}
             >
               <Square className="h-3.5 w-3.5 fill-current" />
-            </SCButton>
+            </button>
           ) : (
-            <SCButton
-              variant="primary"
-              size="icon"
+            <button
+              type="button"
               aria-label="send"
               disabled={!value.trim() || inputDisabled}
               onClick={() => {
                 submit(value);
                 setValue("");
               }}
+              className={cn(
+                "inline-flex h-9 w-9 items-center justify-center rounded-full bg-accent text-accent-foreground outline-none transition-all",
+                "hover:brightness-110 hover:shadow-[0_0_12px_rgba(113,240,246,0.5)]",
+                "active:scale-95",
+                "focus-visible:ring-2 focus-visible:ring-accent",
+                "disabled:pointer-events-none disabled:opacity-40 disabled:bg-surface-2 disabled:text-muted-foreground disabled:shadow-none",
+              )}
             >
               <ArrowUp className="h-4 w-4" />
-            </SCButton>
+            </button>
           )}
         </div>
       </div>

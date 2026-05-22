@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { SCButton } from "./Button";
 import { useSC } from "@/lib/sc/store";
+import { OthersChip } from "./OthersChip";
 
 const chips = [
   { id: "build", label: "Build with skills", icon: Hammer, badge: "New" },
@@ -54,6 +55,7 @@ export function SuggestionChips() {
           <Import className="h-3.5 w-3.5" />
           <span>Import skills & memory</span>
         </SCButton>
+        <OthersChip onConfirm={(v) => setPrompt(v)} />
       </div>
 
       <div className="space-y-2 pt-1">

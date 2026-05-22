@@ -1,99 +1,113 @@
-## 一、品牌与文案替换
-- 全局把 `Supercomputer` 替换为 `Vibe Aideo`（涉及 `Sidebar.tsx` 标题、`taskTitle` 默认值、注释、`plan.md` 描述等）。
-- Greeting 文案改为 `Vic, what are we creating today?`；store 中 user 名（侧栏邮箱区）改为 `Victoria` / `Victoria@gmail.com`。
-- 侧栏底部用户区已有 truncate 省略号，**新增 hover 时用 Tooltip（shadcn `tooltip.tsx`）展示完整 `Victoria@gmail.com` 与昵称**。
 
-## 二、Logo 替换为玻璃 M
-- 把 `user-uploads://透明背景玻璃质感M字母logo.png` 复制到 `src/assets/logo-m.png`。
-- 新增 `src/components/sc/Logo.tsx`：渲染 `<img>`，尺寸 24×24，带可选 `loading` prop。
-- `loading=true` 时叠加 CSS 动画 `@keyframes logoShimmer`：透明度 `0.55 → 1 → 0.55` + `drop-shadow` 在 `0 0 0` 与 `0 0 12px hsl(var(--accent))` 间脉动，1.4s ease-in-out infinite。
-- 替换位置：Sidebar 顶部、Workspace 顶 bar `Sparkles` 占位、Empty state 大图标（48×48）。任何 `phase==='running'` 的阶段都把 logo 切到 loading 态。
+## 1. 替换 Logo（新玻璃胶片质感 M）
+- 用上传的 `user-uploads://Image_1.png` 覆盖 `src/assets/logo-m.png`（带青→紫渐变胶片质感）。
+- `Logo.tsx` 新增 `glow` prop（默认 false）。`glow=true` 时叠加：
+  - `filter: drop-shadow(0 0 8px rgba(113,240,246,.55)) drop-shadow(0 0 16px rgba(180,120,255,.4))`
+  - 同时套用现有 `logo-shimmer`（呼吸 + 渐变发光）keyframes（在 `styles.css` 中扩展为透明度 + drop-shadow 双轨动画 1.8s ease-in-out infinite）。
+- Empty 状态输入框上方的 48px Logo 默认就开 `glow`（恒定眩光，不依赖 loading）。
+- 删除 Sidebar 左下角 Tooltip（见第 2 点）。
 
-## 三、主题色 #71F0F6
-- `src/styles.css` 把 `--accent` 改为 `oklch(0.87 0.12 195)`（≈#71F0F6），`--accent-foreground` 取近黑；同步更新 `--ring` 与 `--status-generating` 使用 accent。
-- 旧 `oklch(0.78 0.12 195)` 全部清掉。验证 SCButton primary、chip selected、focus ring、StatusBadge generating、StageRow 进行中线条色都跟着变。
+## 2. 移除头像 Hover 信息
+- `Sidebar.tsx` 把底部用户区的 `TooltipProvider/Tooltip/TooltipTrigger/TooltipContent` 全部去掉，恢复成纯 `<div>` 容器，邮箱保留 truncate（hover 不再展开提示卡）。
 
-## 四、Empty 背景：鼠标跟随点阵
-新建 `src/components/sc/DotGridBackground.tsx`，移植自 `AI Video Weaver` 的 `DotGrid.tsx`：
-- canvas 全屏绝对定位（`absolute inset-0 pointer-events-none`），父容器监听 `mousemove`/`mouseleave` 写入 `mouseRef`。
-- 每 24px 画一个白色点（基础 `rgba(255,255,255,0.06)`），距光标 90px 内做二次方衰减放大并提亮；亮区颜色用 accent `rgba(113,240,246,...)` 取代纯白以匹配主题。
-- 仅在 `phase==='empty'` 时挂载（包裹 Greeting + CommandInput + SuggestionChips 的容器内），`phase` 切换后卸载停止 rAF。
-- Workspace 在 empty 分支根容器加 `relative` 并把 DotGridBackground 放到内容下方一层。
+## 3. 输入框头部加号 & 模型下拉重做（按上传图 2）
+- `CommandInput.tsx` 把左侧 Plus icon button 改为：`h-7 w-7 rounded-full border border-border bg-transparent hover:bg-surface-2 hover:border-accent/60 active:scale-95`（带描边的圆形 button，3 态完整）。
+- 中间模型选择器改为 shadcn `DropdownMenu`：
+  - Trigger：`<Logo size={14} glow /> Claude  Sonnet 4.6  ▾`（默认显示 Claude Sonnet 4.6，模型名称重一些，子版本号 muted）。
+  - 菜单内容按图 2 分组：
+    - 区段标题 `Claude`（带 spark icon）：`Sonnet 4.6`（默认选中，行尾打勾）、`Opus 4.6`、`Opus 4.7`（行尾带 `Upgrade` accent chip）
+    - 分割线 + 区段标题 `Google`（带 G icon）：`Gemini 3.1 Pro`
+    - 分割线 + 区段标题 `OpenAI`（带 OpenAI icon）：`GPT-5.5`、`GPT-5 mini`
+  - 样式：`rounded-2xl bg-surface border-border` 圆角阴影，选项 `hover:bg-surface-2 rounded-xl`，选中态文本 `text-foreground` + 末尾 `Check`，其他文本 `text-muted-foreground`。
+  - 状态用 useState 本地存 `selectedModel`（默认 `Claude Sonnet 4.6`）。
 
-## 五、按钮三态视觉重做
-- 修改 `src/components/sc/Button.tsx` 的 cva：
-  - 圆角统一 `rounded-xl`（chip/sm `rounded-lg` → `rounded-xl`，primary `rounded-md` → `rounded-xl`）。
-  - `chip` 默认态：去掉 border，改 `bg-surface-2`（纯色），文字 `text-foreground/85`。
-  - `chip` hover：`bg-accent/15 text-accent`，无 border，过渡 150ms。
-  - `chip` active：`bg-accent/25 scale-[0.98]`。
-  - `chip` selected：`bg-accent text-accent-foreground` 实色，去掉描边方案。
-  - `outline` 变体保留但仅用于 sidebar Pricing；其它原 outline 用法换为新 `chip` 默认。
-- IntakeCard、SuggestionChips、NextActionChips 的 chip 不再加额外 border 类。
-- focus-visible 仍保留 2px accent ring，disabled 保留 `opacity-50`。
+## 4. New Task 重置到全新 Empty 页
+- `Sidebar.tsx` 的 New task 按钮已绑定 `reset`，但当前 `reset` 没清 `gate` 之外的"recent tasks"高亮。本次仅确认：点击后 store 进入 `phase: 'empty'`、清空 brief/assets/stages/rail/timers，关闭侧栏当前任务的 active 高亮（隐藏当前 task 行的逻辑已有 `phase !== 'empty'` 判断）。
+- 额外：`reset()` 中增加 `set({ rail: { open: false, flashId: undefined, focusedAssetId: undefined } })`，并清掉 `gate: null`。点击 `+ New task` 同时触发一次轻动画（CommandInput key 重置），保证 textarea 内容也清空。
 
-## 六、Prompt 驱动的智能 Intake
-现状：IntakeCard 选项写死。改为根据用户 prompt 推断品类，动态注入相关候选。
-- 新增 `src/lib/sc/intake-engine.ts`：
-  - 关键词字典：`{ 汽车|car|轿车|SUV: ['汽车广告','试驾片'], 香水|fragrance|perfume: ['香水广告'], 美妆|cosmetic|口红: ['美妆广告'], 食品|饮料|coffee: ['食品广告'], 服装|时装|fashion: ['时尚大片'], 数码|手机|laptop: ['3C 数码广告'] }`。
-  - `inferIntake(prompt)` 返回 `{ adType: string[], format: string[], visualSource: string[], mode: string[] }`，每组先放命中类目，再补 2-3 个相邻类目（例如「汽车广告」也带上「香水广告」「3C 数码广告」作为可切换备选），然后通用项兜底。
-  - Format 始终含 `9:16 30s / 16:9 15s / 1:1 6s`；Visual source 含 `Generate from prompt / Use uploaded reference / Brand asset library`；Mode 含 `Auto / Guided / Manual`。
-- IntakeCard 接受 `brief.prompt`，调用 `inferIntake` 渲染 chip 列表；首项默认选中。
+## 5. Auto Run 下拉 + 发送按钮（按上传图 3）
+- `CommandInput.tsx` 右下 Auto Run 改为 shadcn `DropdownMenu`：
+  - Trigger：纯文字 `Auto Run ▾`，`rounded-full px-3 h-7 bg-surface-2 hover:bg-accent/15 hover:text-accent`。
+  - 菜单两项：
+    1. `Auto-run without asking`（icon = Check 圈，末尾打勾标记选中）
+    2. `Confirm before running`（icon = ✋ 手势）
+  - 选中态写入 store `autoMode: 'auto' | 'confirm'`，影响 `isFullAuto` 判断（auto 模式跳过 intake 与 gate）。
+- 发送按钮：固定 `rounded-full h-9 w-9 bg-accent text-background hover:brightness-110 active:scale-95`，icon 为 `ArrowUp`；hover 时加 accent 光晕 `shadow-[0_0_12px_rgba(113,240,246,.5)]`。
+- Auto Run 与 Send 之间间距 8px，整体右对齐，垂直居中（与图 3 一致）。
 
-## 七、首 token 加载延迟
-- `store.ts` 的 `submit()`：在切到 `intake` 或 `running` 之前先进入新中间态 `phase==='thinking'`（800–1500ms 随机），期间 CommandInput 禁用 + 显示「Thinking…」气泡（带 logo loading shimmer）。
-- 之后再按现有逻辑跳到 intake 或 running。所有 simulate 阶段在此之后才开始计时。
-- Workspace 在 `phase==='thinking'` 渲染一个 ghost StageRow（"Building the scene" generating）以模拟首条流式回包。
+## 6. 丝滑展开/收起
+- 新建 `src/components/sc/Collapse.tsx`：基于 max-height + opacity 的纯 CSS 过渡组件（`transition-[max-height,opacity] duration-300 ease-out`，闭合时 `max-h-0 opacity-0 overflow-hidden`）。组件内 `useRef` 测量内容高度后写 `--collapse-h`。
+- 替换 `StageRow.tsx` 中 `expanded && (...)` 的硬条件：summary、children、details 区都用 `<Collapse open={...}>` 包裹，闭合时高度动画到 0（媒体卡使用 `keepChildrenWhenCollapsed` 时不进入 Collapse，仅 details 区折叠）。
+- `MediaRail.tsx`：
+  - `Group` 内 children 区也用 `<Collapse>` 包裹分组折叠动画。
+  - Rail 整体抽屉打开/关闭加 `transition-transform duration-300 ease-out`：`open ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'`，在 `<lg` 时为抽屉滑入，`>=lg` 时仍可被 Gallery 按钮折叠（见下）。
+- Workspace 顶 bar 的 `Gallery` 按钮绑定 `setRailOpen(!rail.open)`，并按 `rail.open` 切换 `selected` 视觉态（accent 背景）。`>=lg` 也支持折叠：Rail 容器追加 `lg:w-[340px] lg:data-[open=false]:w-0 lg:overflow-hidden transition-[width] duration-300`，通过 `data-open` 控制。
 
-## 八、阶段展开/收起规则（贴合视频）
-对 `StageRow`：
-- 新增 `autoCollapseOnReady` prop。规则：
-  - **Building the scene / Structuring the film / Adding the details**：`status==='generating'` 时自动展开思考摘要；`ready` 后 1.2s 自动折叠（仅保留标题 + 1 行总结）。
-  - **Painting the frame / Bringing it to life**：生成中展开（显示 prompt details、进度条、占位卡），`ready` 后**保留媒体可见**，但把 prompt/recovery 文本收回到 `<details>`。
-- store 中每个 stage 增加 `expanded: boolean`，`setStageStatus('xxx','ready')` 后 setTimeout 1200ms 切 `expanded=false`（媒体不受影响，渲染独立判断）。
-- 用户点击 chevron 可手动 toggle，覆盖自动行为。
+## 7. 流式输出 + 更真实的 Loading
+- `store.ts` 新增辅助 `streamText(target: 'stage'|..., id, lines: string[], perCharMs=18)`：把 `summary` 数组按字符逐步追加到 stage 的最后一行；用 setTimeout 链推进，并把句末换行作为下一条 summary 起点。
+- 每个 stage 的 summary 改为通过 `streamText` 写入，而非一次性 `markStageReady`。具体节奏：
+  - `scene`：先写 "正在分析 brand brief…" → 1.4s 后继续追加 "锁定情绪 = premium twilight" → 0.8s 后第三行；总耗时 ~3.2s。
+  - `structure`：6 行脚本逐行流出，每行 ~1s；ScriptTable/StoryboardTable 也按行 fade-in（用 `animation: streamFade 300ms ease-out backwards; animation-delay: i*120ms`）。
+  - `paint`：A01 状态 `Queued → Generating(2s) → Processing(2.5s) → Ready(2s)`，总计 ~6.5s；ready 后 keyframe 图片用 blur-up（先 `filter:blur(20px)`，加载后过渡到 0）。
+  - `life`：V01 `Queued(1s) → Processing(3s) → Status checked(2s) → Ready(2s)`，~8s。
+  - `details`：QC 条目按 ✓ 一项项流出，每项 400ms。
+- `thinking` 阶段延长到 1.5–2.5s 随机；期间 `Thinking…` 文案做 3 阶 ellipsis 动画。
+- 新增 CSS：`@keyframes streamFade { from { opacity:0; translate:0 4px } to { opacity:1; translate:0 0 } }`、`@keyframes blurUp { from { filter: blur(18px); opacity:.5 } to { filter:blur(0); opacity:1 } }`。
+- `AssetCard.tsx` 加载图片用 `<img onLoad>` 触发 blurUp。
+- StageRow 的 summary 列表逐行 enter 用 `streamFade`（key 改动时新行 fade-in）。
 
-## 九、需要用户确认的节点
-- IntakeCard 的 Continue 是显式确认（保留）。
-- 新增「Storyboard 确认条」：`structure` ready 后底部出现 `Approve script & continue / Tweak` 两个 chip；只有点 Approve 才开始 `paint`。`Tweak` 切回 intake 重选 format/mode。
-- A01（keyframe）ready 后出现 `Use this keyframe / Regenerate` 两个 chip；只有 Use 才进入 `life` 阶段。
-- 这两个 gating 通过 store 新增 `gates: { script:boolean, keyframe:boolean }` 控制 simulate 链是否继续。
+## 8. 每组选项都加 Others
+- `intake-engine.ts`：`adType / format / visualSource / mode` 四组返回末尾都追加常量 `"Others…"`。
+- `IntakeCard.tsx`：当用户点击某组的 `Others…` 时，把该 chip 换成行内 `<input>`（`autoFocus`，回车或 blur 后写入 `sel[group]` 并替换为新自定义 chip 显示，下方仍保留 `Others…` 入口以便再次自定义）。
+- 视觉：`Others…` chip 用 dashed 风格 → `bg-transparent border border-dashed border-border text-muted-foreground hover:border-accent hover:text-accent`（仅这一项例外允许 border，区分语义）。
+- 同步：`SuggestionChips.tsx` 顶部 chip 行末尾追加一个 `Others…` chip，点击展开本地输入弹层（reuse 同样 inline 输入逻辑，回车 → `setPrompt(custom)`）。
 
-## 十、首次素材出现自动展开 MediaRail
-- store 新增 `rail: { open: boolean, focusedAssetId?: string }`。
-- 当任意 asset 第一次进入 `ready`（A01 是首次），dispatch `openRail(asset.id)`。
-- `MediaRail.tsx`：`<lg` 时为抽屉，`open` 触发滑入动画（`translate-x-full → 0`，250ms ease-out）。`>=lg` 时一直可见但首次出现做高亮闪动（accent ring 1.5s 一次后淡出）。
-- 每张资产卡接受 `focusedAssetId`，匹配时滚动到视图并加 `ring-2 ring-accent`。
+---
 
-## 十一、MediaRail 信息排布（便于 navigate）
-重新设计 `AssetCard` + Rail 布局：
+## 技术细节
+
+### 文件改动
+- **新增**：`src/components/sc/Collapse.tsx`、`src/components/sc/ModelMenu.tsx`、`src/components/sc/AutoRunMenu.tsx`、`src/components/sc/OthersChip.tsx`。
+- **修改**：
+  - `src/assets/logo-m.png`（覆盖为新图）
+  - `src/components/sc/Logo.tsx`（新增 glow prop）
+  - `src/styles.css`（logo-shimmer 升级 + streamFade/blurUp/ellipsis keyframes）
+  - `src/components/sc/Sidebar.tsx`（去 Tooltip + 强化 reset）
+  - `src/components/sc/CommandInput.tsx`（圆形 Plus + ModelMenu + AutoRunMenu + 圆形 Send）
+  - `src/components/sc/Workspace.tsx`（顶 Logo 加 glow / Gallery 按钮联动 rail / 流式 ghost 渲染）
+  - `src/components/sc/StageRow.tsx`（用 Collapse + 行级 streamFade）
+  - `src/components/sc/MediaRail.tsx`（Collapse 分组 + 桌面端 width 折叠 + 抽屉滑入）
+  - `src/components/sc/IntakeCard.tsx`（Others 自定义）
+  - `src/components/sc/SuggestionChips.tsx`（追加 Others chip）
+  - `src/components/sc/AssetCard.tsx`（blur-up 加载）
+  - `src/lib/sc/intake-engine.ts`（每组追加 Others…）
+  - `src/lib/sc/store.ts`（streamText 工具 + autoMode 状态 + setAutoMode + reset 增强 + 各阶段流式时序）
+  - `src/lib/sc/types.ts`（Brief 内可选 `Others`，无破坏性改动；新增 `AutoMode = 'auto'|'confirm'`）
+
+### 关键时序总览
+```text
+Empty → submit
+  → thinking (1.5–2.5s, 文字 ellipsis 动画)
+  → intake（除非 autoMode='auto'）
+  → running:
+     scene     ~3.2s (3 行流式)
+     structure ~6.0s (6 行流式 + 表格逐行 fade-in) → gate(script) 等待确认
+     paint     ~6.5s (A01 4 状态切换 + blur-up) → gate(keyframe) 等待确认
+     life      ~8.0s (V01 4 状态切换)
+     details   ~2.0s (QC ✓ 逐条)
+  → done
 ```
-┌────────────────────────────┐
-│  [缩略 16:9 / 9:16 自适应] │
-│  ▢ A01 · Keyframe          │  <- 编号 + 类型 chip
-│  Status: Ready  · 1280×720 │
-│  00:04 generated           │
-│  [Open ▸] [Replace] [↧]    │  <- 三个 icon button
-└────────────────────────────┘
-```
-- 顶部 sticky 分组标题：`Images (1)` / `Videos (1)`，点击 chevron 折叠分组。
-- 每张卡 `onClick` → 中央 timeline 滚动到对应 StageRow 并高亮 1s（实现：StageRow 接受 `data-asset-id`，rail 调 `scrollIntoView({ block:'center' })` + 临时加 `ring-2 ring-accent`）。
-- 视频卡显示 `▶` 覆盖层 + 时长 badge；图片卡显示 `🅺` keyframe 标记。
-- 底部固定 mini progress：`2 / 5 stages · 1 image · 1 video`。
 
-## 十二、技术细节
-- 所有改动只在前端：`src/components/sc/*`、`src/lib/sc/*`、`src/styles.css`、`src/routes/index.tsx`。
-- 新建文件：`Logo.tsx`、`DotGridBackground.tsx`、`intake-engine.ts`、`ApprovalChips.tsx`。
-- 修改：`Button.tsx`（变体）、`Sidebar.tsx`（logo + 邮箱 tooltip + Vibe Aideo）、`Workspace.tsx`（thinking 态 + DotGrid + gating）、`IntakeCard.tsx`（动态选项）、`StageRow.tsx`（auto-collapse）、`MediaRail.tsx`（自动展开 + 分组 + 跳转）、`AssetCard.tsx`（信息排布）、`store.ts`（thinking phase + gates + rail）、`samples.ts`（去掉硬编码品类）、`types.ts`（新 phase）、`styles.css`（accent 调色）。
-- shadcn 组件复用：`tooltip` 用于邮箱、`collapsible` 已可继续用于 details。
+### 不改动
+- 后端、路由、整体布局结构、theme token (#71F0F6) 等保持不变。
+- 已有的 `?state=` 调试入口保留可用。
 
-## 十三、验收
-1. 全站无「Supercomputer」字样，logo 是玻璃 M，loading 时呼吸闪烁。
-2. Greeting 显示 `Vic, what are we creating today?`，左下角邮箱 hover 完整展开。
-3. 主题色取色卡是 #71F0F6（hover/selected/ring/status 一致）。
-4. Empty 状态鼠标移动有点阵高亮跟随，离开淡出。
-5. 输入「汽车广告」后 1–2s 出现 thinking → intake，候选包含汽车 + 香水 + 数码相邻品类；输入「香水」时香水排首位。
-6. 所有按钮默认无描边、圆角 ≥12px、hover 高亮、active 缩放、focus 有 ring、disabled 灰显。
-7. 思考型阶段 ready 后自动收起摘要；媒体阶段保留资产可见。
-8. Script ready 与 A01 ready 都有显式确认 chip 才推进。
-9. 首张 A01 出现时右侧 MediaRail 自动展开 + 高亮闪一次；点击卡片能跳到中央对应阶段。
-10. Rail 卡片含编号、类型、尺寸、时长、状态、操作按钮，分组清晰。
+## 验收
+1. Logo 是新青紫胶片 M；Empty 输入框上方 logo 持续眩光呼吸；侧栏/topbar logo 在 thinking/running 时呼吸。
+2. 左下角头像 hover 不再弹出任何浮层。
+3. 加号是圆形描边 button（hover accent 描边、active 缩放）；模型选择器默认 `Claude Sonnet 4.6`，下拉按图 2 分组展示并能切换。
+4. 点击 New task 立即回到全新 Empty 页（输入清空、assets/stages/rail 全部归零）。
+5. Auto Run 下拉两项可切换；右侧 Send 是圆形 accent 按钮，hover 有光晕、active 缩放。
+6. 所有 chevron 展开/收起都有 300ms max-height 过渡；点击 Gallery 可平滑展开/收起右侧素材区。
+7. 进入流程后所有文字逐字 / 逐行流出；图片有 blur-up；视频进度有多状态切换；总流程 > 25s 模拟真实生成。
+8. Intake 与 Suggestion 的每组末尾都有 `Others…`（虚线 chip），点击可内联输入自定义内容并被选中。
