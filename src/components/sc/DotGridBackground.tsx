@@ -122,9 +122,9 @@ export function DotGridBackground() {
       className="pointer-events-none fixed inset-0 z-0"
       style={{
         maskImage:
-          "radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 95%)",
+          "radial-gradient(ellipse at center, rgba(0,0,0,1) 45%, rgba(0,0,0,0) 92%)",
         WebkitMaskImage:
-          "radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 95%)",
+          "radial-gradient(ellipse at center, rgba(0,0,0,1) 45%, rgba(0,0,0,0) 92%)",
       }}
     />
   );
