@@ -19,14 +19,14 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/use-theme";
 
 const USER = {
-  name: "Vic",
+  name: "Victoria@gmail.com",
   email: "Victoria@gmail.com",
-  workspace: "galileo_slug_500",
+  workspace: "Victoria@gmail.com",
   plan: "Plus Plan",
 };
 
 export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, toggle } = useTheme();
   const [credits] = useState(58);
   const maxCredits = 100;
   const filledDots = Math.round((credits / maxCredits) * 20);
@@ -34,7 +34,7 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
   return (
     <HoverCard openDelay={120} closeDelay={120}>
       <HoverCardTrigger asChild>
-        <button
+        <div
           className={cn(
             "flex w-full items-center gap-2 rounded-xl px-1.5 py-1 text-left outline-none transition-colors",
             "hover:bg-surface-2",
@@ -50,12 +50,27 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
             <>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[12px] font-medium text-foreground">{USER.name}</div>
-                <div className="truncate text-[10.5px] text-muted-foreground">{USER.email}</div>
+                <div className="truncate text-[10.5px] text-muted-foreground">{USER.plan}</div>
               </div>
-              <Settings className="h-3.5 w-3.5 text-muted-foreground" />
+              <button
+                type="button"
+                aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  toggle();
+                }}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+              >
+                {theme === "dark" ? (
+                  <Moon className="h-3.5 w-3.5" />
+                ) : (
+                  <Sun className="h-3.5 w-3.5" />
+                )}
+              </button>
             </>
           )}
-        </button>
+        </div>
       </HoverCardTrigger>
 
       <HoverCardContent
