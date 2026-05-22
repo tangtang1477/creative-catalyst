@@ -207,14 +207,8 @@ export const useSC = create<SCState>((set, get) => {
     ];
     streamLines("structure", lines, 950, 200, () => {
       updateStage("structure", { status: "ready" });
-      if (isAutoFlow()) {
-        schedule(() => {
-          collapseAfter("structure", 100);
-          runPaint();
-        }, 1200);
-      } else {
-        set({ gate: "script" });
-      }
+      // Both auto and confirm modes pause for user check-in
+      set({ gate: "script" });
     });
   };
 
@@ -250,12 +244,8 @@ export const useSC = create<SCState>((set, get) => {
       appendSummary("paint", "A01 Ready · 已锁定为 V01 的 image_url");
       collapseAfter("paint", 1800);
       persistCurrent("running");
-
-      if (isAutoFlow()) {
-        schedule(() => runLife(), 1700);
-      } else {
-        set({ gate: "keyframe" });
-      }
+      // Always wait for user confirmation before starting video render
+      set({ gate: "keyframe" });
     }, 6200);
   };
 
