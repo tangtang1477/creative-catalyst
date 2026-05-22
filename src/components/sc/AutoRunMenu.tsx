@@ -14,7 +14,7 @@ interface Props {
 
 export function AutoRunMenu({ disabled }: Props) {
   const { autoMode, setAutoMode } = useSC();
-  const label = autoMode === "auto" ? "Auto Run · Auto" : "Auto Run · Confirm";
+  const label = autoMode === "auto" ? "Auto Run" : "Confirm";
 
   return (
     <DropdownMenu>
