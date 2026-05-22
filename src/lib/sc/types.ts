@@ -78,7 +78,7 @@ export type Phase =
 
 export type Gate = "script" | "keyframe" | null;
 
-export type AutoMode = "auto" | "confirm";
+export type AutoMode = "auto" | "blocker" | "guided" | "strict";
 
 export type TaskKind = "oneoff" | "series";
 
