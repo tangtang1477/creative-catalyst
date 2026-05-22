@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 interface Props {
   value: string;
   caret: number;
-  anchorRef: React.RefObject<HTMLTextAreaElement>;
+  anchorRef: React.RefObject<HTMLTextAreaElement | null>;
   onPick: (insertText: string, replaceFrom: number, replaceTo: number) => void;
 }
 
