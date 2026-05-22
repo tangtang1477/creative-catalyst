@@ -508,6 +508,9 @@ export const useSC = create<SCState>((set, get) => {
         attachments: [],
         gate: null,
         rail: { open: false, flashId: undefined, focusedAssetId: undefined },
+        intakeSel: {},
+        intakeCustoms: {},
+        intakeOthers: null,
       }));
     },
 
