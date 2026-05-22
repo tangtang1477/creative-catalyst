@@ -7,6 +7,7 @@ import { ScriptTable, StoryboardTable } from "./ScriptTable";
 import { AssetCard } from "./AssetCard";
 import { QualityCheck } from "./QualityCheck";
 import { ApprovalChips } from "./ApprovalChips";
+import { SeriesBible } from "./SeriesBible";
 import { STAGE_ORDER } from "@/lib/sc/types";
 import { KEYFRAME_PROMPT_DETAIL, RECOVERY_NOTES } from "@/lib/sc/samples";
 import { SCButton } from "./Button";
@@ -76,13 +77,22 @@ export function Workspace() {
           <div className="mx-auto flex min-h-full w-full max-w-[760px] flex-col px-6 py-6">
             {phase === "empty" && (
               <div className="flex flex-1 flex-col justify-center pb-20">
+                <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-accent/85">
+                  <span className="h-1 w-1 rounded-full bg-accent shadow-[0_0_6px_var(--accent)]" />
+                  Using skill ai-video-studio
+                </div>
                 <div className="mb-5 flex items-start gap-3">
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface-2/70 backdrop-blur ring-1 ring-border-strong">
                     <Logo size={28} glow />
                   </div>
-                  <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-foreground">
-                    Victoria, what are we creating today?
-                  </h1>
+                  <div className="min-w-0 flex-1">
+                    <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-foreground">
+                      Victoria, what are we creating today?
+                    </h1>
+                    <p className="mt-1 text-[13px] text-muted-foreground">
+                      告诉我类型和目标，或直接选下面的方向 — 短片、剧集、广告、MV、纪录、UGC 都行。
+                    </p>
+                  </div>
                 </div>
                 <CommandInput />
                 <div className="mt-4">
@@ -123,15 +133,22 @@ export function Workspace() {
 
                 {brief && brief.adType && (
                   <div className="rounded-2xl border border-border bg-surface px-3.5 py-3 text-[12.5px] [animation:stream-fade_320ms_ease-out_both]">
-                    <div className="mb-1.5 font-medium">Selected Brief</div>
+                    <div className="mb-1.5 flex items-center gap-2 font-medium">
+                      <span>Selected Brief</span>
+                      <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[10.5px] font-mono uppercase tracking-wider text-accent">
+                        {brief.adType}
+                      </span>
+                    </div>
                     <ul className="space-y-0.5 text-muted-foreground">
-                      <li>· Ad type: {brief.adType}</li>
+                      <li>· Video type: {brief.adType}</li>
                       <li>· Format: {brief.format}</li>
                       <li>· Visual: {brief.visualSource}</li>
                       <li>· Mode: {brief.mode}</li>
                     </ul>
                   </div>
                 )}
+
+                <SeriesBible />
 
                 {STAGE_ORDER.map((id) => {
                   const st = stages[id];

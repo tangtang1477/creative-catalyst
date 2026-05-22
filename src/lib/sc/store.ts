@@ -113,9 +113,10 @@ const saveHistory = (list: TaskRecord[]) => {
 };
 
 const loadAutoMode = (): AutoMode => {
-  if (typeof window === "undefined") return "confirm";
+  if (typeof window === "undefined") return "auto";
   const v = window.localStorage.getItem(AUTO_KEY);
-  return v === "auto" ? "auto" : "confirm";
+  if (v === "auto" || v === "blocker" || v === "guided" || v === "strict") return v;
+  return "auto";
 };
 
 export const useSC = create<SCState>((set, get) => {
@@ -169,7 +170,8 @@ export const useSC = create<SCState>((set, get) => {
   const collapseAfter = (id: StageId, delay = 1400) =>
     schedule(() => updateStage(id, { expanded: false }), delay);
 
-  const isAutoFlow = () => get().autoMode === "auto";
+  const isContinuousMode = () =>
+    get().autoMode === "auto" || get().autoMode === "blocker";
 
   /** Persist current task snapshot into taskHistory */
   const persistCurrent = (status: TaskRecord["status"]) => {
@@ -217,8 +219,12 @@ export const useSC = create<SCState>((set, get) => {
     ];
     streamLines("structure", lines, 950, 200, () => {
       updateStage("structure", { status: "ready" });
-      // Both auto and confirm modes pause for user check-in
-      set({ gate: "script" });
+      // guided / strict pause for user check-in; auto / blocker keep going
+      if (isContinuousMode()) {
+        schedule(() => runPaint(), 1200);
+      } else {
+        set({ gate: "script" });
+      }
     });
   };
 
@@ -254,8 +260,11 @@ export const useSC = create<SCState>((set, get) => {
       appendSummary("paint", "A01 Ready · 已锁定为 V01 的 image_url");
       collapseAfter("paint", 1800);
       persistCurrent("running");
-      // Always wait for user confirmation before starting video render
-      set({ gate: "keyframe" });
+      if (isContinuousMode()) {
+        schedule(() => runLife(), 1200);
+      } else {
+        set({ gate: "keyframe" });
+      }
     }, 6200);
   };
 
@@ -404,16 +413,18 @@ export const useSC = create<SCState>((set, get) => {
       }));
       const delay = 1500 + Math.random() * 1000;
       schedule(() => {
-        // honor user's autoMode strictly
-        const auto = get().autoMode === "auto";
+        const mode = get().autoMode;
+        const auto = mode === "auto" || mode === "blocker";
         if (auto) {
+          const modeLabel =
+            mode === "auto" ? "Auto · 全自动连续推进" : "Blocker · 关键阻塞项才问我";
           set((s) => ({
             brief: {
               prompt: s.brief?.prompt ?? text,
-              adType: taskKind === "series" ? "Series / Episode" : "Premium / Cinematic",
-              format: "9:16 · 30s",
+              adType: taskKind === "series" ? "Series · Episode" : "Short cinema",
+              format: "30s · 9:16",
               visualSource: "Generate from prompt",
-              mode: "Auto · 全自动连续推进",
+              mode: modeLabel,
             },
           }));
           startRunning();

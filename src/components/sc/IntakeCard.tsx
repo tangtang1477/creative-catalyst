@@ -7,17 +7,17 @@ import { OthersChip } from "./OthersChip";
 import { cn } from "@/lib/utils";
 
 const titles = {
-  adType: "1. 你想要哪种风格的广告？",
-  format: "2. 视频比例与时长？",
-  visualSource: "3. 视觉素材从哪里来？",
-  mode: "4. 推进模式？",
+  adType: "1. 视频类型？",
+  format: "2. 投放规格（时长 + 比例）？",
+  visualSource: "3. 画面来源？",
+  mode: "4. 创作模式？",
 } as const;
 
 const shortLabels = {
-  adType: "广告风格",
-  format: "比例与时长",
-  visualSource: "素材来源",
-  mode: "推进模式",
+  adType: "视频类型",
+  format: "投放规格",
+  visualSource: "画面来源",
+  mode: "创作模式",
 } as const;
 
 type Key = keyof typeof titles;
