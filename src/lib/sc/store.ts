@@ -337,7 +337,42 @@ export const useSC = create<SCState>((set, get) => {
     timers: [],
     runId: 0,
 
+    intakeSel: {},
+    intakeCustoms: {},
+    intakeOthers: null,
+
     setPrompt: (v) => set({ prompt: v }),
+    setAutoMode: (m) => {
+      set({ autoMode: m });
+      try {
+        window.localStorage.setItem(AUTO_KEY, m);
+      } catch {
+        /* ignore */
+      }
+    },
+
+    setIntakeSel: (key, value) =>
+      set((s) => ({ intakeSel: { ...s.intakeSel, [key]: value } })),
+    requestIntakeOthers: (key, label) =>
+      set({ intakeOthers: { key, label } }),
+    cancelIntakeOthers: () => set({ intakeOthers: null }),
+    resolveIntakeOthers: (value) => {
+      const o = get().intakeOthers;
+      if (!o) return;
+      const v = value.trim();
+      if (!v) {
+        set({ intakeOthers: null });
+        return;
+      }
+      set((s) => ({
+        intakeCustoms: {
+          ...s.intakeCustoms,
+          [o.key]: [...(s.intakeCustoms[o.key] ?? []), v],
+        },
+        intakeSel: { ...s.intakeSel, [o.key]: v },
+        intakeOthers: null,
+      }));
+    },
     setAutoMode: (m) => {
       set({ autoMode: m });
       try {
