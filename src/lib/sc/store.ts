@@ -413,16 +413,18 @@ export const useSC = create<SCState>((set, get) => {
       }));
       const delay = 1500 + Math.random() * 1000;
       schedule(() => {
-        // honor user's autoMode strictly
-        const auto = get().autoMode === "auto";
+        const mode = get().autoMode;
+        const auto = mode === "auto" || mode === "blocker";
         if (auto) {
+          const modeLabel =
+            mode === "auto" ? "Auto · 全自动连续推进" : "Blocker · 关键阻塞项才问我";
           set((s) => ({
             brief: {
               prompt: s.brief?.prompt ?? text,
-              adType: taskKind === "series" ? "Series / Episode" : "Premium / Cinematic",
-              format: "9:16 · 30s",
+              adType: taskKind === "series" ? "Series · Episode" : "Short cinema",
+              format: "30s · 9:16",
               visualSource: "Generate from prompt",
-              mode: "Auto · 全自动连续推进",
+              mode: modeLabel,
             },
           }));
           startRunning();
