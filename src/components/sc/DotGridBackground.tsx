@@ -106,28 +106,6 @@ export function DotGridBackground() {
       }
       raf = requestAnimationFrame(draw);
     };
-
-          if (i > 0.01) {
-            const dx = x - mx;
-            const dy = y - my;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < glowRadius) {
-              const t = (1 - dist / glowRadius) * i;
-              const intensity = t * t;
-              opacity = baseAlpha + intensity * 0.6;
-              radius = 1 + intensity * 1.3;
-              fill = `rgba(${accentRGB[0]},${accentRGB[1]},${accentRGB[2]},${opacity})`;
-            }
-          }
-
-          ctx.beginPath();
-          ctx.fillStyle = fill;
-          ctx.arc(x, y, radius, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      raf = requestAnimationFrame(draw);
-    };
     raf = requestAnimationFrame(draw);
 
     return () => {
