@@ -12,7 +12,7 @@ import { KEYFRAME_PROMPT_DETAIL, RECOVERY_NOTES } from "@/lib/sc/samples";
 import { SCButton } from "./Button";
 import { Calendar, GalleryHorizontal, Zap } from "lucide-react";
 import { Logo } from "./Logo";
-import { DotGridBackground } from "./DotGridBackground";
+
 import { cn } from "@/lib/utils";
 
 export function Workspace() {
@@ -71,7 +71,7 @@ export function Workspace() {
 
       {/* Body */}
       <div className="relative flex-1 overflow-hidden">
-        {phase === "empty" && <DotGridBackground />}
+
         <div className="relative z-10 h-full overflow-y-auto">
           <div className="mx-auto flex min-h-full w-full max-w-[760px] flex-col px-6 py-6">
             {phase === "empty" && (
