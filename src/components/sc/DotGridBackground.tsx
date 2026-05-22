@@ -1,49 +1,62 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Cursor-following dot-grid background.
- * Self-contained: listens to mousemove on its own absolute container.
+ * Global cursor-following dot-grid background.
+ * Mounted once at the app root; sits behind everything via z-0.
+ * Window-level mouse listeners + lerp easing so movement feels alive.
  */
 export function DotGridBackground() {
-  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const mouseRef = useRef({ x: 0, y: 0, active: false });
+  const target = useRef({ x: -9999, y: -9999 });
+  const cur = useRef({ x: -9999, y: -9999, intensity: 0, targetIntensity: 0 });
 
   useEffect(() => {
-    const container = containerRef.current;
     const canvas = canvasRef.current;
-    if (!container || !canvas) return;
+    if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
     const resize = () => {
-      const rect = container.getBoundingClientRect();
-      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
-      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = Math.max(1, Math.floor(w * dpr));
+      canvas.height = Math.max(1, Math.floor(h * dpr));
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(dpr, dpr);
     };
     resize();
-    const ro = new ResizeObserver(resize);
-    ro.observe(container);
+    window.addEventListener("resize", resize);
 
     const onMove = (e: MouseEvent) => {
-      const r = container.getBoundingClientRect();
-      mouseRef.current.x = e.clientX - r.left;
-      mouseRef.current.y = e.clientY - r.top;
-      mouseRef.current.active = true;
+      target.current.x = e.clientX;
+      target.current.y = e.clientY;
+      cur.current.targetIntensity = 1;
     };
     const onLeave = () => {
-      mouseRef.current.active = false;
+      cur.current.targetIntensity = 0;
     };
-    container.addEventListener("mousemove", onMove);
-    container.addEventListener("mouseleave", onLeave);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseout", (e) => {
+      if (!e.relatedTarget) onLeave();
+    });
+
+    // Parse accent (oklch / rgb / hex) once; fall back to #71F0F6.
+    const accent = getComputedStyle(document.documentElement)
+      .getPropertyValue("--accent")
+      .trim() || "113 240 246";
+    // Try to read R G B from common patterns; default to known cyan.
+    let accentRGB: [number, number, number] = [113, 240, 246];
+    const rgbMatch = accent.match(/(\d+)[\s,]+(\d+)[\s,]+(\d+)/);
+    if (rgbMatch) accentRGB = [+rgbMatch[1], +rgbMatch[2], +rgbMatch[3]];
+
+    const isDark = () =>
+      !document.documentElement.classList.contains("light");
 
     const spacing = 26;
-    const glowRadius = 140;
+    const glowRadius = 160;
     let raf = 0;
 
     const draw = () => {
@@ -51,34 +64,43 @@ export function DotGridBackground() {
       const h = canvas.clientHeight;
       ctx.clearRect(0, 0, w, h);
 
-      const mx = mouseRef.current.x;
-      const my = mouseRef.current.y;
-      const active = mouseRef.current.active;
+      // ease cursor + intensity
+      if (cur.current.x === -9999) {
+        cur.current.x = target.current.x;
+        cur.current.y = target.current.y;
+      } else {
+        cur.current.x += (target.current.x - cur.current.x) * 0.18;
+        cur.current.y += (target.current.y - cur.current.y) * 0.18;
+      }
+      cur.current.intensity += (cur.current.targetIntensity - cur.current.intensity) * 0.08;
+
+      const mx = cur.current.x;
+      const my = cur.current.y;
+      const baseAlpha = isDark() ? 0.05 : 0.08;
+      const baseRGB = isDark() ? "255,255,255" : "15,23,42";
+      const i = cur.current.intensity;
 
       for (let y = 0; y < h + spacing; y += spacing) {
         for (let x = 0; x < w + spacing; x += spacing) {
-          let opacity = 0.05;
+          let opacity = baseAlpha;
           let radius = 1;
-          let r = 255, g = 255, b = 255;
+          let fill = `rgba(${baseRGB},${opacity})`;
 
-          if (active) {
+          if (i > 0.01) {
             const dx = x - mx;
             const dy = y - my;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist < glowRadius) {
-              const t = 1 - dist / glowRadius;
+              const t = (1 - dist / glowRadius) * i;
               const intensity = t * t;
-              opacity = 0.05 + intensity * 0.55;
-              radius = 1 + intensity * 1.2;
-              // tint toward accent #71F0F6
-              r = Math.round(255 - intensity * 142);
-              g = Math.round(255 - intensity * 15);
-              b = Math.round(255 - intensity * 9);
+              opacity = baseAlpha + intensity * 0.6;
+              radius = 1 + intensity * 1.3;
+              fill = `rgba(${accentRGB[0]},${accentRGB[1]},${accentRGB[2]},${opacity})`;
             }
           }
 
           ctx.beginPath();
-          ctx.fillStyle = `rgba(${r},${g},${b},${opacity})`;
+          ctx.fillStyle = fill;
           ctx.arc(x, y, radius, 0, Math.PI * 2);
           ctx.fill();
         }
@@ -89,21 +111,22 @@ export function DotGridBackground() {
 
     return () => {
       cancelAnimationFrame(raf);
-      ro.disconnect();
-      container.removeEventListener("mousemove", onMove);
-      container.removeEventListener("mouseleave", onLeave);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("mousemove", onMove);
     };
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className="pointer-events-auto absolute inset-0 z-0"
+    <canvas
+      ref={canvasRef}
       aria-hidden
-    >
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
-      {/* gentle vignette to keep content readable */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,var(--background)_85%)]" />
-    </div>
+      className="pointer-events-none fixed inset-0 z-0"
+      style={{
+        maskImage:
+          "radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 95%)",
+        WebkitMaskImage:
+          "radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 95%)",
+      }}
+    />
   );
 }
