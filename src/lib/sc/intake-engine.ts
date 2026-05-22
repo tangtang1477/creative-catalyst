@@ -31,6 +31,8 @@ const AD_TYPES: Record<Category, string[]> = {
   luxury: ["Luxury / Premium 形象片"],
 };
 
+const OTHERS = "Others…";
+
 function unique<T>(arr: T[]): T[] {
   return Array.from(new Set(arr));
 }
@@ -62,6 +64,8 @@ export interface IntakeOptions {
   greeting: string;
 }
 
+export const OTHERS_LABEL = OTHERS;
+
 export function inferIntake(prompt: string): IntakeOptions {
   const hits = detectCategories(prompt);
   const primary: Category = hits[0] ?? "luxury";
@@ -72,7 +76,7 @@ export function inferIntake(prompt: string): IntakeOptions {
     "beauty" as Category,
   ]).filter((c) => !hits.includes(c));
 
-  const adType = unique([
+  const adTypeBase = unique([
     ...hits.flatMap((h) => AD_TYPES[h]),
     ...neighborSet.slice(0, 2).flatMap((c) => AD_TYPES[c]),
     "Problem-Solution（15s 旁白叙述）",
@@ -80,21 +84,21 @@ export function inferIntake(prompt: string): IntakeOptions {
     "High Energy（标语主导）",
   ]).slice(0, 6);
 
-  const format = [
+  const formatBase = [
     "9:16 · 30s 竖屏",
     "16:9 · 15s 横屏",
     "1:1 · 6s 信息流",
     "9:16 · 60s 长片",
   ];
 
-  const visualSource = [
+  const visualSourceBase = [
     "Generate from prompt（自动生成）",
     "Use uploaded reference（上传参考图）",
     "Brand asset library（品牌素材库）",
     "Paste product / brand URL",
   ];
 
-  const mode = [
+  const modeBase = [
     "Auto · 全自动连续推进",
     "Guided · 关键节点确认",
     "Manual · 我来逐步把关",
@@ -111,15 +115,15 @@ export function inferIntake(prompt: string): IntakeOptions {
   };
 
   return {
-    adType,
-    format,
-    visualSource,
-    mode,
+    adType: [...adTypeBase, OTHERS],
+    format: [...formatBase, OTHERS],
+    visualSource: [...visualSourceBase, OTHERS],
+    mode: [...modeBase, OTHERS],
     defaults: {
-      adType: adType[0],
-      format: format[0],
-      visualSource: visualSource[0],
-      mode: mode[0],
+      adType: adTypeBase[0],
+      format: formatBase[0],
+      visualSource: visualSourceBase[0],
+      mode: modeBase[0],
     },
     greeting: greetingMap[primary],
   };
