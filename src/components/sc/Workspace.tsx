@@ -81,10 +81,10 @@ export function Workspace() {
                     <Logo size={28} glow />
                   </div>
                   <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-foreground">
-                    Vic, what are we creating today?
+                    Victoria, what are we creating today?
                   </h1>
                 </div>
-                <CommandInput placeholder="做一个香奈儿香水的广告" />
+                <CommandInput />
                 <div className="mt-4">
                   <SuggestionChips />
                 </div>

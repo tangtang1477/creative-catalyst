@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useRef, useState, useEffect, type KeyboardEvent } from "react";
 import { Plus, ArrowUp, Square } from "lucide-react";
 import { useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
@@ -7,14 +7,33 @@ import { AutoRunMenu } from "./AutoRunMenu";
 import { AttachMenu } from "./AttachMenu";
 import { AttachmentChips } from "./AttachmentChips";
 import { MentionPopover } from "./MentionPopover";
+import { useTypewriterPlaceholder } from "@/hooks/use-typewriter";
 
 interface Props {
   placeholder?: string;
   compact?: boolean;
 }
 
-export function CommandInput({ placeholder = "Enter Command", compact = false }: Props) {
-  const { submit, phase, cancel, prompt, clearAttachments } = useSC();
+const TYPEWRITER_PHRASES = [
+  "做一个香奈儿香水的高端广告片",
+  "拍一集都市恐怖短剧的第一集",
+  "生成一支美食探店 vlog 的开场",
+  "制作一支运动品牌的 15 秒 TVC",
+  "做一个连续剧的第二集，主角是侦探",
+  "生成一支宠物日常的治愈短片",
+];
+
+export function CommandInput({ placeholder, compact = false }: Props) {
+  const {
+    submit,
+    phase,
+    cancel,
+    prompt,
+    clearAttachments,
+    intakeOthers,
+    resolveIntakeOthers,
+    cancelIntakeOthers,
+  } = useSC();
   const [value, setValue] = useState(prompt ?? "");
   const [caret, setCaret] = useState(0);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -28,15 +47,47 @@ export function CommandInput({ placeholder = "Enter Command", compact = false }:
   const isThinking = phase === "thinking";
   const inputDisabled = isThinking;
 
+  // typewriter placeholder: only when value empty AND no explicit placeholder passed
+  const useTypewriter = !placeholder && !value && !isThinking && !intakeOthers;
+  const typewriterText = useTypewriterPlaceholder(TYPEWRITER_PHRASES, {
+    enabled: useTypewriter,
+  });
+
+  // auto-focus when Others triggered from intake card
+  useEffect(() => {
+    if (intakeOthers && taRef.current) {
+      taRef.current.focus();
+    }
+  }, [intakeOthers]);
+
+  const computedPlaceholder = isThinking
+    ? "Thinking…"
+    : intakeOthers
+      ? `输入你想要的「${intakeOthers.label}」自定义内容，回车确认 · Esc 取消`
+      : placeholder
+        ? placeholder
+        : typewriterText || " ";
+
   const doSubmit = () => {
     if (!value.trim() || inputDisabled) return;
+    // if Others is active during intake, route input back to intake instead of starting new task
+    if (intakeOthers) {
+      resolveIntakeOthers(value);
+      setValue("");
+      return;
+    }
     submit(value);
     setValue("");
     clearAttachments();
   };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Let MentionPopover handle Enter/Arrow/Esc when mention is active
+    if (e.key === "Escape" && intakeOthers) {
+      e.preventDefault();
+      cancelIntakeOthers();
+      setValue("");
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       doSubmit();
@@ -45,7 +96,6 @@ export function CommandInput({ placeholder = "Enter Command", compact = false }:
 
   const handlePick = (insert: string, from: number, to: number) => {
     if (from < 0) {
-      // Esc: simply blur popover by moving caret without changing text
       setCaret((c) => c);
       return;
     }
@@ -71,6 +121,7 @@ export function CommandInput({ placeholder = "Enter Command", compact = false }:
     <div
       className={cn(
         "relative rounded-2xl border border-border bg-surface shadow-[0_1px_0_0_rgba(255,255,255,0.02)_inset] transition-colors focus-within:border-accent/50",
+        intakeOthers && "border-accent/60 ring-1 ring-accent/30",
       )}
     >
       <AttachmentChips />
@@ -85,7 +136,7 @@ export function CommandInput({ placeholder = "Enter Command", compact = false }:
         onClick={updateCaret}
         onSelect={updateCaret}
         onKeyDown={onKey}
-        placeholder={isThinking ? "Thinking…" : placeholder}
+        placeholder={computedPlaceholder}
         rows={compact ? 1 : 2}
         disabled={inputDisabled}
         className={cn(

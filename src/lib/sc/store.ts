@@ -38,6 +38,11 @@ interface SCState {
   timers: number[];
   runId: number;
 
+  // Intake interactive state (lifted from IntakeCard so CommandInput can drive Others input)
+  intakeSel: Record<string, string>;
+  intakeCustoms: Record<string, string[]>;
+  intakeOthers: { key: string; label: string } | null;
+
   setPrompt: (v: string) => void;
   setAutoMode: (m: AutoMode) => void;
   addAttachment: (a: Attachment) => void;
@@ -58,6 +63,11 @@ interface SCState {
   forceState: (s: string) => void;
   restoreTask: (id: string) => void;
   deleteTask: (id: string) => void;
+
+  setIntakeSel: (key: string, value: string) => void;
+  requestIntakeOthers: (key: string, label: string) => void;
+  cancelIntakeOthers: () => void;
+  resolveIntakeOthers: (value: string) => void;
 }
 
 const HISTORY_KEY = "sc.tasks";
@@ -207,14 +217,8 @@ export const useSC = create<SCState>((set, get) => {
     ];
     streamLines("structure", lines, 950, 200, () => {
       updateStage("structure", { status: "ready" });
-      if (isAutoFlow()) {
-        schedule(() => {
-          collapseAfter("structure", 100);
-          runPaint();
-        }, 1200);
-      } else {
-        set({ gate: "script" });
-      }
+      // Both auto and confirm modes pause for user check-in
+      set({ gate: "script" });
     });
   };
 
@@ -250,12 +254,8 @@ export const useSC = create<SCState>((set, get) => {
       appendSummary("paint", "A01 Ready · 已锁定为 V01 的 image_url");
       collapseAfter("paint", 1800);
       persistCurrent("running");
-
-      if (isAutoFlow()) {
-        schedule(() => runLife(), 1700);
-      } else {
-        set({ gate: "keyframe" });
-      }
+      // Always wait for user confirmation before starting video render
+      set({ gate: "keyframe" });
     }, 6200);
   };
 
@@ -337,6 +337,10 @@ export const useSC = create<SCState>((set, get) => {
     timers: [],
     runId: 0,
 
+    intakeSel: {},
+    intakeCustoms: {},
+    intakeOthers: null,
+
     setPrompt: (v) => set({ prompt: v }),
     setAutoMode: (m) => {
       set({ autoMode: m });
@@ -346,6 +350,31 @@ export const useSC = create<SCState>((set, get) => {
         /* ignore */
       }
     },
+
+    setIntakeSel: (key, value) =>
+      set((s) => ({ intakeSel: { ...s.intakeSel, [key]: value } })),
+    requestIntakeOthers: (key, label) =>
+      set({ intakeOthers: { key, label } }),
+    cancelIntakeOthers: () => set({ intakeOthers: null }),
+    resolveIntakeOthers: (value) => {
+      const o = get().intakeOthers;
+      if (!o) return;
+      const v = value.trim();
+      if (!v) {
+        set({ intakeOthers: null });
+        return;
+      }
+      set((s) => ({
+        intakeCustoms: {
+          ...s.intakeCustoms,
+          [o.key]: [...(s.intakeCustoms[o.key] ?? []), v],
+        },
+        intakeSel: { ...s.intakeSel, [o.key]: v },
+        intakeOthers: null,
+      }));
+    },
+
+
 
     addAttachment: (a) => set((s) => ({ attachments: [...s.attachments, a] })),
     removeAttachment: (id) =>
@@ -369,6 +398,9 @@ export const useSC = create<SCState>((set, get) => {
         gate: null,
         rail: { open: false, flashId: undefined, focusedAssetId: undefined },
         brief: { prompt: text, adType: "", format: "", visualSource: "", mode: "" },
+        intakeSel: {},
+        intakeCustoms: {},
+        intakeOthers: null,
       }));
       const delay = 1500 + Math.random() * 1000;
       schedule(() => {
@@ -476,6 +508,9 @@ export const useSC = create<SCState>((set, get) => {
         attachments: [],
         gate: null,
         rail: { open: false, flashId: undefined, focusedAssetId: undefined },
+        intakeSel: {},
+        intakeCustoms: {},
+        intakeOthers: null,
       }));
     },
 

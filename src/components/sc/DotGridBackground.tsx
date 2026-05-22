@@ -55,8 +55,8 @@ export function DotGridBackground() {
     const isDark = () =>
       !document.documentElement.classList.contains("light");
 
-    const spacing = 26;
-    const glowRadius = 160;
+    const spacing = 18;
+    const glowRadius = 180;
     let raf = 0;
 
     const draw = () => {
