@@ -1,15 +1,18 @@
 import { create } from "zustand";
 import {
   type Asset,
+  type Attachment,
   type AutoMode,
   type Brief,
   type Gate,
   type Phase,
   type StageId,
   type StageState,
+  type TaskKind,
+  type TaskRecord,
   STAGE_ORDER,
 } from "./types";
-import { SAMPLE_KEYFRAME, SAMPLE_VIDEO } from "./samples";
+import { SAMPLE_KEYFRAME, SAMPLE_VIDEO, SERIES_DEMO } from "./samples";
 import { inferTaskTitle } from "./intake-engine";
 
 interface RailState {
@@ -25,13 +28,21 @@ interface SCState {
   stages: Record<StageId, StageState>;
   assets: Asset[];
   taskTitle: string;
+  taskId: string | null;
+  taskKind: TaskKind;
+  taskHistory: TaskRecord[];
+  attachments: Attachment[];
   gate: Gate;
   rail: RailState;
   autoMode: AutoMode;
   timers: number[];
+  runId: number;
 
   setPrompt: (v: string) => void;
   setAutoMode: (m: AutoMode) => void;
+  addAttachment: (a: Attachment) => void;
+  removeAttachment: (id: string) => void;
+  clearAttachments: () => void;
   submit: (prompt: string) => void;
   confirmBrief: (brief: Brief) => void;
   skipIntake: () => void;
@@ -40,12 +51,17 @@ interface SCState {
   approveKeyframe: () => void;
   regenerateKeyframe: () => void;
   cancel: () => void;
-  reset: () => void;
+  reset: (opts?: { fromUserAction?: boolean }) => void;
   toggleStage: (id: StageId) => void;
   setRailOpen: (v: boolean) => void;
   focusAsset: (id: string) => void;
   forceState: (s: string) => void;
+  restoreTask: (id: string) => void;
+  deleteTask: (id: string) => void;
 }
+
+const HISTORY_KEY = "sc.tasks";
+const AUTO_KEY = "sc.autoMode";
 
 const initialStages = (): Record<StageId, StageState> =>
   STAGE_ORDER.reduce(
@@ -59,6 +75,39 @@ const initialStages = (): Record<StageId, StageState> =>
 const isFullAutoPrompt = (text: string) =>
   /(全自动|full[\s-]?auto|你决定|直接生成|按默认|auto[\s-]?run)/i.test(text);
 
+const isSeriesPrompt = (text: string) =>
+  /(剧集|系列|连续剧|episode|series|第\s*\d+\s*集|EP\s*\d)/i.test(text);
+
+const newId = () =>
+  `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+
+const loadHistory = (): TaskRecord[] => {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveHistory = (list: TaskRecord[]) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, 30)));
+  } catch {
+    /* ignore */
+  }
+};
+
+const loadAutoMode = (): AutoMode => {
+  if (typeof window === "undefined") return "confirm";
+  const v = window.localStorage.getItem(AUTO_KEY);
+  return v === "auto" ? "auto" : "confirm";
+};
+
 export const useSC = create<SCState>((set, get) => {
   const clearTimers = () => {
     for (const t of get().timers) clearTimeout(t);
@@ -66,7 +115,12 @@ export const useSC = create<SCState>((set, get) => {
   };
 
   const schedule = (fn: () => void, delay: number) => {
-    const id = window.setTimeout(fn, delay) as unknown as number;
+    const startedRunId = get().runId;
+    const id = window.setTimeout(() => {
+      // assertPhase guard: bail if reset/cancel rebooted the run
+      if (get().runId !== startedRunId) return;
+      fn();
+    }, delay) as unknown as number;
     set({ timers: [...get().timers, id] });
     return id;
   };
@@ -89,7 +143,6 @@ export const useSC = create<SCState>((set, get) => {
       assets: s.assets.map((a) => (a.id === id ? { ...a, ...patch } : a)),
     }));
 
-  // Stream a list of summary lines into a stage, one at a time
   const streamLines = (
     id: StageId,
     lines: string[],
@@ -106,9 +159,27 @@ export const useSC = create<SCState>((set, get) => {
   const collapseAfter = (id: StageId, delay = 1400) =>
     schedule(() => updateStage(id, { expanded: false }), delay);
 
-  const isAutoFlow = () => {
-    const { autoMode, brief } = get();
-    return autoMode === "auto" || isFullAutoPrompt(brief?.prompt ?? "");
+  const isAutoFlow = () => get().autoMode === "auto";
+
+  /** Persist current task snapshot into taskHistory */
+  const persistCurrent = (status: TaskRecord["status"]) => {
+    const { taskId, taskTitle, brief, assets, taskHistory, taskKind } = get();
+    if (!taskId) return;
+    const now = Date.now();
+    const existing = taskHistory.find((t) => t.id === taskId);
+    const record: TaskRecord = {
+      id: taskId,
+      title: taskTitle,
+      prompt: brief?.prompt ?? "",
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      status,
+      kind: taskKind,
+      assets,
+    };
+    const next = [record, ...taskHistory.filter((t) => t.id !== taskId)];
+    set({ taskHistory: next });
+    saveHistory(next);
   };
 
   const runScene = () => {
@@ -125,11 +196,7 @@ export const useSC = create<SCState>((set, get) => {
   };
 
   const runStructure = () => {
-    updateStage("structure", {
-      status: "running",
-      summary: [],
-      expanded: true,
-    });
+    updateStage("structure", { status: "running", summary: [], expanded: true });
     const lines = [
       "撰写脚本与分镜结构…",
       "30s · 9:16 · 5 个镜头连续叙事",
@@ -182,6 +249,7 @@ export const useSC = create<SCState>((set, get) => {
       updateStage("paint", { status: "ready" });
       appendSummary("paint", "A01 Ready · 已锁定为 V01 的 image_url");
       collapseAfter("paint", 1800);
+      persistCurrent("running");
 
       if (isAutoFlow()) {
         schedule(() => runLife(), 1700);
@@ -224,6 +292,7 @@ export const useSC = create<SCState>((set, get) => {
       updateStage("life", { status: "ready" });
       appendSummary("life", "V01 Ready · 30s · 9:16 · 画质验证通过");
       collapseAfter("life", 1800);
+      persistCurrent("running");
       schedule(() => runDetails(), 1600);
     }, 7000);
   };
@@ -240,11 +309,13 @@ export const useSC = create<SCState>((set, get) => {
       updateStage("details", { status: "ready" });
       set({ phase: "done" });
       collapseAfter("details", 1600);
+      persistCurrent("done");
     });
   };
 
   const startRunning = () => {
     set({ phase: "running" });
+    persistCurrent("running");
     runScene();
     schedule(() => runStructure(), 3800);
   };
@@ -256,34 +327,58 @@ export const useSC = create<SCState>((set, get) => {
     stages: initialStages(),
     assets: [],
     taskTitle: "New chat",
+    taskId: null,
+    taskKind: "oneoff",
+    taskHistory: loadHistory(),
+    attachments: [],
     gate: null,
     rail: { open: false },
-    autoMode: "confirm",
+    autoMode: loadAutoMode(),
     timers: [],
+    runId: 0,
 
     setPrompt: (v) => set({ prompt: v }),
-    setAutoMode: (m) => set({ autoMode: m }),
+    setAutoMode: (m) => {
+      set({ autoMode: m });
+      try {
+        window.localStorage.setItem(AUTO_KEY, m);
+      } catch {
+        /* ignore */
+      }
+    },
+
+    addAttachment: (a) => set((s) => ({ attachments: [...s.attachments, a] })),
+    removeAttachment: (id) =>
+      set((s) => ({ attachments: s.attachments.filter((a) => a.id !== id) })),
+    clearAttachments: () => set({ attachments: [] }),
 
     submit: (prompt) => {
       const text = prompt.trim();
       if (!text) return;
       clearTimers();
-      set({
+      const taskKind: TaskKind = isSeriesPrompt(text) ? "series" : "oneoff";
+      set((s) => ({
+        runId: s.runId + 1,
         prompt: "",
         taskTitle: inferTaskTitle(text),
+        taskId: newId(),
+        taskKind,
         phase: "thinking",
+        stages: initialStages(),
+        assets: [],
+        gate: null,
+        rail: { open: false, flashId: undefined, focusedAssetId: undefined },
         brief: { prompt: text, adType: "", format: "", visualSource: "", mode: "" },
-      });
-      // longer thinking delay (1.5–2.5s) for more realistic first-token latency
+      }));
       const delay = 1500 + Math.random() * 1000;
       schedule(() => {
-        const auto =
-          get().autoMode === "auto" || isFullAutoPrompt(text);
+        // honor user's autoMode strictly
+        const auto = get().autoMode === "auto";
         if (auto) {
           set((s) => ({
             brief: {
               prompt: s.brief?.prompt ?? text,
-              adType: "Premium / Cinematic",
+              adType: taskKind === "series" ? "Series / Episode" : "Premium / Cinematic",
               format: "9:16 · 30s",
               visualSource: "Generate from prompt",
               mode: "Auto · 全自动连续推进",
@@ -332,6 +427,7 @@ export const useSC = create<SCState>((set, get) => {
 
     cancel: () => {
       clearTimers();
+      set((s) => ({ runId: s.runId + 1 }));
       set((s) => {
         const stages = { ...s.stages };
         for (const id of STAGE_ORDER) {
@@ -357,20 +453,30 @@ export const useSC = create<SCState>((set, get) => {
           gate: null,
         };
       });
+      persistCurrent("failed");
     },
 
-    reset: () => {
+    reset: (opts) => {
+      const { phase } = get();
+      if (opts?.fromUserAction && (phase === "running" || phase === "thinking")) {
+        // mark current task as interrupted in history before wiping
+        persistCurrent("interrupted");
+      }
       clearTimers();
-      set({
+      set((s) => ({
+        runId: s.runId + 1,
         phase: "empty",
         prompt: "",
         brief: null,
         stages: initialStages(),
         assets: [],
         taskTitle: "New chat",
+        taskId: null,
+        taskKind: "oneoff",
+        attachments: [],
         gate: null,
         rail: { open: false, flashId: undefined, focusedAssetId: undefined },
-      });
+      }));
     },
 
     toggleStage: (id) =>
@@ -385,12 +491,50 @@ export const useSC = create<SCState>((set, get) => {
     focusAsset: (id) =>
       set((s) => ({ rail: { ...s.rail, open: true, focusedAssetId: id } })),
 
+    restoreTask: (id) => {
+      const rec = get().taskHistory.find((t) => t.id === id);
+      if (!rec) return;
+      clearTimers();
+      const stages = initialStages();
+      if (rec.status === "done") {
+        for (const sid of STAGE_ORDER) {
+          stages[sid] = { status: "ready", summary: [], expanded: false };
+        }
+      }
+      set((s) => ({
+        runId: s.runId + 1,
+        phase: rec.status === "done" ? "done" : "failed",
+        taskId: rec.id,
+        taskTitle: rec.title,
+        taskKind: rec.kind,
+        brief: {
+          prompt: rec.prompt,
+          adType: "Restored",
+          format: "—",
+          visualSource: "—",
+          mode: "—",
+        },
+        stages,
+        assets: rec.assets,
+        gate: null,
+        rail: { open: rec.assets.length > 0 },
+      }));
+    },
+
+    deleteTask: (id) => {
+      const next = get().taskHistory.filter((t) => t.id !== id);
+      set({ taskHistory: next });
+      saveHistory(next);
+    },
+
     forceState: (s) => {
       clearTimers();
       const base = {
         phase: "running" as Phase,
         stages: initialStages(),
         assets: [] as Asset[],
+        taskId: newId(),
+        taskKind: "oneoff" as TaskKind,
         brief: {
           prompt: "Demo: YSL Libre 30s",
           adType: "Premium",
@@ -401,6 +545,7 @@ export const useSC = create<SCState>((set, get) => {
         taskTitle: "Demo task",
         gate: null as Gate,
         rail: { open: true } as RailState,
+        runId: (get().runId ?? 0) + 1,
       };
       const ready = (summary: string[]): StageState => ({
         status: "ready",
@@ -409,7 +554,7 @@ export const useSC = create<SCState>((set, get) => {
       });
       switch (s) {
         case "empty":
-          set({ ...base, phase: "empty", brief: null, taskTitle: "New chat", rail: { open: false } });
+          set({ ...base, phase: "empty", brief: null, taskTitle: "New chat", taskId: null, rail: { open: false } });
           break;
         case "intake":
           set({ ...base, phase: "intake" });
@@ -459,6 +604,29 @@ export const useSC = create<SCState>((set, get) => {
               { id: "A01", kind: "image", label: "A01", caption: "Keyframe", status: "Ready", url: SAMPLE_KEYFRAME, stageId: "paint", width: 1080, height: 1920 },
               { id: "V01", kind: "video", label: "V01", caption: "Hero film", status: "Ready", url: SAMPLE_VIDEO, poster: SAMPLE_KEYFRAME, stageId: "life", duration: "0:30" },
             ],
+          });
+          break;
+        case "series-demo":
+          set({
+            ...base,
+            phase: "done",
+            taskKind: "series",
+            taskTitle: "Galileo Episode Series",
+            brief: {
+              prompt: "做一个连续剧集系列：3 集 × 4 个场景",
+              adType: "Series / Episode",
+              format: "16:9 · per scene 12s",
+              visualSource: "Generate from prompt",
+              mode: "Auto · 全自动连续推进",
+            },
+            stages: {
+              scene: ready(["剧集大纲已锁定"]),
+              structure: ready(["每集分镜就绪"]),
+              paint: ready(["关键帧批次完成"]),
+              life: ready(["全部成片完成"]),
+              details: ready(["QC 通过"]),
+            },
+            assets: SERIES_DEMO,
           });
           break;
         case "recovering":
