@@ -1,10 +1,12 @@
-import { useState, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { Plus, ArrowUp, Square } from "lucide-react";
-import { SCButton } from "./Button";
 import { useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
 import { ModelMenu } from "./ModelMenu";
 import { AutoRunMenu } from "./AutoRunMenu";
+import { AttachMenu } from "./AttachMenu";
+import { AttachmentChips } from "./AttachmentChips";
+import { MentionPopover } from "./MentionPopover";
 
 interface Props {
   placeholder?: string;
@@ -12,8 +14,10 @@ interface Props {
 }
 
 export function CommandInput({ placeholder = "Enter Command", compact = false }: Props) {
-  const { submit, phase, cancel, prompt } = useSC();
+  const { submit, phase, cancel, prompt, clearAttachments } = useSC();
   const [value, setValue] = useState(prompt ?? "");
+  const [caret, setCaret] = useState(0);
+  const taRef = useRef<HTMLTextAreaElement>(null);
 
   // sync external prompt setter (e.g. SuggestionChips)
   if (prompt && prompt !== value && !value) {
@@ -24,26 +28,62 @@ export function CommandInput({ placeholder = "Enter Command", compact = false }:
   const isThinking = phase === "thinking";
   const inputDisabled = isThinking;
 
+  const doSubmit = () => {
+    if (!value.trim() || inputDisabled) return;
+    submit(value);
+    setValue("");
+    clearAttachments();
+  };
+
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Let MentionPopover handle Enter/Arrow/Esc when mention is active
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (value.trim() && !inputDisabled) {
-        submit(value);
-        setValue("");
-      }
+      doSubmit();
     }
+  };
+
+  const handlePick = (insert: string, from: number, to: number) => {
+    if (from < 0) {
+      // Esc: simply blur popover by moving caret without changing text
+      setCaret((c) => c);
+      return;
+    }
+    const next = value.slice(0, from) + insert + value.slice(to);
+    setValue(next);
+    requestAnimationFrame(() => {
+      const ta = taRef.current;
+      if (ta) {
+        const pos = from + insert.length;
+        ta.focus();
+        ta.setSelectionRange(pos, pos);
+        setCaret(pos);
+      }
+    });
+  };
+
+  const updateCaret = () => {
+    const ta = taRef.current;
+    if (ta) setCaret(ta.selectionStart);
   };
 
   return (
     <div
       className={cn(
-        "rounded-2xl border border-border bg-surface shadow-[0_1px_0_0_rgba(255,255,255,0.02)_inset] transition-colors focus-within:border-accent/50",
-        compact ? "" : "",
+        "relative rounded-2xl border border-border bg-surface shadow-[0_1px_0_0_rgba(255,255,255,0.02)_inset] transition-colors focus-within:border-accent/50",
       )}
     >
+      <AttachmentChips />
       <textarea
+        ref={taRef}
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          setValue(e.target.value);
+          requestAnimationFrame(updateCaret);
+        }}
+        onKeyUp={updateCaret}
+        onClick={updateCaret}
+        onSelect={updateCaret}
         onKeyDown={onKey}
         placeholder={isThinking ? "Thinking…" : placeholder}
         rows={compact ? 1 : 2}
@@ -53,23 +93,25 @@ export function CommandInput({ placeholder = "Enter Command", compact = false }:
           compact ? "min-h-[36px]" : "min-h-[48px]",
         )}
       />
+      <MentionPopover value={value} caret={caret} anchorRef={taRef} onPick={handlePick} />
       <div className="flex items-center justify-between gap-2 px-2 pb-2">
         <div className="flex items-center gap-1.5">
-          {/* circular outlined Plus */}
-          <button
-            type="button"
-            aria-label="attach"
-            disabled={inputDisabled}
-            className={cn(
-              "inline-flex h-7 w-7 items-center justify-center rounded-full border border-border bg-transparent text-foreground/75 outline-none transition-all",
-              "hover:border-accent/60 hover:bg-surface-2 hover:text-accent",
-              "active:scale-95",
-              "focus-visible:ring-2 focus-visible:ring-accent",
-              "disabled:pointer-events-none disabled:opacity-50",
-            )}
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
+          <AttachMenu disabled={inputDisabled}>
+            <button
+              type="button"
+              aria-label="attach"
+              disabled={inputDisabled}
+              className={cn(
+                "inline-flex h-7 w-7 items-center justify-center rounded-full border border-border bg-transparent text-foreground/75 outline-none transition-all",
+                "hover:border-accent/60 hover:bg-surface-2 hover:text-accent",
+                "active:scale-95",
+                "focus-visible:ring-2 focus-visible:ring-accent",
+                "disabled:pointer-events-none disabled:opacity-50",
+              )}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </AttachMenu>
           <ModelMenu disabled={inputDisabled} />
         </div>
         <div className="flex items-center gap-2">
@@ -93,10 +135,7 @@ export function CommandInput({ placeholder = "Enter Command", compact = false }:
               type="button"
               aria-label="send"
               disabled={!value.trim() || inputDisabled}
-              onClick={() => {
-                submit(value);
-                setValue("");
-              }}
+              onClick={doSubmit}
               className={cn(
                 "inline-flex h-9 w-9 items-center justify-center rounded-full bg-accent text-accent-foreground outline-none transition-all",
                 "hover:brightness-110 hover:shadow-[0_0_12px_rgba(113,240,246,0.5)]",

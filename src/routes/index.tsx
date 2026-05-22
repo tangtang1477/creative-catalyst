@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { Sidebar } from "@/components/sc/Sidebar";
 import { Workspace } from "@/components/sc/Workspace";
 import { MediaRail } from "@/components/sc/MediaRail";
+import { DotGridBackground } from "@/components/sc/DotGridBackground";
 import { useSC } from "@/lib/sc/store";
 import { useTheme } from "@/hooks/use-theme";
 
@@ -23,10 +24,13 @@ function Index() {
   }, [forceState]);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
-      <Sidebar />
-      <Workspace />
-      <MediaRail />
+    <div className="relative flex h-screen w-full overflow-hidden bg-background text-foreground">
+      <DotGridBackground />
+      <div className="relative z-10 flex h-full w-full">
+        <Sidebar />
+        <Workspace />
+        <MediaRail />
+      </div>
     </div>
   );
 }
