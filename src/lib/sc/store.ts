@@ -373,14 +373,8 @@ export const useSC = create<SCState>((set, get) => {
         intakeOthers: null,
       }));
     },
-    setAutoMode: (m) => {
-      set({ autoMode: m });
-      try {
-        window.localStorage.setItem(AUTO_KEY, m);
-      } catch {
-        /* ignore */
-      }
-    },
+
+
 
     addAttachment: (a) => set((s) => ({ attachments: [...s.attachments, a] })),
     removeAttachment: (id) =>
