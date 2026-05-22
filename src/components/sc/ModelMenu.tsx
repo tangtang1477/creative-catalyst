@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, ChevronDown, Sparkles } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Logo } from "./Logo";
+import { ClaudeIcon, GoogleIcon, OpenAIIcon } from "./BrandIcons";
 import { cn } from "@/lib/utils";
 
 interface ModelOpt {
@@ -47,18 +47,15 @@ const MODELS: { group: string; icon: "claude" | "google" | "openai"; items: Mode
 ];
 
 function GroupIcon({ kind }: { kind: "claude" | "google" | "openai" }) {
-  if (kind === "claude") return <Sparkles className="h-3.5 w-3.5 text-accent" />;
-  if (kind === "google")
-    return (
-      <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 via-red-400 to-yellow-400 text-[8px] font-bold text-white">
-        G
-      </span>
-    );
-  return (
-    <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-foreground/80 text-[8px] font-bold text-background">
-      O
-    </span>
-  );
+  if (kind === "claude") return <ClaudeIcon size={13} />;
+  if (kind === "google") return <GoogleIcon size={13} />;
+  return <OpenAIIcon size={13} className="text-foreground" />;
+}
+
+function BrandIconFor({ brand }: { brand: string }) {
+  if (brand === "Claude") return <ClaudeIcon size={13} />;
+  if (brand === "Google") return <GoogleIcon size={13} />;
+  return <OpenAIIcon size={13} className="text-foreground" />;
 }
 
 interface Props {
@@ -82,7 +79,7 @@ export function ModelMenu({ disabled }: Props) {
             "disabled:pointer-events-none disabled:opacity-50",
           )}
         >
-          <Logo size={14} glow />
+          <BrandIconFor brand={current.brand} />
           <span className="text-foreground">{current.brand}</span>
           <span className="text-muted-foreground">
             {current.name}
