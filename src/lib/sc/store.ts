@@ -113,9 +113,10 @@ const saveHistory = (list: TaskRecord[]) => {
 };
 
 const loadAutoMode = (): AutoMode => {
-  if (typeof window === "undefined") return "confirm";
+  if (typeof window === "undefined") return "auto";
   const v = window.localStorage.getItem(AUTO_KEY);
-  return v === "auto" ? "auto" : "confirm";
+  if (v === "auto" || v === "blocker" || v === "guided" || v === "strict") return v;
+  return "auto";
 };
 
 export const useSC = create<SCState>((set, get) => {
