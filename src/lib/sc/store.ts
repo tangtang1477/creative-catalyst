@@ -38,6 +38,11 @@ interface SCState {
   timers: number[];
   runId: number;
 
+  // Intake interactive state (lifted from IntakeCard so CommandInput can drive Others input)
+  intakeSel: Record<string, string>;
+  intakeCustoms: Record<string, string[]>;
+  intakeOthers: { key: string; label: string } | null;
+
   setPrompt: (v: string) => void;
   setAutoMode: (m: AutoMode) => void;
   addAttachment: (a: Attachment) => void;
@@ -58,6 +63,11 @@ interface SCState {
   forceState: (s: string) => void;
   restoreTask: (id: string) => void;
   deleteTask: (id: string) => void;
+
+  setIntakeSel: (key: string, value: string) => void;
+  requestIntakeOthers: (key: string, label: string) => void;
+  cancelIntakeOthers: () => void;
+  resolveIntakeOthers: (value: string) => void;
 }
 
 const HISTORY_KEY = "sc.tasks";
