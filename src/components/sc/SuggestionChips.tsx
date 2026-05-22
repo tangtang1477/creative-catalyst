@@ -55,7 +55,7 @@ export function SuggestionChips() {
           <Import className="h-3.5 w-3.5" />
           <span>Import skills & memory</span>
         </SCButton>
-        <OthersChip onConfirm={(v) => setPrompt(v)} />
+        <OthersChip questionKey="suggestion" questionLabel="自定义任务" />
       </div>
 
       <div className="space-y-2 pt-1">
