@@ -1,16 +1,20 @@
 import { Check } from "lucide-react";
 import { SCButton } from "./Button";
+import { useSC } from "@/lib/sc/store";
+import { detectVideoType, NEXT_CHIPS } from "@/lib/sc/video-types";
 
 const checks = [
-  "9:16 比例",
-  "产品可见",
-  "无违规宣称",
+  "比例 & 时长匹配",
+  "主体/角色一致",
+  "无未支持声明",
   "媒体链接已验证",
 ];
 
-const next = ["A/B variant", "字幕/旁白", "封面图", "改节奏", "比例导出"];
-
 export function QualityCheck() {
+  const { brief } = useSC();
+  const type = detectVideoType(brief?.prompt ?? "", brief?.adType);
+  const next = NEXT_CHIPS[type];
+
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-1.5">
