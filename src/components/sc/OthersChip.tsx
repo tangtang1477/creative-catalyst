@@ -1,75 +1,38 @@
-import { useState, type KeyboardEvent } from "react";
-import { Plus, Check } from "lucide-react";
+import { Plus } from "lucide-react";
+import { useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
 
 interface Props {
-  onConfirm: (value: string) => void;
+  questionKey: string;
+  questionLabel: string;
   className?: string;
 }
 
-export function OthersChip({ onConfirm, className }: Props) {
-  const [editing, setEditing] = useState(false);
-  const [v, setV] = useState("");
-
-  const commit = () => {
-    const t = v.trim();
-    if (t) onConfirm(t);
-    setV("");
-    setEditing(false);
-  };
-
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        onClick={() => setEditing(true)}
-        className={cn(
-          "inline-flex h-7 items-center gap-1 rounded-xl border border-dashed border-border bg-transparent px-3 text-[12.5px] font-medium leading-none text-muted-foreground outline-none transition-colors",
-          "hover:border-accent hover:text-accent",
-          "active:scale-[0.97]",
-          "focus-visible:ring-2 focus-visible:ring-accent",
-          className,
-        )}
-      >
-        <Plus className="h-3 w-3" />
-        Others…
-      </button>
-    );
-  }
+/**
+ * Clicking "Others…" no longer opens an inline input. Instead it asks
+ * the user to type their custom answer in the bottom command bar — same
+ * pattern as ChatGPT's "Other" affordance.
+ */
+export function OthersChip({ questionKey, questionLabel, className }: Props) {
+  const { requestIntakeOthers, intakeOthers } = useSC();
+  const active = intakeOthers?.key === questionKey;
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={() => requestIntakeOthers(questionKey, questionLabel)}
       className={cn(
-        "inline-flex h-7 items-center gap-1 rounded-xl border border-accent bg-surface-2 pl-2 pr-1 text-[12.5px]",
+        "inline-flex h-7 items-center gap-1 rounded-xl border border-dashed px-3 text-[12.5px] font-medium leading-none outline-none transition-colors",
+        active
+          ? "border-accent bg-accent/10 text-accent"
+          : "border-border bg-transparent text-muted-foreground hover:border-accent hover:text-accent",
+        "active:scale-[0.97]",
+        "focus-visible:ring-2 focus-visible:ring-accent",
         className,
       )}
     >
-      <input
-        autoFocus
-        value={v}
-        onChange={(e) => setV(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            commit();
-          } else if (e.key === "Escape") {
-            setV("");
-            setEditing(false);
-          }
-        }}
-        placeholder="自定义…"
-        className="h-6 w-32 bg-transparent text-[12.5px] text-foreground placeholder:text-muted-foreground focus:outline-none"
-      />
-      <button
-        type="button"
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={commit}
-        className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-accent text-accent-foreground hover:brightness-110"
-        aria-label="confirm"
-      >
-        <Check className="h-3 w-3" />
-      </button>
-    </div>
+      <Plus className="h-3 w-3" />
+      {active ? "请在下方输入框输入…" : "Others…"}
+    </button>
   );
 }
