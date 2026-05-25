@@ -28,9 +28,7 @@ const USER = {
 
 export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
   const { theme, setTheme, toggle } = useTheme();
-  const [credits] = useState(58);
-  const maxCredits = 100;
-  const filledDots = Math.round((credits / maxCredits) * 20);
+  const openPricing = useCredits((s) => s.openPricing);
 
   return (
     <HoverCard openDelay={120} closeDelay={120}>
@@ -42,11 +40,11 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
             collapsed && "justify-center px-0",
           )}
         >
-          <span className="relative h-7 w-7 shrink-0 rounded-full bg-gradient-to-br from-status-ready to-accent">
-            <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-background">
-              V
+          <CreditRing size={30} stroke={2}>
+            <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-status-ready to-accent">
+              <span className="text-[10px] font-bold text-background">V</span>
             </span>
-          </span>
+          </CreditRing>
           {!collapsed && (
             <>
               <div className="min-w-0 flex-1">
@@ -104,27 +102,11 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
         </button>
 
         {/* Credits */}
-        <div className="mt-2 rounded-xl bg-surface-2/60 px-3 py-2.5">
-          <div className="flex items-center justify-between text-[12px]">
-            <span className="font-medium">Credits</span>
-            <span className="text-muted-foreground">{credits} left ›</span>
-          </div>
-          <div className="mt-2 flex gap-[3px]">
-            {Array.from({ length: 20 }).map((_, i) => (
-              <span
-                key={i}
-                className={cn(
-                  "h-1.5 flex-1 rounded-full",
-                  i < filledDots ? "bg-accent" : "bg-border",
-                )}
-              />
-            ))}
-          </div>
-        </div>
+        <CreditsHoverPanel onTopUp={openPricing} />
 
         {/* Top-up / Boost */}
         <div className="mt-2 overflow-hidden rounded-xl bg-surface-2/60">
-          <Row icon={<CreditCard className="h-3.5 w-3.5 text-accent" />} label="Top-up credits" cta />
+          <Row icon={<Zap className="h-3.5 w-3.5 text-accent" />} label="Top-up credits" cta onClick={openPricing} />
           <div className="mx-2 h-px bg-border" />
           <Row icon={<Zap className="h-3.5 w-3.5 text-accent" />} label="Boost speed" cta />
         </div>
