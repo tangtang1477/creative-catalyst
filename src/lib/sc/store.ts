@@ -413,7 +413,10 @@ export const useSC = create<SCState>((set, get) => {
     wardrobeAssets.forEach((a, i) => {
       schedule(() => updateAsset(a.id, { status: "Generating" }), 1200 + i * 400);
       schedule(
-        () => updateAsset(a.id, { status: "Ready", url: SAMPLE_KEYFRAME }),
+        () => {
+          updateAsset(a.id, { status: "Ready", url: SAMPLE_KEYFRAME });
+          consume("wardrobe", `Wardrobe · ${a.id}`, 2);
+        },
         3200 + i * 400,
       );
     });
@@ -478,6 +481,7 @@ export const useSC = create<SCState>((set, get) => {
     schedule(() => {
       updateAsset("A01", { status: "Ready", url: SAMPLE_KEYFRAME });
       updateStage("paint", { status: "ready" });
+      consume("paint", "Keyframe A01 · MovieFlow", 5);
       appendSummary("paint", "A01 Ready · 已锁定为 V01 的 image_url");
       collapseAfter("paint", 1800);
       persistCurrent("running");
