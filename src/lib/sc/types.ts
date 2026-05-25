@@ -1,14 +1,18 @@
 export type StageId =
   | "scene"
   | "structure"
+  | "wardrobe"
   | "paint"
+  | "qc"
   | "life"
   | "details";
 
 export const STAGE_ORDER: StageId[] = [
   "scene",
   "structure",
+  "wardrobe",
   "paint",
+  "qc",
   "life",
   "details",
 ];
@@ -16,7 +20,9 @@ export const STAGE_ORDER: StageId[] = [
 export const STAGE_LABEL: Record<StageId, string> = {
   scene: "Building the scene",
   structure: "Structuring the film",
+  wardrobe: "Styling wardrobe & props",
   paint: "Painting the frame",
+  qc: "Self-check & consistency",
   life: "Bringing it to life",
   details: "Adding the details",
 };
@@ -37,11 +43,32 @@ export type AssetStatus =
   | "Recovering"
   | "Failed";
 
+export interface ToolCall {
+  id: string;
+  kind: "skill" | "tool";
+  label: string;
+  /** start timestamp (ms) for live elapsed counter */
+  startedAt: number;
+  /** when set, freeze the elapsed at this duration (ms) */
+  durationMs?: number;
+  status: "running" | "done";
+}
+
+export interface Thought {
+  id: string;
+  title: string;
+  body: string[];
+  /** asset ids whose thumbnails should render inside the thought */
+  thumbAssetIds?: string[];
+}
+
 export interface StageState {
   status: StageStatus;
   summary: string[];
   details?: string;
   expanded: boolean;
+  toolCalls: ToolCall[];
+  thoughts: Thought[];
 }
 
 export interface Asset {
@@ -76,9 +103,11 @@ export type Phase =
   | "done"
   | "failed";
 
-export type Gate = "script" | "keyframe" | null;
+export type Gate = "script" | "wardrobe" | "keyframe" | "qc-fix" | null;
 
-export type AutoMode = "auto" | "blocker" | "guided" | "strict";
+export type AutoMode = "auto" | "confirm";
+
+export type ViewMode = "list" | "canvas";
 
 export type TaskKind = "oneoff" | "series";
 
@@ -86,10 +115,10 @@ export interface Attachment {
   id: string;
   kind: "image" | "video";
   name: string;
-  url: string;      // object url or external url
+  url: string;
   thumb?: string;
   source: "upload" | "url" | "asset";
-  ref?: string;     // e.g. "A01" for @mention reference
+  ref?: string;
 }
 
 export interface TaskRecord {
