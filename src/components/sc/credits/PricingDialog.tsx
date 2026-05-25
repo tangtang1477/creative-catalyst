@@ -57,7 +57,9 @@ const TIERS: Tier[] = [
 
 export function PricingDialog() {
   const open = useCredits((s) => s.pricingOpen);
-  const setOpen = useCredits((s) => (v: boolean) => v ? s.openPricing() : s.closePricing());
+  const openPricing = useCredits((s) => s.openPricing);
+  const closePricing = useCredits((s) => s.closePricing);
+  const setOpen = (v: boolean) => (v ? openPricing() : closePricing());
   const topUp = useCredits((s) => s.topUp);
   const [cycle, setCycle] = useState<"monthly" | "yearly">("yearly");
   const [selected, setSelected] = useState<Tier["id"]>("plus");
