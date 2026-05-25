@@ -171,12 +171,16 @@ export function MediaRail() {
               variant="icon"
               size="icon"
               className={cn("h-7 w-7", multi && "bg-accent/15 text-accent")}
-              aria-label="multi-select"
+              aria-label="select all"
+              title={multi ? "清空选择" : "全选当前过滤集"}
               onClick={() => {
-                setMulti((v) => {
-                  if (v) clearSelection();
-                  return !v;
-                });
+                if (multi) {
+                  clearSelection();
+                } else {
+                  visible.forEach((a) => {
+                    if (!selection.includes(a.id)) toggleSelect(a.id);
+                  });
+                }
               }}
             >
               <CheckSquare className="h-3.5 w-3.5" />
@@ -224,35 +228,7 @@ export function MediaRail() {
           </div>
         )}
 
-        {/* Multi-select toolbar */}
-        {multi && (
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface-2/60 px-3 py-1.5 text-[11px]">
-            <span className="text-muted-foreground">
-              已选 <span className="font-semibold text-accent">{selection.length}</span> / {assets.length}
-            </span>
-            <div className="flex items-center gap-1">
-              <SCButton
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-[11px]"
-                onClick={clearSelection}
-                disabled={selection.length === 0}
-              >
-                清空
-              </SCButton>
-              <SCButton
-                variant="primary"
-                size="sm"
-                className="h-6 gap-1 px-2 text-[11px]"
-                disabled={selection.length < 2}
-                onClick={() => setBatchOpen(true)}
-              >
-                <Sparkles className="h-3 w-3" />
-                批量修改
-              </SCButton>
-            </div>
-          </div>
-        )}
+        {/* (Inline toolbar removed — floating bar below replaces it) */}
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-3">
