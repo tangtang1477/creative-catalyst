@@ -31,6 +31,10 @@ export function Workspace() {
   const a01 = assets.find((a) => a.id === "A01");
   const v01 = assets.find((a) => a.id === "V01");
   const inFlow = phase === "running" || phase === "done" || phase === "failed";
+  // Restored tasks don't have full runtime data (segments, qc thoughts, etc.).
+  // Render a simplified summary instead of the interactive stage children to
+  // avoid render-time crashes against undefined fields.
+  const isRestored = phase !== "running" && stages.scene.toolCalls.length === 0 && stages.scene.thoughts.length === 0 && (phase === "done" || phase === "failed");
 
   return (
     <div className="relative flex h-screen min-w-0 flex-1 flex-col">
