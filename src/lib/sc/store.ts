@@ -719,7 +719,6 @@ export const useSC = create<SCState>((set, get) => {
         // does not interact. Confirm waits indefinitely for user.
         set({ phase: "intake" });
       }, delay);
-      }, delay);
     },
 
     confirmBrief: (brief) => {
