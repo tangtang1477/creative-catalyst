@@ -152,6 +152,9 @@ export function MediaRail() {
                     episode={ep}
                     scenes={[...scenes.entries()].sort((a, b) => a[0] - b[0])}
                     rail={rail}
+                    selectable={multi}
+                    selection={selection}
+                    onToggle={toggleSelect}
                   />
                 );
               })}
@@ -172,6 +175,9 @@ export function MediaRail() {
                       asset={a}
                       compact
                       highlighted={rail.flashId === a.id}
+                      selectable={multi}
+                      selected={selection.includes(a.id)}
+                      onToggle={toggleSelect}
                     />
                   ))}
                 </Group>
@@ -190,6 +196,9 @@ export function MediaRail() {
                       asset={a}
                       compact
                       highlighted={rail.flashId === a.id}
+                      selectable={multi}
+                      selected={selection.includes(a.id)}
+                      onToggle={toggleSelect}
                     />
                   ))}
                 </Group>
@@ -202,6 +211,8 @@ export function MediaRail() {
           {images.length} image · {videos.length} video
         </div>
       </aside>
+
+      <BatchEditDialog open={batchOpen} onOpenChange={setBatchOpen} />
     </div>
   );
 }
@@ -210,10 +221,16 @@ function EpisodeBlock({
   episode,
   scenes,
   rail,
+  selectable,
+  selection,
+  onToggle,
 }: {
   episode: number;
   scenes: [number, import("@/lib/sc/types").Asset[]][];
   rail: { flashId?: string };
+  selectable: boolean;
+  selection: string[];
+  onToggle: (id: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   return (
@@ -237,7 +254,15 @@ function EpisodeBlock({
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {list.map((a) => (
-                  <AssetCard key={a.id} asset={a} compact highlighted={rail.flashId === a.id} />
+                  <AssetCard
+                    key={a.id}
+                    asset={a}
+                    compact
+                    highlighted={rail.flashId === a.id}
+                    selectable={selectable}
+                    selected={selection.includes(a.id)}
+                    onToggle={onToggle}
+                  />
                 ))}
               </div>
             </div>
