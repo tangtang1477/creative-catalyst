@@ -20,15 +20,17 @@ import { Calendar, GalleryHorizontal, Zap } from "lucide-react";
 import { Logo } from "./Logo";
 import { PricingDialog } from "./credits/PricingDialog";
 import { LowCreditToast } from "./credits/LowCreditToast";
-import { useCredits } from "@/lib/sc/credits-store";
+import { InlineLowCredit } from "./credits/InlineLowCredit";
+import { useCredits, creditsSelectors } from "@/lib/sc/credits-store";
 import { StageBoundary } from "./StageBoundary";
 
 import { cn } from "@/lib/utils";
 
 export function Workspace() {
-  const { phase, taskTitle, brief, stages, assets, gate, rail, setRailOpen, viewMode } = useSC();
+  const { phase, taskTitle, brief, stages, assets, gate, rail, setRailOpen, viewMode, chatLog } = useSC();
   const openPricing = useCredits((s) => s.openPricing);
-  const a01 = assets.find((a) => a.id === "A01");
+  const remaining = useCredits(creditsSelectors.remaining);
+  const paintAssets = assets.filter((a) => a.stageId === "paint");
   const v01 = assets.find((a) => a.id === "V01");
   const inFlow = phase === "running" || phase === "done" || phase === "failed";
   // Restored tasks don't have full runtime data (segments, qc thoughts, etc.).
