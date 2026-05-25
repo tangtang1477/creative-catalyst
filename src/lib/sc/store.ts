@@ -15,7 +15,7 @@ import {
   type ViewMode,
   STAGE_ORDER,
 } from "./types";
-import { SAMPLE_KEYFRAME, SAMPLE_VIDEO, SERIES_DEMO } from "./samples";
+import { SAMPLE_KEYFRAME, SAMPLE_VIDEO, SERIES_DEMO, STORYBOARD_ROWS } from "./samples";
 import { inferTaskTitle } from "./intake-engine";
 import { useCredits } from "./credits-store";
 
