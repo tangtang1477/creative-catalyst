@@ -546,6 +546,19 @@ export const useSC = create<SCState>((set, get) => {
 
   const runLife = () => {
     closeGate();
+    const VIDEO_COST = 30;
+    if (!canAfford(VIDEO_COST)) {
+      // not enough credits → pause flow and surface low-credit toast
+      updateStage("life", {
+        status: "recovering",
+        expanded: true,
+        summary: ["积分不足，无法启动视频整合 · 请充值后继续"],
+      });
+      const tid = get().taskId ?? undefined;
+      useCredits.getState().openLow(tid);
+      set({ phase: "failed" });
+      return;
+    }
     updateStage("life", { status: "running", expanded: true });
     runTool("life", "skill", "first-frame-to-video · MovieFlow", 1200, 0);
     streamLines("life", ["提交 V01 first-frame-to-video…"], 0, 100);
@@ -576,6 +589,7 @@ export const useSC = create<SCState>((set, get) => {
         poster: SAMPLE_KEYFRAME,
       });
       updateStage("life", { status: "ready" });
+      consume("life", "Video V01 · 30s render", VIDEO_COST);
       appendSummary("life", "V01 Ready · 30s · 9:16 · 画质验证通过");
       collapseAfter("life", 1800);
       persistCurrent("running");
@@ -593,6 +607,7 @@ export const useSC = create<SCState>((set, get) => {
     ];
     streamLines("details", checks, 500, 200, () => {
       updateStage("details", { status: "ready" });
+      consume("details", "Final QC pass", 2);
       set({ phase: "done" });
       collapseAfter("details", 1600);
       persistCurrent("done");
