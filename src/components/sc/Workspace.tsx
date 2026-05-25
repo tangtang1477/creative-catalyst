@@ -165,82 +165,105 @@ export function Workspace() {
                     const st = stages[id];
                     if (st.status === "pending") return null;
 
+                    // For restored tasks, skip interactive children to prevent
+                    // crashes against missing runtime data.
+                    if (isRestored) {
+                      return (
+                        <StageBoundary key={id}>
+                          <StageRow id={id} state={st} />
+                        </StageBoundary>
+                      );
+                    }
+
                     if (id === "structure") {
                       return (
-                        <StageRow
-                          key={id}
-                          id={id}
-                          state={st}
-                          details={
-                            <pre className="whitespace-pre-wrap font-sans">
-                              脚本完整版（含分镜机位、镜头时长、音效层、混音建议）。
-                            </pre>
-                          }
-                          detailsLabel="Full scene plan"
-                        >
-                          <div className="space-y-2">
-                            <ScriptTable />
-                            <StoryboardTable />
-                          </div>
-                        </StageRow>
+                        <StageBoundary key={id}>
+                          <StageRow
+                            id={id}
+                            state={st}
+                            details={
+                              <pre className="whitespace-pre-wrap font-sans">
+                                脚本完整版（含分镜机位、镜头时长、音效层、混音建议）。
+                              </pre>
+                            }
+                            detailsLabel="Full scene plan"
+                          >
+                            <div className="space-y-2">
+                              <ScriptTable />
+                              <StoryboardTable />
+                            </div>
+                          </StageRow>
+                        </StageBoundary>
                       );
                     }
 
                     if (id === "wardrobe") {
                       return (
-                        <StageRow key={id} id={id} state={st} keepChildrenWhenCollapsed>
-                          <WardrobePanel />
-                        </StageRow>
+                        <StageBoundary key={id}>
+                          <StageRow id={id} state={st} keepChildrenWhenCollapsed>
+                            <WardrobePanel />
+                          </StageRow>
+                        </StageBoundary>
                       );
                     }
 
                     if (id === "paint") {
                       return (
-                        <StageRow
-                          key={id}
-                          id={id}
-                          state={st}
-                          details={KEYFRAME_PROMPT_DETAIL}
-                          detailsLabel="Prompt details"
-                          keepChildrenWhenCollapsed
-                        >
-                          {a01 && <AssetCard asset={a01} />}
-                        </StageRow>
+                        <StageBoundary key={id}>
+                          <StageRow
+                            id={id}
+                            state={st}
+                            details={KEYFRAME_PROMPT_DETAIL}
+                            detailsLabel="Prompt details"
+                            keepChildrenWhenCollapsed
+                          >
+                            {a01 && <AssetCard asset={a01} />}
+                          </StageRow>
+                        </StageBoundary>
                       );
                     }
 
                     if (id === "qc") {
                       return (
-                        <StageRow key={id} id={id} state={st} keepChildrenWhenCollapsed>
-                          <QCPanel />
-                        </StageRow>
+                        <StageBoundary key={id}>
+                          <StageRow id={id} state={st} keepChildrenWhenCollapsed>
+                            <QCPanel />
+                          </StageRow>
+                        </StageBoundary>
                       );
                     }
 
                     if (id === "life") {
                       return (
-                        <StageRow
-                          key={id}
-                          id={id}
-                          state={st}
-                          details={RECOVERY_NOTES}
-                          detailsLabel="Recovery notes"
-                          keepChildrenWhenCollapsed
-                        >
-                          {v01 && <AssetCard asset={v01} />}
-                        </StageRow>
+                        <StageBoundary key={id}>
+                          <StageRow
+                            id={id}
+                            state={st}
+                            details={RECOVERY_NOTES}
+                            detailsLabel="Recovery notes"
+                            keepChildrenWhenCollapsed
+                          >
+                            {v01 && <AssetCard asset={v01} />}
+                          </StageRow>
+                        </StageBoundary>
                       );
                     }
 
                     if (id === "details" && st.status === "ready") {
                       return (
-                        <StageRow key={id} id={id} state={st} keepChildrenWhenCollapsed>
-                          <QualityCheck />
-                        </StageRow>
+                        <StageBoundary key={id}>
+                          <StageRow id={id} state={st} keepChildrenWhenCollapsed>
+                            <QualityCheck />
+                          </StageRow>
+                        </StageBoundary>
                       );
                     }
 
-                    return <StageRow key={id} id={id} state={st} />;
+                    return (
+                      <StageBoundary key={id}>
+                        <StageRow id={id} state={st} />
+                      </StageBoundary>
+                    );
                   })}
 
                   {gate && <ApprovalChips />}
