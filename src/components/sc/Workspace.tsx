@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSC } from "@/lib/sc/store";
 import { CommandInput } from "./CommandInput";
 import { SuggestionChips } from "./SuggestionChips";
