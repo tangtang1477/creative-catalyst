@@ -1,8 +1,6 @@
-import { useState } from "react";
 import {
   Plus,
   Check,
-  CreditCard,
   Zap,
   Brain,
   Settings,
@@ -17,6 +15,9 @@ import {
 } from "@/components/ui/hover-card";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/use-theme";
+import { CreditRing } from "./credits/CreditRing";
+import { CreditsHoverPanel } from "./credits/CreditsHoverPanel";
+import { useCredits } from "@/lib/sc/credits-store";
 
 const USER = {
   name: "Victoria@gmail.com",
