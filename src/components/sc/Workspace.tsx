@@ -291,6 +291,27 @@ export function Workspace() {
       {phase !== "empty" && (
         <div className="z-10 border-t border-border bg-background px-4 py-3">
           <div className="mx-auto max-w-[760px]">
+            {chatLog.length > 0 && (
+              <div className="mb-2 max-h-[140px] space-y-1.5 overflow-y-auto pr-1">
+                {chatLog.map((m) =>
+                  m.role === "user" ? (
+                    <div
+                      key={m.id}
+                      className="ml-auto w-fit max-w-[80%] rounded-2xl bg-surface-2 px-3 py-1.5 text-[12.5px] [animation:stream-fade_280ms_ease-out_both]"
+                    >
+                      {m.text}
+                    </div>
+                  ) : (
+                    <div
+                      key={m.id}
+                      className="mr-auto w-fit max-w-[80%] rounded-2xl border border-border bg-surface px-3 py-1.5 text-[12.5px] text-muted-foreground [animation:stream-fade_280ms_ease-out_both]"
+                    >
+                      {m.text}
+                    </div>
+                  ),
+                )}
+              </div>
+            )}
             <CommandInput compact />
           </div>
         </div>
