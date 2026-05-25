@@ -130,4 +130,8 @@ export interface TaskRecord {
   status: "running" | "done" | "failed" | "interrupted";
   kind: TaskKind;
   assets: Asset[];
+  /** Lightweight per-stage snapshot so restored tasks can show meaningful summary. */
+  stageSummaries?: Partial<Record<StageId, string[]>>;
+  brief?: Brief | null;
 }
+
