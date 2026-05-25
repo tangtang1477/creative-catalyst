@@ -38,6 +38,13 @@ export function Workspace() {
   // avoid render-time crashes against undefined fields.
   const isRestored = phase !== "running" && stages.scene.toolCalls.length === 0 && stages.scene.thoughts.length === 0 && (phase === "done" || phase === "failed");
 
+  // ChatGPT-like auto-scroll to bottom when new content streams in.
+  const endRef = useRef<HTMLDivElement | null>(null);
+  const stagesKey = STAGE_ORDER.map((id) => `${stages[id].status}:${stages[id].summary.length}:${stages[id].toolCalls.length}:${stages[id].thoughts.length}`).join("|");
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [chatLog.length, stagesKey, assets.length]);
+
   return (
     <div className="relative flex h-screen min-w-0 flex-1 flex-col">
       {/* Top bar */}
@@ -280,6 +287,28 @@ export function Workspace() {
                   })}
 
                   {gate && <ApprovalChips />}
+
+                  {/* In-task chat (merged into main timeline, ChatGPT-style) */}
+                  {chatLog.map((m) =>
+                    m.role === "user" ? (
+                      <div
+                        key={m.id}
+                        className="ml-auto w-fit max-w-[80%] rounded-2xl bg-surface-2 px-3.5 py-2 text-[13px] [animation:stream-fade_280ms_ease-out_both]"
+                      >
+                        {m.text}
+                      </div>
+                    ) : (
+                      <div
+                        key={m.id}
+                        className="mr-auto flex w-fit max-w-[80%] items-start gap-2 rounded-2xl border border-border bg-surface px-3.5 py-2 text-[13px] text-foreground/85 [animation:stream-fade_280ms_ease-out_both]"
+                      >
+                        <Logo size={14} />
+                        <span>{m.text}</span>
+                      </div>
+                    ),
+                  )}
+
+                  <div ref={endRef} className="h-px" />
                 </div>
               )}
             </div>
@@ -291,27 +320,6 @@ export function Workspace() {
       {phase !== "empty" && (
         <div className="z-10 border-t border-border bg-background px-4 py-3">
           <div className="mx-auto max-w-[760px]">
-            {chatLog.length > 0 && (
-              <div className="mb-2 max-h-[140px] space-y-1.5 overflow-y-auto pr-1">
-                {chatLog.map((m) =>
-                  m.role === "user" ? (
-                    <div
-                      key={m.id}
-                      className="ml-auto w-fit max-w-[80%] rounded-2xl bg-surface-2 px-3 py-1.5 text-[12.5px] [animation:stream-fade_280ms_ease-out_both]"
-                    >
-                      {m.text}
-                    </div>
-                  ) : (
-                    <div
-                      key={m.id}
-                      className="mr-auto w-fit max-w-[80%] rounded-2xl border border-border bg-surface px-3 py-1.5 text-[12.5px] text-muted-foreground [animation:stream-fade_280ms_ease-out_both]"
-                    >
-                      {m.text}
-                    </div>
-                  ),
-                )}
-              </div>
-            )}
             <CommandInput compact />
           </div>
         </div>
