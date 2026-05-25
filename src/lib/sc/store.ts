@@ -893,6 +893,7 @@ export const useSC = create<SCState>((set, get) => {
         intakeSel: {},
         intakeCustoms: {},
         intakeOthers: null,
+        chatLog: [],
       }));
     },
 
