@@ -334,6 +334,7 @@ export const useSC = create<SCState>((set, get) => {
       1300,
       () => {
         updateStage("scene", { status: "ready" });
+        consume("scene", "Scene · brief analysis", 1);
         collapseAfter("scene", 1400);
         schedule(() => runStructure(), 1600);
       },
