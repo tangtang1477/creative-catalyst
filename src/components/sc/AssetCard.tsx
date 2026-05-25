@@ -17,9 +17,19 @@ interface Props {
   asset: Asset;
   compact?: boolean;
   highlighted?: boolean;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggle?: (id: string) => void;
 }
 
-export function AssetCard({ asset, compact = false, highlighted = false }: Props) {
+export function AssetCard({
+  asset,
+  compact = false,
+  highlighted = false,
+  selectable = false,
+  selected = false,
+  onToggle,
+}: Props) {
   const Icon = asset.kind === "image" ? ImageIcon : Film;
   const focusAsset = useSC((s) => s.focusAsset);
   const [loaded, setLoaded] = useState(false);
@@ -43,13 +53,32 @@ export function AssetCard({ asset, compact = false, highlighted = false }: Props
     }
   };
 
+  const handleCardClick = () => {
+    if (selectable) onToggle?.(asset.id);
+  };
+
   return (
     <div
+      onClick={selectable ? handleCardClick : undefined}
       className={cn(
-        "group overflow-hidden rounded-2xl border border-border bg-surface-2 transition-shadow [animation:asset-pop_280ms_cubic-bezier(0.22,1,0.36,1)]",
+        "group relative overflow-hidden rounded-2xl border border-border bg-surface-2 transition-shadow [animation:asset-pop_280ms_cubic-bezier(0.22,1,0.36,1)]",
         highlighted && "[animation:rail-flash_1.5s_ease-out_1]",
+        selectable && "cursor-pointer",
+        selected && "ring-2 ring-accent",
       )}
     >
+      {selectable && (
+        <div
+          className={cn(
+            "absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold transition-colors",
+            selected
+              ? "border-accent bg-accent text-accent-foreground"
+              : "border-border bg-background/80 text-transparent",
+          )}
+        >
+          ✓
+        </div>
+      )}
       <div className="relative">
         {asset.kind === "image" && asset.url ? (
           <img

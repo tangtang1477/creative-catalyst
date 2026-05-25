@@ -52,16 +52,61 @@ export function MediaRail() {
             <span className="font-medium">Assets</span>
             <span className="text-muted-foreground">· {assets.length}</span>
           </div>
-          <SCButton
-            variant="icon"
-            size="icon"
-            className="h-7 w-7"
-            aria-label="close"
-            onClick={() => setRailOpen(false)}
-          >
-            <X className="h-3.5 w-3.5" />
-          </SCButton>
+          <div className="flex items-center gap-1">
+            <SCButton
+              variant="icon"
+              size="icon"
+              className={cn("h-7 w-7", multi && "bg-accent/15 text-accent")}
+              aria-label="multi-select"
+              onClick={() => {
+                setMulti((v) => {
+                  if (v) clearSelection();
+                  return !v;
+                });
+              }}
+            >
+              <CheckSquare className="h-3.5 w-3.5" />
+            </SCButton>
+            <SCButton
+              variant="icon"
+              size="icon"
+              className="h-7 w-7"
+              aria-label="close"
+              onClick={() => setRailOpen(false)}
+            >
+              <X className="h-3.5 w-3.5" />
+            </SCButton>
+          </div>
         </div>
+
+        {multi && (
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface-2/60 px-3 py-1.5 text-[11px]">
+            <span className="text-muted-foreground">
+              已选 <span className="font-semibold text-accent">{selection.length}</span> / {assets.length}
+            </span>
+            <div className="flex items-center gap-1">
+              <SCButton
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-[11px]"
+                onClick={clearSelection}
+                disabled={selection.length === 0}
+              >
+                清空
+              </SCButton>
+              <SCButton
+                variant="primary"
+                size="sm"
+                className="h-6 gap-1 px-2 text-[11px]"
+                disabled={selection.length < 2}
+                onClick={() => setBatchOpen(true)}
+              >
+                <Sparkles className="h-3 w-3" />
+                批量修改
+              </SCButton>
+            </div>
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto p-3">
           {assets.length === 0 ? (
@@ -107,6 +152,9 @@ export function MediaRail() {
                     episode={ep}
                     scenes={[...scenes.entries()].sort((a, b) => a[0] - b[0])}
                     rail={rail}
+                    selectable={multi}
+                    selection={selection}
+                    onToggle={toggleSelect}
                   />
                 );
               })}
@@ -127,6 +175,9 @@ export function MediaRail() {
                       asset={a}
                       compact
                       highlighted={rail.flashId === a.id}
+                      selectable={multi}
+                      selected={selection.includes(a.id)}
+                      onToggle={toggleSelect}
                     />
                   ))}
                 </Group>
@@ -145,6 +196,9 @@ export function MediaRail() {
                       asset={a}
                       compact
                       highlighted={rail.flashId === a.id}
+                      selectable={multi}
+                      selected={selection.includes(a.id)}
+                      onToggle={toggleSelect}
                     />
                   ))}
                 </Group>
@@ -157,6 +211,8 @@ export function MediaRail() {
           {images.length} image · {videos.length} video
         </div>
       </aside>
+
+      <BatchEditDialog open={batchOpen} onOpenChange={setBatchOpen} />
     </div>
   );
 }
@@ -165,10 +221,16 @@ function EpisodeBlock({
   episode,
   scenes,
   rail,
+  selectable,
+  selection,
+  onToggle,
 }: {
   episode: number;
   scenes: [number, import("@/lib/sc/types").Asset[]][];
   rail: { flashId?: string };
+  selectable: boolean;
+  selection: string[];
+  onToggle: (id: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   return (
@@ -192,7 +254,15 @@ function EpisodeBlock({
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {list.map((a) => (
-                  <AssetCard key={a.id} asset={a} compact highlighted={rail.flashId === a.id} />
+                  <AssetCard
+                    key={a.id}
+                    asset={a}
+                    compact
+                    highlighted={rail.flashId === a.id}
+                    selectable={selectable}
+                    selected={selection.includes(a.id)}
+                    onToggle={onToggle}
+                  />
                 ))}
               </div>
             </div>
