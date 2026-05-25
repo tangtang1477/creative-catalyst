@@ -254,6 +254,9 @@ export function Workspace() {
           </div>
         </div>
       )}
+
+      <PricingDialog />
+      <LowCreditToast />
     </div>
   );
 }
