@@ -18,11 +18,15 @@ import { KEYFRAME_PROMPT_DETAIL, RECOVERY_NOTES } from "@/lib/sc/samples";
 import { SCButton } from "./Button";
 import { Calendar, GalleryHorizontal, Zap } from "lucide-react";
 import { Logo } from "./Logo";
+import { PricingDialog } from "./credits/PricingDialog";
+import { LowCreditToast } from "./credits/LowCreditToast";
+import { useCredits } from "@/lib/sc/credits-store";
 
 import { cn } from "@/lib/utils";
 
 export function Workspace() {
   const { phase, taskTitle, brief, stages, assets, gate, rail, setRailOpen, viewMode } = useSC();
+  const openPricing = useCredits((s) => s.openPricing);
   const a01 = assets.find((a) => a.id === "A01");
   const v01 = assets.find((a) => a.id === "V01");
   const inFlow = phase === "running" || phase === "done" || phase === "failed";
@@ -45,7 +49,7 @@ export function Workspace() {
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <SCButton variant="ghost" size="sm" className="gap-1.5">
+          <SCButton variant="ghost" size="sm" className="gap-1.5" onClick={openPricing}>
             <Zap className="h-3.5 w-3.5" />
             Buy credits
           </SCButton>
