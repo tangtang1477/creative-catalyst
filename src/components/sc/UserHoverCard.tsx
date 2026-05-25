@@ -132,13 +132,18 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
           <Row icon={<Zap className="h-3.5 w-3.5 text-accent" />} label="Boost speed" cta />
         </div>
 
-        {/* Theme toggle */}
-        <div className="mt-2 flex items-center gap-1 rounded-full bg-surface-2 p-1">
+        {/* Theme toggle — sliding pill */}
+        <div className="relative mt-2 flex items-center rounded-full bg-surface-2 p-1">
+          <span
+            aria-hidden
+            className="absolute bottom-1 left-1 top-1 w-[calc(50%-4px)] rounded-full bg-background shadow-sm transition-transform duration-300 ease-out"
+            style={{ transform: theme === "light" ? "translateX(100%)" : "translateX(0%)" }}
+          />
           <button
             onClick={() => setTheme("dark")}
             className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-full py-1.5 text-[12px] transition-colors",
-              theme === "dark" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              "relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full py-1.5 text-[12px] transition-colors",
+              theme === "dark" ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >
             <Moon className="h-3.5 w-3.5" />
@@ -147,8 +152,8 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
           <button
             onClick={() => setTheme("light")}
             className={cn(
-              "flex flex-1 items-center justify-center gap-1.5 rounded-full py-1.5 text-[12px] transition-colors",
-              theme === "light" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              "relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full py-1.5 text-[12px] transition-colors",
+              theme === "light" ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >
             <Sun className="h-3.5 w-3.5" />
