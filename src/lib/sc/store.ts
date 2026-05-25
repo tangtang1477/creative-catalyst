@@ -822,7 +822,7 @@ export const useSC = create<SCState>((set, get) => {
     regenerateKeyframe: () => {
       closeGate();
       set((s) => ({
-        assets: s.assets.filter((a) => a.id !== "A01"),
+        assets: s.assets.filter((a) => a.stageId !== "paint"),
         stages: { ...s.stages, paint: emptyStage() },
       }));
       runPaint();
