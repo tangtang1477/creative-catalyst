@@ -219,7 +219,13 @@ export function Workspace() {
                             detailsLabel="Prompt details"
                             keepChildrenWhenCollapsed
                           >
-                            {a01 && <AssetCard asset={a01} />}
+                            {paintAssets.length > 0 && (
+                              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                {paintAssets.map((a) => (
+                                  <AssetCard key={a.id} asset={a} compact />
+                                ))}
+                              </div>
+                            )}
                           </StageRow>
                         </StageBoundary>
                       );
@@ -236,16 +242,21 @@ export function Workspace() {
                     }
 
                     if (id === "life") {
+                      const lowCredit = st.status === "recovering" && remaining < 30;
                       return (
                         <StageBoundary key={id}>
                           <StageRow
                             id={id}
                             state={st}
-                            details={RECOVERY_NOTES}
+                            details={lowCredit ? undefined : RECOVERY_NOTES}
                             detailsLabel="Recovery notes"
                             keepChildrenWhenCollapsed
                           >
-                            {v01 && <AssetCard asset={v01} />}
+                            {lowCredit ? (
+                              <InlineLowCredit />
+                            ) : (
+                              v01 && <AssetCard asset={v01} />
+                            )}
                           </StageRow>
                         </StageBoundary>
                       );
