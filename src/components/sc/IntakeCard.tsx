@@ -229,14 +229,31 @@ export function IntakeCard() {
         </div>
 
         {phase === "ready" && (
-          <div className="mt-5 flex items-center justify-end gap-2 [animation:stream-fade_320ms_ease-out_both]">
-            <SCButton variant="ghost" size="sm" onClick={skipIntake}>
-              Skip
-            </SCButton>
-            <SCButton variant="primary" size="sm" onClick={onContinue}>
-              Continue
-              <span className="ml-1 text-[10px] opacity-70">⌘ ⏎</span>
-            </SCButton>
+          <div className="mt-5 space-y-2 [animation:stream-fade_320ms_ease-out_both]">
+            {autoMode === "auto" && countdown !== null && countdown > 0 && (
+              <div className="flex items-center gap-2 rounded-xl bg-accent/10 px-3 py-1.5 text-[11.5px] text-foreground/80">
+                <Timer className={cn("h-3 w-3 text-accent", countdown <= 5 && "animate-pulse")} />
+                <span>
+                  {countdown}s 后将按当前选择自动继续 ·
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCancelled(true)}
+                  className="text-accent hover:underline"
+                >
+                  我要确认（取消倒计时）
+                </button>
+              </div>
+            )}
+            <div className="flex items-center justify-end gap-2">
+              <SCButton variant="ghost" size="sm" onClick={skipIntake}>
+                Skip
+              </SCButton>
+              <SCButton variant="primary" size="sm" onClick={onContinue}>
+                Continue
+                <span className="ml-1 text-[10px] opacity-70">⌘ ⏎</span>
+              </SCButton>
+            </div>
           </div>
         )}
       </div>
