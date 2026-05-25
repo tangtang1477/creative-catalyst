@@ -580,15 +580,16 @@ export const useSC = create<SCState>((set, get) => {
     closeGate();
     const VIDEO_COST = 30;
     if (!canAfford(VIDEO_COST)) {
-      // not enough credits → pause flow and surface low-credit toast
+      // not enough credits → pause flow, render inline pill in stage body
       updateStage("life", {
         status: "recovering",
         expanded: true,
-        summary: ["积分不足，无法启动视频整合 · 请充值后继续"],
+        summary: [],
       });
       const tid = get().taskId ?? undefined;
       useCredits.getState().openLow(tid);
       set({ phase: "failed" });
+      persistCurrent("failed");
       return;
     }
     updateStage("life", { status: "running", expanded: true });
