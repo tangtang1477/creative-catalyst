@@ -183,9 +183,10 @@ export function Sidebar() {
                   </div>
                 )}
                 {tasks.map((t) => {
-                  const isActive = t.id === taskId && phase !== "empty";
+                  const isActive = t.id === taskId;
                   const isRunning = t.status === "running";
                   const isFailed = t.status === "failed";
+                  const disabled = isActive || isRunning;
                   return (
                     <div
                       key={t.id}
@@ -202,10 +203,13 @@ export function Sidebar() {
                         )}
                       />
                       <button
-                        onClick={() => !isActive && restoreTask(t.id)}
+                        onClick={() => !disabled && restoreTask(t.id)}
+                        disabled={disabled}
+                        title={isRunning && !isActive ? "该任务正在运行，无法回放" : undefined}
                         className={cn(
                           "flex h-7 min-w-0 flex-1 items-center justify-between gap-2 px-1.5 text-[12px]",
                           isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+                          disabled && !isActive && "cursor-not-allowed opacity-60",
                         )}
                       >
                         <span className="truncate text-left">{t.title}</span>
