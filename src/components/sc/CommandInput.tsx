@@ -131,7 +131,9 @@ export function CommandInput({ placeholder, compact = false }: Props) {
         value={value}
         onChange={(e) => {
           setValue(e.target.value);
-          requestAnimationFrame(updateCaret);
+          // Sync caret synchronously so MentionPopover sees the new @-token
+          // on the same render that the character is added.
+          setCaret(e.target.selectionStart ?? e.target.value.length);
         }}
         onKeyUp={updateCaret}
         onClick={updateCaret}
