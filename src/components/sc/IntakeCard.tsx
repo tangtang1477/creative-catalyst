@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { SCButton } from "./Button";
 import { useSC } from "@/lib/sc/store";
-import { Loader2 } from "lucide-react";
+import { Loader2, Timer } from "lucide-react";
 import { inferIntake, OTHERS_LABEL } from "@/lib/sc/intake-engine";
 import { OthersChip } from "./OthersChip";
 import { cn } from "@/lib/utils";
@@ -31,6 +31,7 @@ export function IntakeCard() {
     intakeSel,
     intakeCustoms,
     setIntakeSel,
+    autoMode,
   } = useSC();
   const intake = useMemo(
     () => inferIntake(brief?.prompt ?? ""),
@@ -128,6 +129,28 @@ export function IntakeCard() {
       mode: intakeSel.mode,
     });
   };
+
+  // 20s soft-countdown for auto mode after streaming is ready
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [cancelled, setCancelled] = useState(false);
+  useEffect(() => {
+    if (phase !== "ready" || autoMode !== "auto" || cancelled) {
+      setCountdown(null);
+      return;
+    }
+    setCountdown(20);
+    const start = Date.now();
+    const tick = window.setInterval(() => {
+      const left = Math.max(0, 20 - Math.floor((Date.now() - start) / 1000));
+      setCountdown(left);
+      if (left <= 0) {
+        window.clearInterval(tick);
+        onContinue();
+      }
+    }, 200);
+    return () => window.clearInterval(tick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, autoMode, cancelled]);
 
   return (
     <div className="space-y-4 [animation:stream-fade_320ms_ease-out_both]">
