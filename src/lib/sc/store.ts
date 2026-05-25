@@ -17,6 +17,11 @@ import {
 } from "./types";
 import { SAMPLE_KEYFRAME, SAMPLE_VIDEO, SERIES_DEMO } from "./samples";
 import { inferTaskTitle } from "./intake-engine";
+import { useCredits } from "./credits-store";
+
+const consume = (stage: string, label: string, cost: number) =>
+  useCredits.getState().consume(stage, label, cost);
+const canAfford = (cost: number) => useCredits.getState().canAfford(cost);
 
 interface RailState {
   open: boolean;
