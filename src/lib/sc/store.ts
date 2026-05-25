@@ -299,10 +299,15 @@ export const useSC = create<SCState>((set, get) => {
 
   /** Persist current task snapshot into taskHistory */
   const persistCurrent = (status: TaskRecord["status"]) => {
-    const { taskId, taskTitle, brief, assets, taskHistory, taskKind } = get();
+    const { taskId, taskTitle, brief, assets, taskHistory, taskKind, stages } = get();
     if (!taskId) return;
     const now = Date.now();
     const existing = taskHistory.find((t) => t.id === taskId);
+    const stageSummaries: Partial<Record<StageId, string[]>> = {};
+    for (const sid of STAGE_ORDER) {
+      const sum = stages[sid].summary;
+      if (sum.length) stageSummaries[sid] = sum.slice(-6);
+    }
     const record: TaskRecord = {
       id: taskId,
       title: taskTitle,
@@ -312,11 +317,14 @@ export const useSC = create<SCState>((set, get) => {
       status,
       kind: taskKind,
       assets,
+      stageSummaries,
+      brief,
     };
     const next = [record, ...taskHistory.filter((t) => t.id !== taskId)];
     set({ taskHistory: next });
     saveHistory(next);
   };
+
 
   // -------- Stage runners --------
 
