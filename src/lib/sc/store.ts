@@ -36,6 +36,13 @@ interface SoftGate {
   fireAt: number;
 }
 
+interface ChatMsg {
+  id: string;
+  role: "user" | "agent";
+  text: string;
+  ts: number;
+}
+
 interface SCState {
   phase: Phase;
   prompt: string;
@@ -56,6 +63,8 @@ interface SCState {
   runId: number;
   /** ids selected for batch operations */
   selection: string[];
+  /** in-task chat messages (user ↔ agent), reset on new task */
+  chatLog: ChatMsg[];
 
   intakeSel: Record<string, string>;
   intakeCustoms: Record<string, string[]>;
@@ -68,6 +77,7 @@ interface SCState {
   removeAttachment: (id: string) => void;
   clearAttachments: () => void;
   submit: (prompt: string) => void;
+  chatMessage: (text: string) => void;
   confirmBrief: (brief: Brief) => void;
   skipIntake: () => void;
   approveScript: () => void;
