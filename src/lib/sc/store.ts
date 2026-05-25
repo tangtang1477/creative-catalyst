@@ -374,6 +374,7 @@ export const useSC = create<SCState>((set, get) => {
       3600,
       () => {
         updateStage("structure", { status: "ready" });
+        consume("structure", "Script + storyboard", 3);
         if (isAuto()) {
           schedule(() => runWardrobe(), 1100);
         } else {
