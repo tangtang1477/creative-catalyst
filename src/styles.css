@@ -72,6 +72,9 @@
   --status-failed: oklch(0.62 0.22 25);
   --status-recovering: oklch(0.66 0.16 295);
   --status-queued: oklch(0.7 0.015 260);
+
+  --credit-low: oklch(0.78 0.16 75);
+  --credit-critical: oklch(0.62 0.22 25);
 }
 
 .dark {
@@ -153,6 +156,17 @@
   0%   { transform: scale(0.6); opacity: 0.9; }
   80%  { transform: scale(2.2); opacity: 0; }
   100% { transform: scale(2.2); opacity: 0; }
+}
+
+@keyframes credit-deplete {
+  0%   { background: var(--accent); box-shadow: 0 0 8px rgba(113,240,246,0.7); transform: scaleY(1.8); }
+  60%  { background: var(--credit-low); box-shadow: 0 0 4px rgba(0,0,0,0); transform: scaleY(1); }
+  100% { background: var(--border); box-shadow: none; transform: scaleY(1); }
+}
+
+@keyframes credit-pulse {
+  0%, 100% { filter: drop-shadow(0 0 0 rgba(255,80,80,0)); }
+  50%      { filter: drop-shadow(0 0 6px rgba(255,80,80,0.7)); }
 }
 
 @layer base {
