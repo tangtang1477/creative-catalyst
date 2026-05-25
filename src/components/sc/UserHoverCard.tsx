@@ -154,7 +154,7 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
   );
 }
 
-function Row({ icon, label, cta }: { icon: React.ReactNode; label: string; cta?: boolean }) {
+function Row({ icon, label, cta, onClick }: { icon: React.ReactNode; label: string; cta?: boolean; onClick?: () => void }) {
   return (
     <div className="flex items-center justify-between gap-2 px-3 py-2">
       <span className="flex items-center gap-2 text-[12.5px]">
@@ -162,7 +162,7 @@ function Row({ icon, label, cta }: { icon: React.ReactNode; label: string; cta?:
         {label}
       </span>
       {cta && (
-        <button className="rounded-full bg-accent px-3 py-1 text-[11px] font-medium text-accent-foreground hover:brightness-110">
+        <button onClick={onClick} className="rounded-full bg-accent px-3 py-1 text-[11px] font-medium text-accent-foreground hover:brightness-110">
           Get
         </button>
       )}
