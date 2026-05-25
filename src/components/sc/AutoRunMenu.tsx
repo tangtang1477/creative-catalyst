@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Hand, Shield, Zap, ZapOff } from "lucide-react";
+import { Check, ChevronDown, Hand, Zap } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,24 +13,26 @@ interface Props {
   disabled?: boolean;
 }
 
-const OPTIONS: { value: AutoMode; label: string; sub: string; icon: typeof Zap }[] = [
-  { value: "auto", label: "Auto Run", sub: "全自动，连续推进", icon: Zap },
-  { value: "blocker", label: "Blocker", sub: "关键阻塞项才问我", icon: ZapOff },
-  { value: "guided", label: "Guided", sub: "关键节点确认", icon: Hand },
-  { value: "strict", label: "Strict", sub: "严格按资料", icon: Shield },
+const OPTIONS: { value: AutoMode; label: string; sub: string; Icon: typeof Zap }[] = [
+  { value: "auto", label: "Auto-run without asking", sub: "全自动连续推进，关键节点 20s 后自动继续", Icon: Check },
+  { value: "confirm", label: "Confirm before running", sub: "每个关键节点都等你确认", Icon: Hand },
 ];
 
-const LABEL: Record<AutoMode, string> = {
+const TRIGGER_LABEL: Record<AutoMode, string> = {
   auto: "Auto Run",
-  blocker: "Blocker",
-  guided: "Guided",
-  strict: "Strict",
+  confirm: "Confirm",
+};
+
+const TRIGGER_ICON: Record<AutoMode, typeof Zap> = {
+  auto: Zap,
+  confirm: Hand,
 };
 
 export function AutoRunMenu({ disabled }: Props) {
   const { autoMode, setAutoMode } = useSC();
-  const label = LABEL[autoMode] ?? "Auto Run";
-  const isContinuous = autoMode === "auto" || autoMode === "blocker";
+  const label = TRIGGER_LABEL[autoMode];
+  const TriggerIcon = TRIGGER_ICON[autoMode];
+  const isAuto = autoMode === "auto";
 
   return (
     <DropdownMenu>
@@ -45,13 +47,7 @@ export function AutoRunMenu({ disabled }: Props) {
             "disabled:pointer-events-none disabled:opacity-50",
           )}
         >
-          <span
-            className="h-1.5 w-1.5 rounded-full"
-            style={{
-              background: isContinuous ? "var(--accent)" : "var(--muted-foreground)",
-              boxShadow: isContinuous ? "0 0 6px var(--accent)" : "none",
-            }}
-          />
+          <TriggerIcon className={cn("h-3 w-3", isAuto && "text-accent")} />
           <span>{label}</span>
           <ChevronDown className="h-3 w-3 opacity-70" />
         </button>
@@ -63,7 +59,7 @@ export function AutoRunMenu({ disabled }: Props) {
         className="w-[280px] rounded-2xl border-border bg-surface p-1.5 shadow-2xl"
       >
         {OPTIONS.map((o) => {
-          const Icon = o.icon;
+          const Icon = o.Icon;
           const selected = autoMode === o.value;
           return (
             <DropdownMenuItem

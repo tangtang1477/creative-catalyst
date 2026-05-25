@@ -1,162 +1,141 @@
-## 本轮改动计划
 
-### 一、画布点阵优化（轻量美观）
+## 本轮改动计划（基于 AI Video Studio 现状）
 
-**文件**：`src/components/sc/DotGridBackground.tsx`
+### 1. 鼠标光圈继续缩小（视觉）
 
-- `spacing` 18 → 14（密度提升约 40%）
-- `glowRadius` 180 → 120（光源范围缩小）
-- 基础半径基数 1 → 0.7（点更细更轻）
-- 鼠标光下最大半径增量 1.3 → 0.9（避免堆头过亮）
-- 基础透明度 0.05/0.08 → 0.04/0.06，光下叠加 0.6 → 0.45
-- mask 渐变收紧：55% → 45%，更聚焦中部
+`src/components/sc/DotGridBackground.tsx`：
+- `glowRadius` 120 → 80
+- 光下半径增量 0.9 → 0.7、不透明度叠加 0.45 → 0.35
+- `spacing` 14 → 12，让点更密但更轻
+- mask 收紧至 40%
 
-效果：更密、更细、光晕更小更柔，整体观感"轻量美观"。
+### 2. 画布预览模式（Canvas View）
 
----
+新增模式切换：在 `MediaRail` / 顶部右上 Gallery 按钮左侧加一个图标按钮（`LayoutGrid` 列表视图 / `Workflow` 画布视图，二选一切换）。
 
-### 二、按 ai-video-studio skill 重构交互流程
+参考 AI Video Weaver `src/components/canvas/Canvas.tsx` 的节点画布风格，**仅做视图层映射**，流程/数据完全沿用现有 store：
 
-skill 的核心契约：**固定阶段名 + 资源卡 + 折叠细节 + 类型自适应 + 集数延续 + 真实生成证据**。当前实现是"广告片单一流程"，需要重构为多类型 + 系列剧 + 严格阶段编排。
+- 新建 `src/components/sc/canvas/CanvasView.tsx` — 容器：DotGrid 背景 + pan/zoom 容器（滚轮缩放、左键拖动）
+- 新建 `src/components/sc/canvas/StageNode.tsx` — 每个阶段（Building / Structuring / Wardrobe / Paint / QC / Life / Details）显示为一个节点卡，复用 `StageRow` 内的标题、状态、流式 summary
+- 新建 `src/components/sc/canvas/AssetNode.tsx` — 资产（A01 / C01 / E01 / P01 / V01 / wardrobe）以缩略图卡片节点呈现
+- 新建 `src/components/sc/canvas/NodeEdges.tsx` — SVG 曲线连接 Stage→Asset、Stage→Stage
+- store 新增 `viewMode: 'list' | 'canvas'` + `setViewMode`，默认 list；切换按钮在 `Workspace.tsx` 顶栏
+- 节点位置按阶段序号 + 资产排布生成静态布局（不做拖拽编辑），避免引入复杂状态
 
-#### 2.1 首条响应文案（铁律 1）
+### 3. 真实 Loading 效果 + 思考过程展开/收起
 
-`src/components/sc/Workspace.tsx` 空态首屏标题区改为：
+每个阶段 running 状态下，summary 区域上方插入一行"工具调用"提示，类似 Claude/Cursor 的 tool-use 行：
 
-> **Using skill ai-video-studio**
-> 你好，我可以帮你把想法、角色、产品或素材做成 AI 视频。告诉我类型和目标，或直接选下面的方向。
+```
+⏳ Using skill · video-script-writer  (1.2s)
+⏳ Calling tool · text-to-image · MovieFlow  (2.4s)
+⏳ Calling tool · qc-consistency-checker  (3.1s)
+```
 
-下方紧跟 **Create Brief** 4 题（与 skill 一致，覆盖现有 intake）：
+- 新建 `src/components/sc/ToolCallLine.tsx` — 单行：spinner + skill/tool 名 + 实时计时 + 完成后变 ✓
+- 新建 `src/components/sc/ThinkingBlock.tsx` — 可折叠"思考过程"块（默认收起，标题 `Thought for 4.2s · 展开`），内部为多段流式段落
+- 在 `Structuring`（剧本/分镜）阶段，当 Paint 已产出图片素材后，思考块支持渲染**素材缩略图行**（C01/E01/P01/wardrobe 小图），表示"基于以下素材生成分镜"
+- store: 给 `StageState` 增加 `toolCalls: { id; label; status: 'running'|'done'; durationMs }[]` 和 `thoughts: { id; text; thumbs?: string[] }[]`
+- 现有 `streamLines` 拓展为先 push toolCall → 等待 → 完成 → 再 push summary
 
-1. 视频类型：Short cinema(推荐) / Series·Episodes / Ad·Brand film / Music·Fashion / Documentary·Explainer / UGC·Social / Other
-2. 投放规格：15s 9:16(推荐) / 30s 9:16 / 16:9 / 1:1 / Other
-3. 画面来源：自动生成角色·场景(推荐) / 使用上传素材 / 产品·主体特写 / 无人物 / Other
-4. 创作模式：全自动连续推进(推荐) / 关键阻塞项才问我 / 关键节点确认 / 严格按资料
+### 4. 模式简化为 Auto / Confirm
 
-**改文件**：`src/lib/sc/intake-engine.ts`（重写默认选项与推断）、`src/components/sc/IntakeCard.tsx`（标题与底部状态：`Awaiting your input`）。
+- `types.ts`：`AutoMode = 'auto' | 'confirm'`（删除 blocker/guided/strict）
+- `AutoRunMenu.tsx` 改为参考图 2 的两项：
+  - ✓ Auto-run without asking（默认）
+  - 🤚 Confirm before running
+  - 触发按钮：选中 auto 显示 "Auto Run"，选中 confirm 显示 "Confirm"
+- `store.ts`：`isContinuousMode = autoMode === 'auto'`；删掉 4-mode 分支
 
-#### 2.2 固定 6 阶段标签替换
+### 5. 流程新增两个阶段
 
-skill 阶段名是硬规范，当前 store phase 命名不符合。新增映射：
+`types.ts` `StageId` 扩展为：
+```
+scene → structure → wardrobe(新) → paint → qc(新) → life → details
+```
 
-| skill 阶段 | 触发条件 |
-|---|---|
-| Awaiting your input | intake 未完成 |
-| Building the scene | 选定 brief，输出创意方向/世界观/主体策略 |
-| Structuring the film | 剧本/分镜/节奏表 |
-| Painting the frame | 关键帧（A01/C01/E01/P01）生成 |
-| Bringing it to life | first-frame-to-video（V01...） |
-| Adding the details | QC + Next chips |
+#### 5.1 Wardrobe（服装/道具）
 
-**改文件**：
-- `src/lib/sc/types.ts`：`Phase` 类型重命名为这 6 个 + 保留 `awaiting_continue`
-- `src/lib/sc/store.ts`：阶段推进与 `autoMode` 分段确认改为以上 6 段
-- `src/components/sc/StageRow.tsx`：标题文案改为新阶段名（中英对照副标题）
-- `src/components/sc/Workspace.tsx`：阶段顺序渲染
+`STAGE_LABEL.wardrobe = "Styling wardrobe & props"`
 
-#### 2.3 类型自适应（核心新增）
+- 在 `structure` 完成后、`paint` 之前运行
+- 生成 2-4 个素材卡：`W01` 主角服装、`W02` 配角服装、`P01` 关键道具，状态走 Queued→Processing→Ready
+- summary 强调"匹配 1920s 民国 / 现代都市 / 赛博朋克"等年代感，让用户判断是否符合背景
+- confirm 模式下完成后弹 gate `wardrobe`，提供"采纳 / 调整"chip
 
-新增 `src/lib/sc/video-types.ts`，按类型返回不同的：
+#### 5.2 QC 自查（在 life 之前？不，按用户原文：在分镜生成后合并完整视频之前）
 
-- Building the scene 字段集（如 Series：series premise / world rules / recurring cast / season arc；Narrative：premise / protagonist / conflict / mood；Ad：product / audience / promise / CTA / compliance；等等）
-- Structuring 输出形态（剧本表 vs 节拍表 vs Episode Beats）
-- Asset 资产分类（C01 角色 / E01 环境 / P01 道具 / A01 关键帧 / V01 视频）
-- QC focus
+实际语义：分镜 = paint 的关键帧序列，合并完整视频 = life 的 V01。所以 `qc` 阶段插在 `paint` 之后、`life` 之前。
 
-**改文件**：
-- 新建 `src/lib/sc/video-types.ts` — 类型配置表（series/short_cinema/ad/music/doc/ugc/abstract）
-- `src/components/sc/ScriptTable.tsx` — 支持两种表（Script vs Beat Sheet）
-- `src/components/sc/StageRow.tsx` — Building the scene 字段按类型渲染
+`STAGE_LABEL.qc = "Self-check & consistency"`
 
-#### 2.4 Series / Episodic 工作流（新增）
+QC 阶段展示前端可见的检查项列表（流式打勾）：
+- 角色一致性（C01 跨镜对比）
+- 场景一致性（E01 风格统一）
+- 道具/服装连贯性（W01/W02/P01）
+- 故事连贯性（剧本节拍 vs 关键帧）
+- 幻觉/事实性检测
+- 法务/合规扫描
 
-当类型 = Series，新增两块持久数据结构：
+UI：
+- 新建 `src/components/sc/QCPanel.tsx` — 表格：检查项 / 进度条 / 结果（✓ Pass / ⚠ Issue）
+- 检查结束总结："发现 2 处问题" 或 "全部通过"
+- 若有问题：渲染"修改建议"卡片 → 调用 mock 的"快模型重生成"（`updateAsset` 替换缩略图，文案标注 `Fast model · 0 credits · Preview`）
+- 弹 gate `qc-fix`：chips `按建议调整` / `保持原样`
+- 若用户 20s 无操作（auto 模式）自动按建议调整
 
-- **Series Bible**（卡片）：series / format / logline / world rules / recurring cast / standing sets / core conflict / visual grammar
-- **Episode Registry**（表格）：Episode / Status / Story Function / Cliffhanger·Carryover
-- **当前集 Beats** 表：Beat / Duration / Story·Action / Visual Language / Carryover
-- **Continuity Registry** 表：ID / Type / Description / First Seen / Reuse Rule（C01/E01/P01 永不改名）
-- 资产命名采用 `S01E01-A01` / `S01E01-V01`；C/E/P 跨集复用
+### 6. Auto 模式 20s 自动推进
 
-新增组件：
-- `src/components/sc/SeriesBible.tsx`
-- `src/components/sc/EpisodeRegistry.tsx`
-- `src/components/sc/ContinuityRegistry.tsx`
+新增通用"软 gate"机制，应用于所有非首屏必选项的确认点（script / wardrobe / keyframe / qc-fix）：
 
-store 扩展：
-- `series?: SeriesBible`
-- `episodes: EpisodeRecord[]`
-- `continuity: ContinuityItem[]`
-- action：`continueNextEpisode()` — 复用 Bible/Registry/C·E·P/未解线索/上一集 cliffhanger，从 Selected Brief 起跳，**不重启 intake**
+- store: `gate` 设置时同时 `gateAutoAt = Date.now() + 20000`、`gateDefaultAction: () => void`
+- 仅当 `autoMode === 'auto'` 时启动 20s 倒计时
+- 新建 `src/components/sc/AutoAdvanceTip.tsx` — 在 gate 卡片底部展示："20s 后将自动按推荐继续 · 倒计时 18s · [立即继续] [我要确认]"
+- 倒计时归零执行 `gateDefaultAction`；用户任意输入/点击则取消倒计时
+- intake 阶段（视频类型等首屏必选项）**不启用**软 gate
 
-用户输入"继续上一集 / 第 2 集 / 下一集"时由 `intake-engine` 命中并直接走 `continueNextEpisode`。
+### 7. 批量修改素材
 
-#### 2.5 Auto Flow 分段确认细化
+`MediaRail` / `AssetTable` 新增多选模式：
 
-当前 store 已在 script/keyframe 加 gate。按 skill 改为：
-
-- **全自动模式**：连续推进至交付，仅在真实阻塞（缺凭据/法务声明/不能假设的型号价格/可轮询的供应商任务）时停
-- **关键节点确认模式**：每阶段尾部弹 ContinuePrompt
-- **严格按资料模式**：禁止补全/假设，缺即问
-
-**改文件**：`src/lib/sc/store.ts` 的 `autoMode` 分支按 4 种模式改写（当前只有 auto/confirm 两种，需要扩到 4 种与 intake 一致）。
-
-#### 2.6 资产卡 & Media Proof（视觉契约）
-
-skill 强制资产表格 4 列：Asset / Status / Preview·Link / Source。状态枚举固定为：Generating / Queued / Processing / Status checked / Ready / Recovering / Needs blocker / Failed。
-
-- `src/components/sc/AssetCard.tsx` 改为符合 4 列规范
-- 新增 `src/components/sc/AssetTable.tsx` — 阶段内统一渲染（Painting the frame / Bringing it to life / Final Assets）
-- "Recovering / Failed" 文案符合 skill（如 `未返回可播放 URL`），但内部实现仍是 mock 时序
-
-#### 2.7 折叠细节
-
-skill 要求"完整 prompt / 负 prompt / 长场景描述 / 恢复日志 / 长剧本"默认折叠。新增 `src/components/sc/CollapsibleDetails.tsx`（包装 shadcn collapsible），在 Painting / Structuring 阶段使用。媒体 URL 永远不放在折叠内。
-
-#### 2.8 Next-action chips（按类型自适应）
-
-`src/components/sc/QualityCheck.tsx` 的 Next 数组改为按类型返回：
-
-- Series：`下一集` `角色一致性` `世界观扩展` `字幕/旁白` `封面图` `改节奏`
-- Narrative：`扩展下一场` `角色一致性` `字幕/旁白` `封面图` `改节奏` `比例导出`
-- Ad：`A/B variant` `字幕/旁白` `封面图` `改节奏` `比例导出`
-- 其他类型类似
+- 缩略图左上角 hover 出现 checkbox；顶部出现工具条："已选 3 项 · 批量修改 / 取消"
+- 点"批量修改"弹 `BatchEditDialog`（新建 `src/components/sc/BatchEditDialog.tsx`）：textarea 输入统一指令（如"全部换成夜景"），提交后：
+- store 新增 `batchEditAssets(ids: string[], instruction: string)`：选中资产全部进入 `Recovering`→`Processing`→`Ready`，同时在 `details` 阶段追加流式 ThinkingBlock + ToolCallLine（同第 3 点的样式），让用户看到每个素材的重生成过程
+- 复用 QC 同款"快模型 / 0 credits"标注
 
 ---
 
-### 三、涉及文件清单
+## 文件清单
 
 **新建**
-- `src/lib/sc/video-types.ts`
-- `src/components/sc/SeriesBible.tsx`
-- `src/components/sc/EpisodeRegistry.tsx`
-- `src/components/sc/ContinuityRegistry.tsx`
-- `src/components/sc/AssetTable.tsx`
-- `src/components/sc/CollapsibleDetails.tsx`
+- `src/components/sc/canvas/CanvasView.tsx`
+- `src/components/sc/canvas/StageNode.tsx`
+- `src/components/sc/canvas/AssetNode.tsx`
+- `src/components/sc/canvas/NodeEdges.tsx`
+- `src/components/sc/canvas/CanvasDotGrid.tsx`（画布内更密的点阵，独立于全局背景）
+- `src/components/sc/ToolCallLine.tsx`
+- `src/components/sc/ThinkingBlock.tsx`
+- `src/components/sc/QCPanel.tsx`
+- `src/components/sc/AutoAdvanceTip.tsx`
+- `src/components/sc/BatchEditDialog.tsx`
+- `src/components/sc/ViewModeToggle.tsx`
 
 **修改**
-- `src/components/sc/DotGridBackground.tsx` — 密度/光源/亮度
-- `src/components/sc/Workspace.tsx` — 首屏文案 + 阶段顺序
-- `src/components/sc/IntakeCard.tsx` — 4 题文案/选项对齐 skill
-- `src/components/sc/StageRow.tsx` — 6 阶段标签 + 类型自适应字段
-- `src/components/sc/ScriptTable.tsx` — Script / Beat Sheet 双模式
-- `src/components/sc/AssetCard.tsx` — 4 列规范
-- `src/components/sc/QualityCheck.tsx` — Next chips 按类型
-- `src/lib/sc/types.ts` — Phase 类型 + Series/Episode/Continuity 类型
-- `src/lib/sc/store.ts` — 6 阶段 + 4 种 mode + Series 流转 + continueNextEpisode
-- `src/lib/sc/intake-engine.ts` — 选项/默认值/`继续上一集`命中
-- `src/lib/sc/samples.ts` — 各类型示例 brief
+- `src/components/sc/DotGridBackground.tsx` — 光圈再缩
+- `src/components/sc/AutoRunMenu.tsx` — 简化为 2 项
+- `src/components/sc/Workspace.tsx` — 顶栏接入 ViewModeToggle，根据 viewMode 切换 list/canvas
+- `src/components/sc/StageRow.tsx` — 嵌入 ToolCallLine / ThinkingBlock
+- `src/components/sc/MediaRail.tsx` — 多选 + 批量按钮
+- `src/components/sc/ApprovalChips.tsx` — 集成 AutoAdvanceTip
+- `src/lib/sc/types.ts` — `StageId` 加 `wardrobe`/`qc`；`AutoMode` 收敛为 2 项；`StageState` 加 `toolCalls`/`thoughts`；新增 `Gate` 值 `wardrobe`/`qc-fix`
+- `src/lib/sc/store.ts` — 6 项：viewMode、新阶段 runner、软 gate 倒计时、tool-call streaming、QC 检查、批量修改
 
----
+## 验收点
 
-### 四、验收点
-
-1. 鼠标光晕点阵更密、点更细、光圈更小，整体更精致。
-2. 空态首屏顶部出现 `Using skill ai-video-studio` + 友好句 + Create Brief 4 题，底部 `Awaiting your input`。
-3. Intake 4 题选项与 skill 文案一致；选 Series 后进入剧集分支。
-4. 阶段标签严格为 Building the scene / Structuring the film / Painting the frame / Bringing it to life / Adding the details。
-5. Series 类型显示 Series Bible + Episode Registry + Continuity Registry + 当前集 Beats 表，资产命名为 `S01E01-A01` / `S01E01-V01`。
-6. 输入"继续上一集 / 下一集"不重启 intake，从 Selected Brief 直接续推。
-7. 创作模式 4 选项均生效：全自动一路到底；关键节点确认每阶段询问；严格按资料缺即问。
-8. 资产表 4 列规范，状态使用 skill 枚举；prompt 详情折叠，媒体链接保持可见。
-9. Adding the details 的 Next chips 按视频类型变化（Series 显示 `下一集`）。
+1. 鼠标光晕明显更小、更柔。
+2. 进入生成流程后顶栏出现"画布预览"切换按钮，切到 canvas 显示节点画布版，数据同步。
+3. 每个阶段 running 时展示 `Using skill / Calling tool` 行 + 计时；剧本阶段思考块可展开，里面带服装/角色缩略图。
+4. AutoRunMenu 只有 Auto-run / Confirm 两项；触发按钮文案随之变化。
+5. 流程顺序：scene → structure → wardrobe → paint → qc → life → details；wardrobe 出现服装/道具卡；qc 出现检查清单流式打勾 + 总结 + 建议（快模型 0 credits 重生成）。
+6. Auto 模式下任何中途 gate 自动 20s 倒计时推进，UI 有提示和"立即继续/我要确认"。
+7. MediaRail 可多选 → 批量修改对话框 → 在 details 阶段流式回放修改过程。

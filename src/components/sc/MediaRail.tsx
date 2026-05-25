@@ -1,16 +1,19 @@
 import { useMemo, useState } from "react";
 import { useSC } from "@/lib/sc/store";
 import { AssetCard } from "./AssetCard";
-import { Image as ImageIcon, Film, ChevronDown, X } from "lucide-react";
+import { Image as ImageIcon, Film, ChevronDown, X, CheckSquare, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SCButton } from "./Button";
 import { Collapse } from "./Collapse";
+import { BatchEditDialog } from "./BatchEditDialog";
 
 export function MediaRail() {
-  const { assets, phase, rail, setRailOpen, taskKind } = useSC();
+  const { assets, phase, rail, setRailOpen, taskKind, selection, toggleSelect, clearSelection } = useSC();
   const [imgOpen, setImgOpen] = useState(true);
   const [vidOpen, setVidOpen] = useState(true);
   const [filter, setFilter] = useState<"all" | "image" | "video">("all");
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [multi, setMulti] = useState(false);
 
   const images = useMemo(() => assets.filter((a) => a.kind === "image"), [assets]);
   const videos = useMemo(() => assets.filter((a) => a.kind === "video"), [assets]);

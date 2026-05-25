@@ -11,17 +11,23 @@ import {
   Image as ImageIcon,
   Wand2,
   Sparkles,
+  Shirt,
+  ShieldCheck,
 } from "lucide-react";
 import type { StageId, StageState } from "@/lib/sc/types";
 import { STAGE_LABEL } from "@/lib/sc/types";
 import { useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
 import { Collapse } from "./Collapse";
+import { ToolCallLine } from "./ToolCallLine";
+import { ThinkingBlock } from "./ThinkingBlock";
 
 const stageIcon: Record<StageId, typeof Layers> = {
   scene: Layers,
   structure: Film,
+  wardrobe: Shirt,
   paint: ImageIcon,
+  qc: ShieldCheck,
   life: Wand2,
   details: Sparkles,
 };
@@ -32,7 +38,6 @@ interface Props {
   children?: ReactNode;
   details?: ReactNode;
   detailsLabel?: string;
-  /** When true, children (media) stay visible even when stage is collapsed. */
   keepChildrenWhenCollapsed?: boolean;
 }
 
@@ -98,17 +103,27 @@ export function StageRow({
             />
           </div>
 
-          <Collapse open={expanded && state.summary.length > 0}>
-            <ul className="mt-1.5 space-y-0.5 text-[12.5px] text-muted-foreground">
-              {state.summary.map((s, i) => (
-                <li
-                  key={`${i}-${s.slice(0, 8)}`}
-                  className="leading-snug [animation:stream-fade_320ms_ease-out_both]"
-                >
-                  · {s}
-                </li>
+          <Collapse open={expanded && (state.toolCalls.length > 0 || state.thoughts.length > 0 || state.summary.length > 0)}>
+            <div className="mt-2 space-y-1.5">
+              {state.toolCalls.map((tc) => (
+                <ToolCallLine key={tc.id} call={tc} />
               ))}
-            </ul>
+              {state.thoughts.map((th) => (
+                <ThinkingBlock key={th.id} thought={th} />
+              ))}
+              {state.summary.length > 0 && (
+                <ul className="space-y-0.5 pt-1 text-[12.5px] text-muted-foreground">
+                  {state.summary.map((s, i) => (
+                    <li
+                      key={`${i}-${s.slice(0, 8)}`}
+                      className="leading-snug [animation:stream-fade_320ms_ease-out_both]"
+                    >
+                      · {s}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </Collapse>
 
           {!expanded && state.summary.length > 0 && (
