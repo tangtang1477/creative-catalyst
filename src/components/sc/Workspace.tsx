@@ -21,6 +21,7 @@ import { Logo } from "./Logo";
 import { PricingDialog } from "./credits/PricingDialog";
 import { LowCreditToast } from "./credits/LowCreditToast";
 import { useCredits } from "@/lib/sc/credits-store";
+import { StageBoundary } from "./StageBoundary";
 
 import { cn } from "@/lib/utils";
 
