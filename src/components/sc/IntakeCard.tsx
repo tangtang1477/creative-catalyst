@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { SCButton } from "./Button";
 import { useSC } from "@/lib/sc/store";
-import { Loader2 } from "lucide-react";
+import { Loader2, Timer } from "lucide-react";
 import { inferIntake, OTHERS_LABEL } from "@/lib/sc/intake-engine";
 import { OthersChip } from "./OthersChip";
 import { cn } from "@/lib/utils";
@@ -31,6 +31,7 @@ export function IntakeCard() {
     intakeSel,
     intakeCustoms,
     setIntakeSel,
+    autoMode,
   } = useSC();
   const intake = useMemo(
     () => inferIntake(brief?.prompt ?? ""),
@@ -129,6 +130,28 @@ export function IntakeCard() {
     });
   };
 
+  // 20s soft-countdown for auto mode after streaming is ready
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [cancelled, setCancelled] = useState(false);
+  useEffect(() => {
+    if (phase !== "ready" || autoMode !== "auto" || cancelled) {
+      setCountdown(null);
+      return;
+    }
+    setCountdown(20);
+    const start = Date.now();
+    const tick = window.setInterval(() => {
+      const left = Math.max(0, 20 - Math.floor((Date.now() - start) / 1000));
+      setCountdown(left);
+      if (left <= 0) {
+        window.clearInterval(tick);
+        onContinue();
+      }
+    }, 200);
+    return () => window.clearInterval(tick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, autoMode, cancelled]);
+
   return (
     <div className="space-y-4 [animation:stream-fade_320ms_ease-out_both]">
       <div className="ml-auto w-fit max-w-[80%] rounded-2xl bg-surface-2 px-3.5 py-2 text-[13px]">
@@ -206,14 +229,31 @@ export function IntakeCard() {
         </div>
 
         {phase === "ready" && (
-          <div className="mt-5 flex items-center justify-end gap-2 [animation:stream-fade_320ms_ease-out_both]">
-            <SCButton variant="ghost" size="sm" onClick={skipIntake}>
-              Skip
-            </SCButton>
-            <SCButton variant="primary" size="sm" onClick={onContinue}>
-              Continue
-              <span className="ml-1 text-[10px] opacity-70">⌘ ⏎</span>
-            </SCButton>
+          <div className="mt-5 space-y-2 [animation:stream-fade_320ms_ease-out_both]">
+            {autoMode === "auto" && countdown !== null && countdown > 0 && (
+              <div className="flex items-center gap-2 rounded-xl bg-accent/10 px-3 py-1.5 text-[11.5px] text-foreground/80">
+                <Timer className={cn("h-3 w-3 text-accent", countdown <= 5 && "animate-pulse")} />
+                <span>
+                  {countdown}s 后将按当前选择自动继续 ·
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCancelled(true)}
+                  className="text-accent hover:underline"
+                >
+                  我要确认（取消倒计时）
+                </button>
+              </div>
+            )}
+            <div className="flex items-center justify-end gap-2">
+              <SCButton variant="ghost" size="sm" onClick={skipIntake}>
+                Skip
+              </SCButton>
+              <SCButton variant="primary" size="sm" onClick={onContinue}>
+                Continue
+                <span className="ml-1 text-[10px] opacity-70">⌘ ⏎</span>
+              </SCButton>
+            </div>
           </div>
         )}
       </div>

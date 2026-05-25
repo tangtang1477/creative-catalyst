@@ -17,6 +17,11 @@ import {
 } from "./types";
 import { SAMPLE_KEYFRAME, SAMPLE_VIDEO, SERIES_DEMO } from "./samples";
 import { inferTaskTitle } from "./intake-engine";
+import { useCredits } from "./credits-store";
+
+const consume = (stage: string, label: string, cost: number) =>
+  useCredits.getState().consume(stage, label, cost);
+const canAfford = (cost: number) => useCredits.getState().canAfford(cost);
 
 interface RailState {
   open: boolean;
@@ -329,6 +334,7 @@ export const useSC = create<SCState>((set, get) => {
       1300,
       () => {
         updateStage("scene", { status: "ready" });
+        consume("scene", "Scene · brief analysis", 1);
         collapseAfter("scene", 1400);
         schedule(() => runStructure(), 1600);
       },
@@ -368,6 +374,7 @@ export const useSC = create<SCState>((set, get) => {
       3600,
       () => {
         updateStage("structure", { status: "ready" });
+        consume("structure", "Script + storyboard", 3);
         if (isAuto()) {
           schedule(() => runWardrobe(), 1100);
         } else {
@@ -406,7 +413,10 @@ export const useSC = create<SCState>((set, get) => {
     wardrobeAssets.forEach((a, i) => {
       schedule(() => updateAsset(a.id, { status: "Generating" }), 1200 + i * 400);
       schedule(
-        () => updateAsset(a.id, { status: "Ready", url: SAMPLE_KEYFRAME }),
+        () => {
+          updateAsset(a.id, { status: "Ready", url: SAMPLE_KEYFRAME });
+          consume("wardrobe", `Wardrobe · ${a.id}`, 2);
+        },
         3200 + i * 400,
       );
     });
@@ -471,6 +481,7 @@ export const useSC = create<SCState>((set, get) => {
     schedule(() => {
       updateAsset("A01", { status: "Ready", url: SAMPLE_KEYFRAME });
       updateStage("paint", { status: "ready" });
+      consume("paint", "Keyframe A01 · MovieFlow", 5);
       appendSummary("paint", "A01 Ready · 已锁定为 V01 的 image_url");
       collapseAfter("paint", 1800);
       persistCurrent("running");
@@ -535,6 +546,19 @@ export const useSC = create<SCState>((set, get) => {
 
   const runLife = () => {
     closeGate();
+    const VIDEO_COST = 30;
+    if (!canAfford(VIDEO_COST)) {
+      // not enough credits → pause flow and surface low-credit toast
+      updateStage("life", {
+        status: "recovering",
+        expanded: true,
+        summary: ["积分不足，无法启动视频整合 · 请充值后继续"],
+      });
+      const tid = get().taskId ?? undefined;
+      useCredits.getState().openLow(tid);
+      set({ phase: "failed" });
+      return;
+    }
     updateStage("life", { status: "running", expanded: true });
     runTool("life", "skill", "first-frame-to-video · MovieFlow", 1200, 0);
     streamLines("life", ["提交 V01 first-frame-to-video…"], 0, 100);
@@ -565,6 +589,7 @@ export const useSC = create<SCState>((set, get) => {
         poster: SAMPLE_KEYFRAME,
       });
       updateStage("life", { status: "ready" });
+      consume("life", "Video V01 · 30s render", VIDEO_COST);
       appendSummary("life", "V01 Ready · 30s · 9:16 · 画质验证通过");
       collapseAfter("life", 1800);
       persistCurrent("running");
@@ -582,6 +607,7 @@ export const useSC = create<SCState>((set, get) => {
     ];
     streamLines("details", checks, 500, 200, () => {
       updateStage("details", { status: "ready" });
+      consume("details", "Final QC pass", 2);
       set({ phase: "done" });
       collapseAfter("details", 1600);
       persistCurrent("done");
@@ -688,20 +714,10 @@ export const useSC = create<SCState>((set, get) => {
       }));
       const delay = 1500 + Math.random() * 1000;
       schedule(() => {
-        if (get().autoMode === "auto") {
-          set((s) => ({
-            brief: {
-              prompt: s.brief?.prompt ?? text,
-              adType: taskKind === "series" ? "Series · Episode" : "Short cinema",
-              format: "30s · 9:16",
-              visualSource: "Generate from prompt",
-              mode: "Auto · 全自动连续推进",
-            },
-          }));
-          startRunning();
-        } else {
-          set({ phase: "intake" });
-        }
+        // Both auto and confirm enter intake first; auto adds a 20s soft-countdown
+        // inside IntakeCard that auto-confirms the prefilled selection if the user
+        // does not interact. Confirm waits indefinitely for user.
+        set({ phase: "intake" });
       }, delay);
     },
 

@@ -43,7 +43,8 @@ export function CommandInput({ placeholder, compact = false }: Props) {
     setValue(prompt);
   }
 
-  const isProcessing = phase === "running";
+  const isProcessing =
+    phase === "running" || phase === "thinking" || phase === "intake";
   const isThinking = phase === "thinking";
   const inputDisabled = isThinking;
 

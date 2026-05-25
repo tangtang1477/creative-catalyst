@@ -25,6 +25,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useCredits } from "@/lib/sc/credits-store";
 
 const navItems = [
   { id: "new", icon: Plus, label: "New task" },
@@ -47,6 +48,7 @@ export function Sidebar() {
     restoreTask,
     deleteTask,
   } = useSC();
+  const openPricing = useCredits((s) => s.openPricing);
 
   const [open, setOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
@@ -237,6 +239,7 @@ export function Sidebar() {
         <div className={cn("px-2 pb-2", !open && "px-1.5")}>
           {open ? (
             <button
+              onClick={openPricing}
               className={cn(
                 "flex w-full items-center justify-between gap-2 rounded-2xl bg-surface-2/70 px-3 py-2.5 ring-1 ring-border transition-colors",
                 "hover:ring-accent/60 hover:bg-[color-mix(in_oklab,var(--accent)_10%,var(--surface-2))]",
@@ -254,7 +257,10 @@ export function Sidebar() {
           ) : (
             <Tooltip>
               <TooltipTrigger asChild>
-                <button className="flex h-9 w-full items-center justify-center rounded-xl bg-surface-2 hover:bg-accent/15">
+                <button
+                  onClick={openPricing}
+                  className="flex h-9 w-full items-center justify-center rounded-xl bg-surface-2 hover:bg-accent/15"
+                >
                   <Gem className="h-4 w-4 text-accent" />
                 </button>
               </TooltipTrigger>
