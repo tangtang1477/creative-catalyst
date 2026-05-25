@@ -21,6 +21,7 @@ import { Logo } from "./Logo";
 import { PricingDialog } from "./credits/PricingDialog";
 import { LowCreditToast } from "./credits/LowCreditToast";
 import { useCredits } from "@/lib/sc/credits-store";
+import { StageBoundary } from "./StageBoundary";
 
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,10 @@ export function Workspace() {
   const a01 = assets.find((a) => a.id === "A01");
   const v01 = assets.find((a) => a.id === "V01");
   const inFlow = phase === "running" || phase === "done" || phase === "failed";
+  // Restored tasks don't have full runtime data (segments, qc thoughts, etc.).
+  // Render a simplified summary instead of the interactive stage children to
+  // avoid render-time crashes against undefined fields.
+  const isRestored = phase !== "running" && stages.scene.toolCalls.length === 0 && stages.scene.thoughts.length === 0 && (phase === "done" || phase === "failed");
 
   return (
     <div className="relative flex h-screen min-w-0 flex-1 flex-col">
@@ -160,82 +165,105 @@ export function Workspace() {
                     const st = stages[id];
                     if (st.status === "pending") return null;
 
+                    // For restored tasks, skip interactive children to prevent
+                    // crashes against missing runtime data.
+                    if (isRestored) {
+                      return (
+                        <StageBoundary key={id}>
+                          <StageRow id={id} state={st} />
+                        </StageBoundary>
+                      );
+                    }
+
                     if (id === "structure") {
                       return (
-                        <StageRow
-                          key={id}
-                          id={id}
-                          state={st}
-                          details={
-                            <pre className="whitespace-pre-wrap font-sans">
-                              脚本完整版（含分镜机位、镜头时长、音效层、混音建议）。
-                            </pre>
-                          }
-                          detailsLabel="Full scene plan"
-                        >
-                          <div className="space-y-2">
-                            <ScriptTable />
-                            <StoryboardTable />
-                          </div>
-                        </StageRow>
+                        <StageBoundary key={id}>
+                          <StageRow
+                            id={id}
+                            state={st}
+                            details={
+                              <pre className="whitespace-pre-wrap font-sans">
+                                脚本完整版（含分镜机位、镜头时长、音效层、混音建议）。
+                              </pre>
+                            }
+                            detailsLabel="Full scene plan"
+                          >
+                            <div className="space-y-2">
+                              <ScriptTable />
+                              <StoryboardTable />
+                            </div>
+                          </StageRow>
+                        </StageBoundary>
                       );
                     }
 
                     if (id === "wardrobe") {
                       return (
-                        <StageRow key={id} id={id} state={st} keepChildrenWhenCollapsed>
-                          <WardrobePanel />
-                        </StageRow>
+                        <StageBoundary key={id}>
+                          <StageRow id={id} state={st} keepChildrenWhenCollapsed>
+                            <WardrobePanel />
+                          </StageRow>
+                        </StageBoundary>
                       );
                     }
 
                     if (id === "paint") {
                       return (
-                        <StageRow
-                          key={id}
-                          id={id}
-                          state={st}
-                          details={KEYFRAME_PROMPT_DETAIL}
-                          detailsLabel="Prompt details"
-                          keepChildrenWhenCollapsed
-                        >
-                          {a01 && <AssetCard asset={a01} />}
-                        </StageRow>
+                        <StageBoundary key={id}>
+                          <StageRow
+                            id={id}
+                            state={st}
+                            details={KEYFRAME_PROMPT_DETAIL}
+                            detailsLabel="Prompt details"
+                            keepChildrenWhenCollapsed
+                          >
+                            {a01 && <AssetCard asset={a01} />}
+                          </StageRow>
+                        </StageBoundary>
                       );
                     }
 
                     if (id === "qc") {
                       return (
-                        <StageRow key={id} id={id} state={st} keepChildrenWhenCollapsed>
-                          <QCPanel />
-                        </StageRow>
+                        <StageBoundary key={id}>
+                          <StageRow id={id} state={st} keepChildrenWhenCollapsed>
+                            <QCPanel />
+                          </StageRow>
+                        </StageBoundary>
                       );
                     }
 
                     if (id === "life") {
                       return (
-                        <StageRow
-                          key={id}
-                          id={id}
-                          state={st}
-                          details={RECOVERY_NOTES}
-                          detailsLabel="Recovery notes"
-                          keepChildrenWhenCollapsed
-                        >
-                          {v01 && <AssetCard asset={v01} />}
-                        </StageRow>
+                        <StageBoundary key={id}>
+                          <StageRow
+                            id={id}
+                            state={st}
+                            details={RECOVERY_NOTES}
+                            detailsLabel="Recovery notes"
+                            keepChildrenWhenCollapsed
+                          >
+                            {v01 && <AssetCard asset={v01} />}
+                          </StageRow>
+                        </StageBoundary>
                       );
                     }
 
                     if (id === "details" && st.status === "ready") {
                       return (
-                        <StageRow key={id} id={id} state={st} keepChildrenWhenCollapsed>
-                          <QualityCheck />
-                        </StageRow>
+                        <StageBoundary key={id}>
+                          <StageRow id={id} state={st} keepChildrenWhenCollapsed>
+                            <QualityCheck />
+                          </StageRow>
+                        </StageBoundary>
                       );
                     }
 
-                    return <StageRow key={id} id={id} state={st} />;
+                    return (
+                      <StageBoundary key={id}>
+                        <StageRow id={id} state={st} />
+                      </StageBoundary>
+                    );
                   })}
 
                   {gate && <ApprovalChips />}

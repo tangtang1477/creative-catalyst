@@ -52,15 +52,22 @@ export interface ToolCall {
   /** when set, freeze the elapsed at this duration (ms) */
   durationMs?: number;
   status: "running" | "done";
+  /** one-line summary shown after completion */
+  summary?: string;
 }
 
 export interface Thought {
   id: string;
   title: string;
   body: string[];
+  /** short preview rendered in the collapsed header */
+  summary?: string;
   /** asset ids whose thumbnails should render inside the thought */
   thumbAssetIds?: string[];
+  /** total elapsed ms (set when finished) */
+  elapsedMs?: number;
 }
+
 
 export interface StageState {
   status: StageStatus;
@@ -130,4 +137,8 @@ export interface TaskRecord {
   status: "running" | "done" | "failed" | "interrupted";
   kind: TaskKind;
   assets: Asset[];
+  /** Lightweight per-stage snapshot so restored tasks can show meaningful summary. */
+  stageSummaries?: Partial<Record<StageId, string[]>>;
+  brief?: Brief | null;
 }
+

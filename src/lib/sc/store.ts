@@ -299,10 +299,15 @@ export const useSC = create<SCState>((set, get) => {
 
   /** Persist current task snapshot into taskHistory */
   const persistCurrent = (status: TaskRecord["status"]) => {
-    const { taskId, taskTitle, brief, assets, taskHistory, taskKind } = get();
+    const { taskId, taskTitle, brief, assets, taskHistory, taskKind, stages } = get();
     if (!taskId) return;
     const now = Date.now();
     const existing = taskHistory.find((t) => t.id === taskId);
+    const stageSummaries: Partial<Record<StageId, string[]>> = {};
+    for (const sid of STAGE_ORDER) {
+      const sum = stages[sid].summary;
+      if (sum.length) stageSummaries[sid] = sum.slice(-6);
+    }
     const record: TaskRecord = {
       id: taskId,
       title: taskTitle,
@@ -312,11 +317,14 @@ export const useSC = create<SCState>((set, get) => {
       status,
       kind: taskKind,
       assets,
+      stageSummaries,
+      brief,
     };
     const next = [record, ...taskHistory.filter((t) => t.id !== taskId)];
     set({ taskHistory: next });
     saveHistory(next);
   };
+
 
   // -------- Stage runners --------
 
@@ -900,24 +908,36 @@ export const useSC = create<SCState>((set, get) => {
       if (!rec) return;
       clearTimers();
       const stages = initialStages();
-      if (rec.status === "done") {
-        for (const sid of STAGE_ORDER) {
-          stages[sid] = { ...emptyStage(), status: "ready", expanded: false };
+      // Restore stages strictly from the persisted summaries. Mark them ready
+      // (or failed for the failed task) but DO NOT mark stages without snapshot
+      // data as ready, so Workspace knows to skip rendering interactive children
+      // that would otherwise crash on missing runtime data.
+      const snap = rec.stageSummaries ?? {};
+      for (const sid of STAGE_ORDER) {
+        const sum = snap[sid];
+        if (sum && sum.length) {
+          stages[sid] = {
+            ...emptyStage(),
+            status: rec.status === "failed" && sid === "life" ? "failed" : "ready",
+            summary: sum,
+            expanded: false,
+          };
         }
       }
+      const restoredBrief: Brief = rec.brief ?? {
+        prompt: rec.prompt,
+        adType: "Restored",
+        format: "—",
+        visualSource: "—",
+        mode: "—",
+      };
       set((s) => ({
         runId: s.runId + 1,
         phase: rec.status === "done" ? "done" : "failed",
         taskId: rec.id,
         taskTitle: rec.title,
         taskKind: rec.kind,
-        brief: {
-          prompt: rec.prompt,
-          adType: "Restored",
-          format: "—",
-          visualSource: "—",
-          mode: "—",
-        },
+        brief: restoredBrief,
         stages,
         assets: rec.assets,
         gate: null,
@@ -925,6 +945,7 @@ export const useSC = create<SCState>((set, get) => {
         rail: { open: rec.assets.length > 0 },
       }));
     },
+
 
     deleteTask: (id) => {
       const next = get().taskHistory.filter((t) => t.id !== id);
