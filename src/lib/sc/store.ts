@@ -739,11 +739,20 @@ export const useSC = create<SCState>((set, get) => {
         ts: Date.now(),
       };
       set((s) => ({ chatLog: [...s.chatLog, userMsg] }));
+      const phase = get().phase;
+      const reply =
+        phase === "running" || phase === "thinking" || phase === "intake"
+          ? "已记录，将在当前镜头完成后调整。"
+          : phase === "done"
+            ? "好的，需要我重新渲染哪些镜头？"
+            : phase === "failed"
+              ? "当前任务已暂停，需要我恢复或新建任务？"
+              : "已收到。";
       schedule(() => {
         const agentMsg: ChatMsg = {
           id: uid(),
           role: "agent",
-          text: "已收到，将在下一步纳入。",
+          text: reply,
           ts: Date.now(),
         };
         set((s) => ({ chatLog: [...s.chatLog, agentMsg] }));
