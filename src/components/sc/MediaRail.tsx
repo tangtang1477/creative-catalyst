@@ -340,6 +340,58 @@ export function MediaRail() {
         <div className="shrink-0 border-t border-border px-3 py-2 text-[10.5px] text-muted-foreground">
           {images.length} image · {videos.length} video · {width}px
         </div>
+
+        {/* Floating selection action bar */}
+        {multi && (
+          <div className="pointer-events-none absolute inset-x-3 bottom-12 z-30 flex justify-center">
+            <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border bg-background/95 px-2 py-1.5 shadow-2xl backdrop-blur [animation:stream-fade_240ms_ease-out_both]">
+              <span className="px-2 text-[11px] text-muted-foreground">
+                已选 <span className="font-semibold text-accent">{selection.length}</span>
+              </span>
+              <SCButton
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 px-2 text-[11px]"
+                onClick={() => {
+                  const ids = new Set(selection);
+                  assets
+                    .filter((a) => ids.has(a.id) && (a.url || a.poster))
+                    .forEach((a) =>
+                      addAttachment({
+                        id: Math.random().toString(36).slice(2, 9),
+                        kind: a.kind,
+                        name: a.label,
+                        url: a.url ?? "",
+                        thumb: a.kind === "image" ? a.url : a.poster,
+                        source: "asset",
+                        ref: a.label,
+                      }),
+                    );
+                  clearSelection();
+                }}
+              >
+                <Sparkles className="h-3 w-3" />
+                Add to task
+              </SCButton>
+              <SCButton
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 px-2 text-[11px]"
+                disabled={selection.length < 2}
+                onClick={() => setBatchOpen(true)}
+              >
+                批量修改
+              </SCButton>
+              <button
+                onClick={clearSelection}
+                aria-label="clear selection"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </aside>
 
       <BatchEditDialog open={batchOpen} onOpenChange={setBatchOpen} />
