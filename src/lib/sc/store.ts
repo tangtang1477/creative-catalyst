@@ -493,16 +493,16 @@ export const useSC = create<SCState>((set, get) => {
     const FRAME_MS = 2400;
     SHOTS.forEach((r, i) => {
       const startOffset = 1100 + i * STEP;
-      schedule(() => updateAsset(r.id, { status: "Generating" }), startOffset);
+      schedule(() => updateAsset(r.shot, { status: "Generating" }), startOffset);
       schedule(
-        () => updateAsset(r.id, { status: "Processing" }),
+        () => updateAsset(r.shot, { status: "Processing" }),
         startOffset + FRAME_MS * 0.5,
       );
       schedule(
         () => {
-          updateAsset(r.id, { status: "Ready", url: SAMPLE_KEYFRAME });
-          consume("paint", `Keyframe ${r.id} · MovieFlow`, 5);
-          appendSummary("paint", `${r.id} Ready · ${r.motion}`);
+          updateAsset(r.shot, { status: "Ready", url: SAMPLE_KEYFRAME });
+          consume("paint", `Keyframe ${r.shot} · MovieFlow`, 5);
+          appendSummary("paint", `${r.shot} Ready · ${r.motion}`);
         },
         startOffset + FRAME_MS,
       );
