@@ -2,6 +2,7 @@ import type { Asset } from "@/lib/sc/types";
 import { Image as ImageIcon, Film, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSC } from "@/lib/sc/store";
+import { AssetActions } from "./AssetActions";
 
 interface Props {
   asset: Asset;
@@ -16,7 +17,6 @@ export function AssetThumbCard({
   asset,
   selectable = false,
   selected = false,
-  onToggle,
   highlighted = false,
 }: Props) {
   const focusAsset = useSC((s) => s.focusAsset);
@@ -24,15 +24,12 @@ export function AssetThumbCard({
   const thumb = asset.kind === "image" ? asset.url : asset.poster;
 
   const handleClick = () => {
-    if (selectable) {
-      onToggle?.(asset.id);
-    } else {
-      focusAsset(asset.id);
-      const el = document.querySelector(
-        `[data-stage-id="${asset.stageId}"]`,
-      ) as HTMLElement | null;
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
+    if (selectable) return;
+    focusAsset(asset.id);
+    const el = document.querySelector(
+      `[data-stage-id="${asset.stageId}"]`,
+    ) as HTMLElement | null;
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   const statusColor =
@@ -45,11 +42,10 @@ export function AssetThumbCard({
           : "bg-muted-foreground";
 
   return (
-    <button
-      type="button"
+    <div
       onClick={handleClick}
       className={cn(
-        "group relative aspect-square overflow-hidden rounded-xl border border-border bg-surface-2 text-left transition-all hover:border-accent/50",
+        "group relative aspect-square cursor-pointer overflow-hidden rounded-xl border border-border bg-surface-2 text-left transition-all hover:border-accent/50",
         highlighted && "[animation:rail-flash_1.5s_ease-out_1]",
         selected && "ring-2 ring-accent",
       )}
@@ -67,32 +63,20 @@ export function AssetThumbCard({
         </div>
       )}
 
-      {/* Top status row */}
-      <div className="absolute inset-x-1 top-1 flex items-center justify-between">
-        <span className={cn("h-1.5 w-1.5 rounded-full", statusColor)} />
-        {selectable && (
-          <span
-            className={cn(
-              "flex h-4 w-4 items-center justify-center rounded-full border text-[9px] font-bold",
-              selected
-                ? "border-accent bg-accent text-accent-foreground"
-                : "border-white/30 bg-black/30 text-transparent backdrop-blur",
-            )}
-          >
-            ✓
-          </span>
-        )}
-      </div>
+      {/* status dot — anchored away from action buttons (top edge center-left) */}
+      <span className={cn("absolute left-1/2 top-1 z-10 h-1.5 w-1.5 -translate-x-1/2 rounded-full", statusColor)} />
 
       {/* Video play indicator */}
       {asset.kind === "video" && (
-        <span className="absolute right-1 top-1 rounded bg-black/55 px-1 text-[9px] font-medium text-white/85 backdrop-blur">
-          <Play className="inline h-2.5 w-2.5" />
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <span className="rounded-full bg-black/55 p-1.5 backdrop-blur">
+            <Play className="h-3 w-3 text-white/90" />
+          </span>
         </span>
       )}
 
       {/* Bottom label gradient */}
-      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-1.5 pb-1 pt-3">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-1.5 pb-1 pt-3">
         <span className="truncate font-mono text-[10px] font-semibold tracking-wider text-white">
           {asset.label}
         </span>
@@ -102,6 +86,14 @@ export function AssetThumbCard({
           </span>
         )}
       </div>
-    </button>
+
+      <AssetActions
+        asset={asset}
+        selectable={selectable}
+        selected={selected}
+        variant="thumb"
+      />
+    </div>
   );
 }
+

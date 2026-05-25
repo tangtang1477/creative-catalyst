@@ -781,6 +781,7 @@ export const useSC = create<SCState>((set, get) => {
         gate: null,
         softGate: null,
         selection: [],
+        chatLog: [],
         rail: { open: false, flashId: undefined, focusedAssetId: undefined },
         brief: { prompt: text, adType: "", format: "", visualSource: "", mode: "" },
         intakeSel: {},
@@ -1010,6 +1011,8 @@ export const useSC = create<SCState>((set, get) => {
         assets: rec.assets,
         gate: null,
         softGate: null,
+        selection: [],
+        chatLog: [],
         rail: { open: rec.assets.length > 0 },
       }));
     },
