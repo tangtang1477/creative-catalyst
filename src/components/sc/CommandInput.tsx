@@ -33,6 +33,7 @@ export function CommandInput({ placeholder, compact = false }: Props) {
     intakeOthers,
     resolveIntakeOthers,
     cancelIntakeOthers,
+    chatMessage,
   } = useSC();
   const [value, setValue] = useState(prompt ?? "");
   const [caret, setCaret] = useState(0);
@@ -47,9 +48,12 @@ export function CommandInput({ placeholder, compact = false }: Props) {
     phase === "running" || phase === "thinking" || phase === "intake";
   const isThinking = phase === "thinking";
   const inputDisabled = isThinking;
+  // Chat mode: once a task is active, the bottom bar is a conversation with
+  // the current task — not a brand-new prompt entry.
+  const isChatMode = phase !== "empty" && !intakeOthers;
 
-  // typewriter placeholder: only when value empty AND no explicit placeholder passed
-  const useTypewriter = !placeholder && !value && !isThinking && !intakeOthers;
+  // typewriter placeholder: only on the empty-state hero input
+  const useTypewriter = !placeholder && !value && phase === "empty";
   const typewriterText = useTypewriterPlaceholder(TYPEWRITER_PHRASES, {
     enabled: useTypewriter,
   });
@@ -67,13 +71,20 @@ export function CommandInput({ placeholder, compact = false }: Props) {
       ? `输入你想要的「${intakeOthers.label}」自定义内容，回车确认 · Esc 取消`
       : placeholder
         ? placeholder
-        : typewriterText || " ";
+        : isChatMode
+          ? '向当前任务发送指令，例如 "把 A03 的妆容再淡一些"'
+          : typewriterText || " ";
 
   const doSubmit = () => {
     if (!value.trim() || inputDisabled) return;
     // if Others is active during intake, route input back to intake instead of starting new task
     if (intakeOthers) {
       resolveIntakeOthers(value);
+      setValue("");
+      return;
+    }
+    if (isChatMode) {
+      chatMessage(value);
       setValue("");
       return;
     }

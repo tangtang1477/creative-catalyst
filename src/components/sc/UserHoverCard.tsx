@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { useTheme } from "@/hooks/use-theme";
 import { CreditRing } from "./credits/CreditRing";
 import { CreditsHoverPanel } from "./credits/CreditsHoverPanel";
-import { useCredits } from "@/lib/sc/credits-store";
+import { useCredits, creditsSelectors } from "@/lib/sc/credits-store";
 
 const USER = {
   name: "Victoria@gmail.com",
@@ -29,6 +29,9 @@ const USER = {
 export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
   const { theme, setTheme, toggle } = useTheme();
   const openPricing = useCredits((s) => s.openPricing);
+  const remaining = useCredits(creditsSelectors.remaining);
+  const total = useCredits((s) => s.total);
+  const pctRemain = total > 0 ? remaining / total : 0;
 
   return (
     <HoverCard openDelay={120} closeDelay={120}>
@@ -80,10 +83,28 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
       >
         {/* Workspace header */}
         <div className="flex items-center gap-2.5 px-2 py-2">
-          <div className="relative h-9 w-9 shrink-0 rounded-full bg-[radial-gradient(circle_at_30%_30%,#d8f64c,#4a7a18)]" />
+          <CreditRing size={40} stroke={2.5}>
+            <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-status-ready to-accent">
+              <span className="text-[12px] font-bold text-background">V</span>
+            </span>
+          </CreditRing>
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13px] font-semibold">{USER.workspace}</div>
             <div className="text-[11px] text-muted-foreground">{USER.plan}</div>
+            <div className="mt-1.5 h-[3px] w-full overflow-hidden rounded-full bg-border">
+              <div
+                className="h-full rounded-full bg-accent transition-all duration-500"
+                style={{
+                  width: `${Math.round(pctRemain * 100)}%`,
+                  background:
+                    pctRemain <= 0.1
+                      ? "var(--credit-critical)"
+                      : pctRemain <= 0.2
+                        ? "var(--credit-low)"
+                        : "var(--accent)",
+                }}
+              />
+            </div>
           </div>
         </div>
 

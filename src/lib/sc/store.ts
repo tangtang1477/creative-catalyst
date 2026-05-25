@@ -15,7 +15,7 @@ import {
   type ViewMode,
   STAGE_ORDER,
 } from "./types";
-import { SAMPLE_KEYFRAME, SAMPLE_VIDEO, SERIES_DEMO } from "./samples";
+import { SAMPLE_KEYFRAME, SAMPLE_VIDEO, SERIES_DEMO, STORYBOARD_ROWS } from "./samples";
 import { inferTaskTitle } from "./intake-engine";
 import { useCredits } from "./credits-store";
 
@@ -34,6 +34,13 @@ interface SoftGate {
   defaultAction: () => void;
   /** Epoch ms when auto-advance fires. */
   fireAt: number;
+}
+
+interface ChatMsg {
+  id: string;
+  role: "user" | "agent";
+  text: string;
+  ts: number;
 }
 
 interface SCState {
@@ -56,6 +63,8 @@ interface SCState {
   runId: number;
   /** ids selected for batch operations */
   selection: string[];
+  /** in-task chat messages (user ↔ agent), reset on new task */
+  chatLog: ChatMsg[];
 
   intakeSel: Record<string, string>;
   intakeCustoms: Record<string, string[]>;
@@ -68,6 +77,7 @@ interface SCState {
   removeAttachment: (id: string) => void;
   clearAttachments: () => void;
   submit: (prompt: string) => void;
+  chatMessage: (text: string) => void;
   confirmBrief: (brief: Brief) => void;
   skipIntake: () => void;
   approveScript: () => void;
@@ -446,15 +456,16 @@ export const useSC = create<SCState>((set, get) => {
     closeGate();
     updateStage("paint", { status: "running", expanded: true });
     runTool("paint", "skill", "ai-video-studio · keyframe-painter", 800, 0);
-    runTool("paint", "tool", "text-to-image · MovieFlow", 5400, 900);
+    runTool("paint", "tool", "text-to-image · MovieFlow (batch)", 8200, 900);
 
-    // thought with wardrobe thumbnails — shows "I'm generating frames using these assets"
+    // thought with wardrobe thumbnails — explains we're producing N frames
     schedule(
       () =>
         addThought("paint", {
           title: "基于服装/道具素材生成分镜",
           body: [
             "锁定主角 W01 + 配角 W02 + 道具 P01 作为参考。",
+            `将分批生成 ${STORYBOARD_ROWS.length} 个关键帧，覆盖全部镜头。`,
             "构图：左 1/3 主角，景深虚化背景，强调瓶身高光。",
             "光照：暮蓝主光 + 暖橙轮廓 + 烛火点缀。",
           ],
@@ -463,34 +474,57 @@ export const useSC = create<SCState>((set, get) => {
       1200,
     );
 
-    streamLines("paint", ["生成 A01 关键帧 · prompt 已写入…"], 0, 200);
+    const SHOTS = STORYBOARD_ROWS;
+    streamLines(
+      "paint",
+      [`队列接收 · ${SHOTS.length} 个关键帧 · prompt 已写入…`],
+      0,
+      200,
+    );
+
+    // Insert all assets in Queued state up-front
+    const paintAssets: Asset[] = SHOTS.map((r) => ({
+      id: r.shot,
+      kind: "image" as const,
+      label: r.shot,
+      caption: `Keyframe · ${r.scene}`,
+      status: "Queued" as const,
+      stageId: "paint" as const,
+      width: 1080,
+      height: 1920,
+    }));
     set((s) => ({
-      assets: [
-        ...s.assets,
-        {
-          id: "A01",
-          kind: "image",
-          label: "A01",
-          caption: "Keyframe · Hero shot",
-          status: "Queued",
-          stageId: "paint",
-          width: 1080,
-          height: 1920,
-        },
-      ],
-      rail: { ...s.rail, open: true, flashId: "A01" },
+      assets: [...s.assets, ...paintAssets],
+      rail: { ...s.rail, open: true, flashId: SHOTS[0]?.shot },
     }));
 
-    schedule(() => updateAsset("A01", { status: "Generating" }), 1400);
-    schedule(() => appendSummary("paint", "MovieFlow 队列已接收任务"), 1500);
-    schedule(() => updateAsset("A01", { status: "Processing" }), 3600);
-    schedule(() => appendSummary("paint", "采样中：构图 / 光照 / 色温…"), 3700);
+    // Stream each frame: stagger start, 2.4s per frame
+    const STEP = 700;
+    const FRAME_MS = 2400;
+    SHOTS.forEach((r, i) => {
+      const startOffset = 1100 + i * STEP;
+      schedule(() => updateAsset(r.shot, { status: "Generating" }), startOffset);
+      schedule(
+        () => updateAsset(r.shot, { status: "Processing" }),
+        startOffset + FRAME_MS * 0.5,
+      );
+      schedule(
+        () => {
+          updateAsset(r.shot, { status: "Ready", url: SAMPLE_KEYFRAME });
+          consume("paint", `Keyframe ${r.shot} · MovieFlow`, 5);
+          appendSummary("paint", `${r.shot} Ready · ${r.motion}`);
+        },
+        startOffset + FRAME_MS,
+      );
+    });
 
+    const totalEnd = 1100 + (SHOTS.length - 1) * STEP + FRAME_MS + 400;
     schedule(() => {
-      updateAsset("A01", { status: "Ready", url: SAMPLE_KEYFRAME });
       updateStage("paint", { status: "ready" });
-      consume("paint", "Keyframe A01 · MovieFlow", 5);
-      appendSummary("paint", "A01 Ready · 已锁定为 V01 的 image_url");
+      appendSummary(
+        "paint",
+        `${SHOTS.length} 个关键帧已就绪 · 锁定为 V01–V0${SHOTS.length} 的 image_url`,
+      );
       collapseAfter("paint", 1800);
       persistCurrent("running");
       if (isAuto()) {
@@ -498,7 +532,7 @@ export const useSC = create<SCState>((set, get) => {
       } else {
         openGate("keyframe", () => runQC());
       }
-    }, 6200);
+    }, totalEnd);
   };
 
   const runQC = () => {
@@ -556,15 +590,16 @@ export const useSC = create<SCState>((set, get) => {
     closeGate();
     const VIDEO_COST = 30;
     if (!canAfford(VIDEO_COST)) {
-      // not enough credits → pause flow and surface low-credit toast
+      // not enough credits → pause flow, render inline pill in stage body
       updateStage("life", {
         status: "recovering",
         expanded: true,
-        summary: ["积分不足，无法启动视频整合 · 请充值后继续"],
+        summary: [],
       });
       const tid = get().taskId ?? undefined;
       useCredits.getState().openLow(tid);
       set({ phase: "failed" });
+      persistCurrent("failed");
       return;
     }
     updateStage("life", { status: "running", expanded: true });
@@ -647,6 +682,7 @@ export const useSC = create<SCState>((set, get) => {
     timers: [],
     runId: 0,
     selection: [],
+    chatLog: [],
 
     intakeSel: {},
     intakeCustoms: {},
@@ -689,7 +725,29 @@ export const useSC = create<SCState>((set, get) => {
         },
         intakeSel: { ...s.intakeSel, [o.key]: v },
         intakeOthers: null,
+        chatLog: [],
       }));
+    },
+
+    chatMessage: (text) => {
+      const t = text.trim();
+      if (!t) return;
+      const userMsg: ChatMsg = {
+        id: uid(),
+        role: "user",
+        text: t,
+        ts: Date.now(),
+      };
+      set((s) => ({ chatLog: [...s.chatLog, userMsg] }));
+      schedule(() => {
+        const agentMsg: ChatMsg = {
+          id: uid(),
+          role: "agent",
+          text: "已收到，将在下一步纳入。",
+          ts: Date.now(),
+        };
+        set((s) => ({ chatLog: [...s.chatLog, agentMsg] }));
+      }, 1200);
     },
 
     addAttachment: (a) => set((s) => ({ attachments: [...s.attachments, a] })),
@@ -764,7 +822,7 @@ export const useSC = create<SCState>((set, get) => {
     regenerateKeyframe: () => {
       closeGate();
       set((s) => ({
-        assets: s.assets.filter((a) => a.id !== "A01"),
+        assets: s.assets.filter((a) => a.stageId !== "paint"),
         stages: { ...s.stages, paint: emptyStage() },
       }));
       runPaint();
@@ -835,6 +893,7 @@ export const useSC = create<SCState>((set, get) => {
         intakeSel: {},
         intakeCustoms: {},
         intakeOthers: null,
+        chatLog: [],
       }));
     },
 

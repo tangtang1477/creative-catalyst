@@ -20,15 +20,17 @@ import { Calendar, GalleryHorizontal, Zap } from "lucide-react";
 import { Logo } from "./Logo";
 import { PricingDialog } from "./credits/PricingDialog";
 import { LowCreditToast } from "./credits/LowCreditToast";
-import { useCredits } from "@/lib/sc/credits-store";
+import { InlineLowCredit } from "./credits/InlineLowCredit";
+import { useCredits, creditsSelectors } from "@/lib/sc/credits-store";
 import { StageBoundary } from "./StageBoundary";
 
 import { cn } from "@/lib/utils";
 
 export function Workspace() {
-  const { phase, taskTitle, brief, stages, assets, gate, rail, setRailOpen, viewMode } = useSC();
+  const { phase, taskTitle, brief, stages, assets, gate, rail, setRailOpen, viewMode, chatLog } = useSC();
   const openPricing = useCredits((s) => s.openPricing);
-  const a01 = assets.find((a) => a.id === "A01");
+  const remaining = useCredits(creditsSelectors.remaining);
+  const paintAssets = assets.filter((a) => a.stageId === "paint");
   const v01 = assets.find((a) => a.id === "V01");
   const inFlow = phase === "running" || phase === "done" || phase === "failed";
   // Restored tasks don't have full runtime data (segments, qc thoughts, etc.).
@@ -217,7 +219,13 @@ export function Workspace() {
                             detailsLabel="Prompt details"
                             keepChildrenWhenCollapsed
                           >
-                            {a01 && <AssetCard asset={a01} />}
+                            {paintAssets.length > 0 && (
+                              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                {paintAssets.map((a) => (
+                                  <AssetCard key={a.id} asset={a} compact />
+                                ))}
+                              </div>
+                            )}
                           </StageRow>
                         </StageBoundary>
                       );
@@ -234,16 +242,21 @@ export function Workspace() {
                     }
 
                     if (id === "life") {
+                      const lowCredit = st.status === "recovering" && remaining < 30;
                       return (
                         <StageBoundary key={id}>
                           <StageRow
                             id={id}
                             state={st}
-                            details={RECOVERY_NOTES}
+                            details={lowCredit ? undefined : RECOVERY_NOTES}
                             detailsLabel="Recovery notes"
                             keepChildrenWhenCollapsed
                           >
-                            {v01 && <AssetCard asset={v01} />}
+                            {lowCredit ? (
+                              <InlineLowCredit />
+                            ) : (
+                              v01 && <AssetCard asset={v01} />
+                            )}
                           </StageRow>
                         </StageBoundary>
                       );
@@ -278,6 +291,27 @@ export function Workspace() {
       {phase !== "empty" && (
         <div className="z-10 border-t border-border bg-background px-4 py-3">
           <div className="mx-auto max-w-[760px]">
+            {chatLog.length > 0 && (
+              <div className="mb-2 max-h-[140px] space-y-1.5 overflow-y-auto pr-1">
+                {chatLog.map((m) =>
+                  m.role === "user" ? (
+                    <div
+                      key={m.id}
+                      className="ml-auto w-fit max-w-[80%] rounded-2xl bg-surface-2 px-3 py-1.5 text-[12.5px] [animation:stream-fade_280ms_ease-out_both]"
+                    >
+                      {m.text}
+                    </div>
+                  ) : (
+                    <div
+                      key={m.id}
+                      className="mr-auto w-fit max-w-[80%] rounded-2xl border border-border bg-surface px-3 py-1.5 text-[12.5px] text-muted-foreground [animation:stream-fade_280ms_ease-out_both]"
+                    >
+                      {m.text}
+                    </div>
+                  ),
+                )}
+              </div>
+            )}
             <CommandInput compact />
           </div>
         </div>
