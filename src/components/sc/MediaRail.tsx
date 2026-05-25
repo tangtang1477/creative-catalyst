@@ -38,15 +38,16 @@ const loadView = (): ViewMode => {
 };
 
 export function MediaRail() {
-  const { assets, phase, rail, setRailOpen, taskKind, selection, toggleSelect, clearSelection } = useSC();
+  const { assets, phase, rail, setRailOpen, taskKind, selection, toggleSelect, clearSelection, addAttachment } = useSC();
   const [imgOpen, setImgOpen] = useState(true);
   const [vidOpen, setVidOpen] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
   const [batchOpen, setBatchOpen] = useState(false);
-  const [multi, setMulti] = useState(false);
   const [view, setView] = useState<ViewMode>(loadView);
   const [width, setWidth] = useState<number>(loadWidth);
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
+  // Selection auto-activates whenever at least one asset is selected.
+  const multi = selection.length > 0;
 
   // persist
   useEffect(() => {
