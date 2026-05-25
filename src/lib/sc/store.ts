@@ -714,20 +714,11 @@ export const useSC = create<SCState>((set, get) => {
       }));
       const delay = 1500 + Math.random() * 1000;
       schedule(() => {
-        if (get().autoMode === "auto") {
-          set((s) => ({
-            brief: {
-              prompt: s.brief?.prompt ?? text,
-              adType: taskKind === "series" ? "Series · Episode" : "Short cinema",
-              format: "30s · 9:16",
-              visualSource: "Generate from prompt",
-              mode: "Auto · 全自动连续推进",
-            },
-          }));
-          startRunning();
-        } else {
-          set({ phase: "intake" });
-        }
+        // Both auto and confirm enter intake first; auto adds a 20s soft-countdown
+        // inside IntakeCard that auto-confirms the prefilled selection if the user
+        // does not interact. Confirm waits indefinitely for user.
+        set({ phase: "intake" });
+      }, delay);
       }, delay);
     },
 
