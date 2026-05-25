@@ -682,6 +682,7 @@ export const useSC = create<SCState>((set, get) => {
     timers: [],
     runId: 0,
     selection: [],
+    chatLog: [],
 
     intakeSel: {},
     intakeCustoms: {},
@@ -724,7 +725,29 @@ export const useSC = create<SCState>((set, get) => {
         },
         intakeSel: { ...s.intakeSel, [o.key]: v },
         intakeOthers: null,
+        chatLog: [],
       }));
+    },
+
+    chatMessage: (text) => {
+      const t = text.trim();
+      if (!t) return;
+      const userMsg: ChatMsg = {
+        id: uid(),
+        role: "user",
+        text: t,
+        ts: Date.now(),
+      };
+      set((s) => ({ chatLog: [...s.chatLog, userMsg] }));
+      schedule(() => {
+        const agentMsg: ChatMsg = {
+          id: uid(),
+          role: "agent",
+          text: "已收到，将在下一步纳入。",
+          ts: Date.now(),
+        };
+        set((s) => ({ chatLog: [...s.chatLog, agentMsg] }));
+      }, 1200);
     },
 
     addAttachment: (a) => set((s) => ({ attachments: [...s.attachments, a] })),
