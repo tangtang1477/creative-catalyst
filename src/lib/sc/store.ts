@@ -15,9 +15,12 @@ import {
   type ViewMode,
   STAGE_ORDER,
 } from "./types";
-import { SAMPLE_KEYFRAME, SAMPLE_VIDEO, SERIES_DEMO, STORYBOARD_ROWS } from "./samples";
+import { SAMPLE_KEYFRAME, SAMPLE_VIDEO, SERIES_DEMO, STORYBOARD_ROWS, KEYFRAME_PROMPT_DETAIL } from "./samples";
 import { inferTaskTitle } from "./intake-engine";
 import { useCredits } from "./credits-store";
+import { supabase } from "@/integrations/supabase/client";
+import { streamGenerateImage, uploadBase64Image } from "@/lib/upload-image";
+import { submitVideoTask, pollVideoTask } from "@/lib/seedance.functions";
 
 const consume = (stage: string, label: string, cost: number) =>
   useCredits.getState().consume(stage, label, cost);
@@ -65,6 +68,9 @@ interface SCState {
   selection: string[];
   /** in-task chat messages (user ↔ agent), reset on new task */
   chatLog: ChatMsg[];
+
+  /** cached supabase user id for the current run; populated on submit() */
+  currentUserId: string | null;
 
   intakeSel: Record<string, string>;
   intakeCustoms: Record<string, string[]>;
@@ -456,9 +462,8 @@ export const useSC = create<SCState>((set, get) => {
     closeGate();
     updateStage("paint", { status: "running", expanded: true });
     runTool("paint", "skill", "ai-video-studio · keyframe-painter", 800, 0);
-    runTool("paint", "tool", "text-to-image · MovieFlow (batch)", 8200, 900);
+    runTool("paint", "tool", "text-to-image · streaming", 1200, 900);
 
-    // thought with wardrobe thumbnails — explains we're producing N frames
     schedule(
       () =>
         addThought("paint", {
@@ -482,7 +487,7 @@ export const useSC = create<SCState>((set, get) => {
       200,
     );
 
-    // Insert all assets in Queued state up-front
+    // 全部以 Queued 插入
     const paintAssets: Asset[] = SHOTS.map((r) => ({
       id: r.shot,
       kind: "image" as const,
@@ -498,28 +503,53 @@ export const useSC = create<SCState>((set, get) => {
       rail: { ...s.rail, open: true, flashId: SHOTS[0]?.shot },
     }));
 
-    // Stream each frame: stagger start, 2.4s per frame
-    const STEP = 700;
-    const FRAME_MS = 2400;
-    SHOTS.forEach((r, i) => {
-      const startOffset = 1100 + i * STEP;
-      schedule(() => updateAsset(r.shot, { status: "Generating" }), startOffset);
-      schedule(
-        () => updateAsset(r.shot, { status: "Processing" }),
-        startOffset + FRAME_MS * 0.5,
-      );
-      schedule(
-        () => {
-          updateAsset(r.shot, { status: "Ready", url: SAMPLE_KEYFRAME });
-          consume("paint", `Keyframe ${r.shot} · MovieFlow`, 5);
-          appendSummary("paint", `${r.shot} Ready · ${r.motion}`);
-        },
-        startOffset + FRAME_MS,
-      );
-    });
+    // 串行真实生图
+    const startedRunId = get().runId;
+    void (async () => {
+      const userId = get().currentUserId;
+      const taskId = get().taskId ?? undefined;
+      const briefPrompt = get().brief?.prompt ?? "";
 
-    const totalEnd = 1100 + (SHOTS.length - 1) * STEP + FRAME_MS + 400;
-    schedule(() => {
+      if (!userId) {
+        appendSummary("paint", "未登录 · 跳过真实生图，使用示例图");
+        for (const r of SHOTS) {
+          if (get().runId !== startedRunId) return;
+          updateAsset(r.shot, { status: "Ready", url: SAMPLE_KEYFRAME });
+        }
+      } else {
+        for (const r of SHOTS) {
+          if (get().runId !== startedRunId) return;
+          updateAsset(r.shot, { status: "Generating" });
+          appendSummary("paint", `${r.shot} 生成中 · ${r.motion}`);
+          try {
+            const fullPrompt = [
+              briefPrompt,
+              KEYFRAME_PROMPT_DETAIL,
+              `Shot ${r.shot} · ${r.scene} · ${r.motion} · ${r.elements}`,
+            ].filter(Boolean).join("\n\n");
+            const b64 = await streamGenerateImage({
+              prompt: fullPrompt,
+              quality: "low",
+              onPartial: (dataUrl) => {
+                if (get().runId !== startedRunId) return;
+                updateAsset(r.shot, { url: dataUrl });
+              },
+            });
+            if (get().runId !== startedRunId) return;
+            const url = await uploadBase64Image({ base64: b64, userId, taskId });
+            if (get().runId !== startedRunId) return;
+            updateAsset(r.shot, { status: "Ready", url });
+            consume("paint", `Keyframe ${r.shot} · stream-gen`, 5);
+            appendSummary("paint", `${r.shot} Ready · ${r.motion}`);
+          } catch (e) {
+            console.error("[paint] failed", r.shot, e);
+            updateAsset(r.shot, { status: "Failed" });
+            appendSummary("paint", `${r.shot} 生成失败：${(e as Error).message}`);
+          }
+        }
+      }
+
+      if (get().runId !== startedRunId) return;
       updateStage("paint", { status: "ready" });
       appendSummary(
         "paint",
@@ -532,7 +562,7 @@ export const useSC = create<SCState>((set, get) => {
       } else {
         openGate("keyframe", () => runQC());
       }
-    }, totalEnd);
+    })();
   };
 
   const runQC = () => {
@@ -590,7 +620,6 @@ export const useSC = create<SCState>((set, get) => {
     closeGate();
     const VIDEO_COST = 30;
     if (!canAfford(VIDEO_COST)) {
-      // not enough credits → pause flow, render inline pill in stage body
       updateStage("life", {
         status: "recovering",
         expanded: true,
@@ -603,7 +632,7 @@ export const useSC = create<SCState>((set, get) => {
       return;
     }
     updateStage("life", { status: "running", expanded: true });
-    runTool("life", "skill", "first-frame-to-video · MovieFlow", 1200, 0);
+    runTool("life", "skill", "first-frame-to-video · Seedance", 1200, 0);
     streamLines("life", ["提交 V01 first-frame-to-video…"], 0, 100);
     set((s) => ({
       assets: [
@@ -620,24 +649,126 @@ export const useSC = create<SCState>((set, get) => {
       ],
     }));
 
-    schedule(() => updateAsset("V01", { status: "Processing" }), 1200);
-    schedule(() => appendSummary("life", "MovieFlow 渲染中（first-frame-to-video）"), 1300);
-    schedule(() => updateAsset("V01", { status: "Status checked" }), 4500);
-    schedule(() => appendSummary("life", "Status checked · 视频流可用"), 4600);
+    // 取 paint 阶段第一个真实关键帧（http URL，非 data: 预览）
+    const firstKeyframeUrl = (() => {
+      const a = get().assets.find(
+        (x) => x.stageId === "paint" && x.url && /^https?:\/\//.test(x.url),
+      );
+      return a?.url;
+    })();
+    const userId = get().currentUserId;
+    const briefPrompt = get().brief?.prompt ?? "";
+    const startedRunId = get().runId;
 
-    schedule(() => {
-      updateAsset("V01", {
-        status: "Ready",
-        url: SAMPLE_VIDEO,
-        poster: SAMPLE_KEYFRAME,
-      });
-      updateStage("life", { status: "ready" });
-      consume("life", "Video V01 · 30s render", VIDEO_COST);
-      appendSummary("life", "V01 Ready · 30s · 9:16 · 画质验证通过");
-      collapseAfter("life", 1800);
-      persistCurrent("running");
-      schedule(() => runDetails(), 1600);
-    }, 7000);
+    if (!userId || !firstKeyframeUrl) {
+      // fallback：未登录或没有真图，走示例视频
+      appendSummary("life", "未登录或无关键帧 · 使用示例视频");
+      schedule(() => updateAsset("V01", { status: "Processing" }), 1200);
+      schedule(() => {
+        updateAsset("V01", { status: "Ready", url: SAMPLE_VIDEO, poster: SAMPLE_KEYFRAME });
+        updateStage("life", { status: "ready" });
+        consume("life", "Video V01 · sample", VIDEO_COST);
+        appendSummary("life", "V01 Ready (sample)");
+        collapseAfter("life", 1800);
+        persistCurrent("running");
+        schedule(() => runDetails(), 1600);
+      }, 3000);
+      return;
+    }
+
+    updateAsset("V01", { status: "Processing" });
+    appendSummary("life", "Seedance 提交中（first-frame-to-video）…");
+
+    void (async () => {
+      try {
+        const { taskId: seedanceTaskId } = await submitVideoTask({
+          data: {
+            route: "first-frame-to-video",
+            videoTaskId: get().taskId ?? undefined,
+            payload: {
+              prompt: briefPrompt,
+              image_url: firstKeyframeUrl,
+              ratio: "16:9",
+            },
+          },
+        });
+        if (get().runId !== startedRunId) return;
+        appendSummary("life", `Seedance task: ${seedanceTaskId}`);
+
+        const started = Date.now();
+        let stopped = false;
+        let timer: number | null = null;
+        const stop = () => {
+          stopped = true;
+          if (timer !== null) {
+            window.clearInterval(timer);
+            timer = null;
+          }
+        };
+
+        const tick = async () => {
+          if (stopped || get().runId !== startedRunId) {
+            stop();
+            return;
+          }
+          try {
+            const r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
+            if (stopped || get().runId !== startedRunId) return;
+            if (r.status === "success" && r.ossUrl) {
+              stop();
+              const cur = get().assets.find((a) => a.id === "V01");
+              if (cur?.status !== "Ready") {
+                updateAsset("V01", {
+                  status: "Ready",
+                  url: r.ossUrl,
+                  poster: firstKeyframeUrl,
+                });
+                updateStage("life", { status: "ready" });
+                consume("life", "Video V01 · seedance", VIDEO_COST);
+                appendSummary("life", "V01 Ready · seedance oss_url 已写入");
+                collapseAfter("life", 1800);
+                persistCurrent("running");
+                schedule(() => runDetails(), 1600);
+              }
+              return;
+            }
+            if (r.status === "failed") {
+              stop();
+              updateAsset("V01", { status: "Failed" });
+              appendSummary("life", "Seedance 渲染失败");
+              updateStage("life", { status: "failed" });
+              set({ phase: "failed" });
+              persistCurrent("failed");
+              return;
+            }
+            if (Date.now() - started > 5 * 60_000) {
+              stop();
+              updateAsset("V01", { status: "Failed" });
+              appendSummary("life", "Seedance 轮询超时（5min）");
+              updateStage("life", { status: "failed" });
+              set({ phase: "failed" });
+              persistCurrent("failed");
+              return;
+            }
+            updateAsset("V01", { status: "Processing" });
+          } catch (e) {
+            console.error("[life] poll error", e);
+            appendSummary("life", `轮询出错：${(e as Error).message}`);
+          }
+        };
+        await tick();
+        if (!stopped) {
+          timer = window.setInterval(tick, 3000) as unknown as number;
+        }
+      } catch (e) {
+        console.error("[life] submit failed", e);
+        updateAsset("V01", { status: "Failed" });
+        appendSummary("life", `提交失败：${(e as Error).message}`);
+        updateStage("life", { status: "failed" });
+        set({ phase: "failed" });
+        persistCurrent("failed");
+      }
+    })();
   };
 
   const runDetails = () => {
@@ -683,6 +814,7 @@ export const useSC = create<SCState>((set, get) => {
     runId: 0,
     selection: [],
     chatLog: [],
+    currentUserId: null,
 
     intakeSel: {},
     intakeCustoms: {},
@@ -787,12 +919,14 @@ export const useSC = create<SCState>((set, get) => {
         intakeSel: {},
         intakeCustoms: {},
         intakeOthers: null,
+        currentUserId: null,
       }));
+      // 异步抓 user id；没登录也允许走假数据 stage（paint/life 会自检并 fallback）
+      supabase.auth.getUser().then(({ data }) => {
+        set({ currentUserId: data.user?.id ?? null });
+      });
       const delay = 1500 + Math.random() * 1000;
       schedule(() => {
-        // Both auto and confirm enter intake first; auto adds a 20s soft-countdown
-        // inside IntakeCard that auto-confirms the prefilled selection if the user
-        // does not interact. Confirm waits indefinitely for user.
         set({ phase: "intake" });
       }, delay);
     },
