@@ -14,7 +14,155 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      assets: {
+        Row: {
+          caption: string | null
+          created_at: string
+          id: string
+          kind: string
+          label: string | null
+          meta: Json | null
+          source: string
+          stage: string | null
+          task_id: string | null
+          url: string
+          user_id: string
+        }
+        Insert: {
+          caption?: string | null
+          created_at?: string
+          id?: string
+          kind: string
+          label?: string | null
+          meta?: Json | null
+          source: string
+          stage?: string | null
+          task_id?: string | null
+          url: string
+          user_id: string
+        }
+        Update: {
+          caption?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          label?: string | null
+          meta?: Json | null
+          source?: string
+          stage?: string | null
+          task_id?: string | null
+          url?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assets_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "video_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      seedance_jobs: {
+        Row: {
+          asset_id: string | null
+          created_at: string
+          error_message: string | null
+          oss_url: string | null
+          progress: number
+          raw: Json | null
+          request_payload: Json | null
+          route: string
+          status: string
+          task_id: string
+          updated_at: string
+          user_id: string
+          video_task_id: string | null
+        }
+        Insert: {
+          asset_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          oss_url?: string | null
+          progress?: number
+          raw?: Json | null
+          request_payload?: Json | null
+          route: string
+          status?: string
+          task_id: string
+          updated_at?: string
+          user_id: string
+          video_task_id?: string | null
+        }
+        Update: {
+          asset_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          oss_url?: string | null
+          progress?: number
+          raw?: Json | null
+          request_payload?: Json | null
+          route?: string
+          status?: string
+          task_id?: string
+          updated_at?: string
+          user_id?: string
+          video_task_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seedance_jobs_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "seedance_jobs_video_task_id_fkey"
+            columns: ["video_task_id"]
+            isOneToOne: false
+            referencedRelation: "video_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      video_tasks: {
+        Row: {
+          brief: Json | null
+          created_at: string
+          id: string
+          kind: string
+          prompt: string
+          status: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          brief?: Json | null
+          created_at?: string
+          id?: string
+          kind?: string
+          prompt: string
+          status?: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          brief?: Json | null
+          created_at?: string
+          id?: string
+          kind?: string
+          prompt?: string
+          status?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
