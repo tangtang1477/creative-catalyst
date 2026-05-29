@@ -21,6 +21,7 @@ import { useCredits } from "./credits-store";
 import { supabase } from "@/integrations/supabase/client";
 import { streamGenerateImage, uploadBase64Image } from "@/lib/upload-image";
 import { submitVideoTask, pollVideoTask } from "@/lib/seedance.functions";
+import { generateScript, type GeneratedScript } from "@/lib/script.functions";
 
 const consume = (stage: string, label: string, cost: number) =>
   useCredits.getState().consume(stage, label, cost);
