@@ -186,6 +186,7 @@ const loadViewMode = (): ViewMode => {
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 export const useSC = create<SCState>((set, get) => {
+  let pendingQcIssues: import("@/lib/qc.functions").QcIssue[] = [];
   const clearTimers = () => {
     for (const t of get().timers) clearTimeout(t);
     set({ timers: [] });
