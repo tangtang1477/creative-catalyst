@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 
 export function Workspace() {
   const { phase, taskTitle, brief, stages, assets, gate, rail, setRailOpen, viewMode, chatLog } = useSC();
+  const script = useSC((s) => s.script);
   const openPricing = useCredits((s) => s.openPricing);
   const remaining = useCredits(creditsSelectors.remaining);
   const paintAssets = assets.filter((a) => a.stageId === "paint");
