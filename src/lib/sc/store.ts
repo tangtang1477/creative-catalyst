@@ -21,6 +21,7 @@ import { useCredits } from "./credits-store";
 import { supabase } from "@/integrations/supabase/client";
 import { streamGenerateImage, uploadBase64Image } from "@/lib/upload-image";
 import { submitVideoTask, pollVideoTask } from "@/lib/seedance.functions";
+import { generateScript, type GeneratedScript } from "@/lib/script.functions";
 
 const consume = (stage: string, label: string, cost: number) =>
   useCredits.getState().consume(stage, label, cost);
@@ -71,6 +72,8 @@ interface SCState {
 
   /** cached supabase user id for the current run; populated on submit() */
   currentUserId: string | null;
+  /** LLM-generated script for the current run (null until structure stage finishes) */
+  script: GeneratedScript | null;
 
   intakeSel: Record<string, string>;
   intakeCustoms: Record<string, string[]>;
@@ -367,71 +370,88 @@ export const useSC = create<SCState>((set, get) => {
 
   const runStructure = () => {
     updateStage("structure", { status: "running", expanded: true });
-    runTool("structure", "tool", "video-script-writer", 1600, 0);
-    runTool("structure", "tool", "storyboard-planner", 1800, 1700);
+    const tcId = startToolCall("structure", "tool", "video-script-writer · LLM");
+    appendSummary("structure", "调用大模型生成本次剧本与分镜…");
 
-    // a foldable thought block (no thumbs yet — wardrobe / paint not run)
-    schedule(
-      () =>
+    const startedRunId = get().runId;
+    const b = get().brief;
+    void (async () => {
+      let script: GeneratedScript | null = null;
+      try {
+        script = await generateScript({
+          data: {
+            prompt: b?.prompt ?? "",
+            adType: b?.adType ?? "",
+            format: b?.format ?? "",
+            visualSource: b?.visualSource ?? "",
+          },
+        });
+      } catch (e) {
+        console.error("[structure] generateScript failed", e);
+        appendSummary("structure", `脚本生成失败：${(e as Error).message}`);
+      }
+      if (get().runId !== startedRunId) return;
+      finishToolCall("structure", tcId);
+
+      if (script) {
+        set({ script });
+        appendSummary("structure", `情绪：${script.mood}`);
+        appendSummary("structure", `镜头语言：${script.cameraLanguage}`);
+        for (const line of script.structureSummary) appendSummary("structure", line);
         addThought("structure", {
-          title: "脚本结构推导",
-          body: [
-            "5 镜头叙事：环境建立 → 人物登场 → 产品互动 → 主题升华 → 品牌收尾。",
-            "节奏控制：前 3s 强 hook，10s 处情绪转折，最后 2s 留 logo。",
-            "音效层：弦乐铺底 + 鼓点过渡 + 收尾混响。",
-          ],
-        }),
-      2200,
-    );
+          title: "分镜方案",
+          body: script.shots.map(
+            (s) => `${s.shot} · ${s.duration} · ${s.motion} — ${s.scene}（${s.elements}）`,
+          ),
+        });
+      } else {
+        appendSummary("structure", "使用默认 5 镜头结构作为兜底。");
+      }
 
-    streamLines(
-      "structure",
-      [
-        "撰写脚本与分镜结构…",
-        "30s · 9:16 · 5 个镜头连续叙事",
-        "镜头 1：环境建立 + 产品开场",
-        "镜头 2-4：人物互动与产品特写",
-        "镜头 5：品牌 logo 收尾",
-        "VO 中性低音 + 弦乐 + 鼓点过渡",
-      ],
-      700,
-      3600,
-      () => {
-        updateStage("structure", { status: "ready" });
-        consume("structure", "Script + storyboard", 3);
-        if (isAuto()) {
-          schedule(() => runWardrobe(), 1100);
-        } else {
-          openGate("script", () => runWardrobe());
-        }
-      },
-    );
+      updateStage("structure", { status: "ready" });
+      consume("structure", "Script + storyboard", 3);
+      if (isAuto()) {
+        schedule(() => runWardrobe(), 1100);
+      } else {
+        openGate("script", () => runWardrobe());
+      }
+    })();
   };
 
   const runWardrobe = () => {
     closeGate();
     updateStage("wardrobe", { status: "running", expanded: true });
     runTool("wardrobe", "tool", "wardrobe-stylist · text-to-image", 1500, 0);
+
+    const script = get().script;
+    const wardrobeSpec = script?.wardrobe?.length
+      ? script.wardrobe
+      : [
+          { id: "W01", caption: "主角形象" },
+          { id: "W02", caption: "配角形象" },
+          { id: "P01", caption: "关键道具" },
+        ];
+
     streamLines(
       "wardrobe",
-      [
-        "解析年代/世界观背景 → 1920s 巴黎",
-        "主角 W01：丝绒长裙 + 珍珠头饰",
-        "配角 W02：燕尾礼服 + 怀表",
-        "关键道具 P01：水晶香水瓶",
-      ],
+      wardrobeSpec.map((w) => `${w.id}：${w.caption}`),
       650,
       300,
     );
 
-    const wardrobeAssets: Asset[] = [
-      { id: "W01", kind: "image", label: "W01", caption: "主角服装 · 1920s 丝绒礼服", status: "Queued", stageId: "wardrobe", width: 768, height: 1024 },
-      { id: "W02", kind: "image", label: "W02", caption: "配角服装 · 燕尾礼服", status: "Queued", stageId: "wardrobe", width: 768, height: 1024 },
-      { id: "P01", kind: "image", label: "P01", caption: "关键道具 · 水晶香水瓶", status: "Queued", stageId: "wardrobe", width: 768, height: 768 },
-    ];
+    const wardrobeAssets: Asset[] = wardrobeSpec.map((w) => ({
+      id: w.id,
+      kind: "image",
+      label: w.id,
+      caption: w.caption,
+      status: "Queued",
+      stageId: "wardrobe",
+      width: w.id === "P01" ? 768 : 768,
+      height: w.id === "P01" ? 768 : 1024,
+    }));
     set((s) => ({
       assets: [...s.assets, ...wardrobeAssets],
-      rail: { ...s.rail, open: true, flashId: "W01" },
+      rail: { ...s.rail, open: true, flashId: wardrobeSpec[0]?.id },
     }));
 
     wardrobeAssets.forEach((a, i) => {
@@ -446,7 +466,7 @@ export const useSC = create<SCState>((set, get) => {
     });
 
     schedule(() => {
-      appendSummary("wardrobe", "服装/道具准备完毕 · 风格统一 · 与 1920s 背景吻合");
+      appendSummary("wardrobe", "服装/道具准备完毕 · 风格统一");
       updateStage("wardrobe", { status: "ready" });
       collapseAfter("wardrobe", 1600);
       persistCurrent("running");
@@ -457,6 +477,7 @@ export const useSC = create<SCState>((set, get) => {
       }
     }, 4800);
   };
+
 
   const runPaint = () => {
     closeGate();
@@ -479,7 +500,16 @@ export const useSC = create<SCState>((set, get) => {
       1200,
     );
 
-    const SHOTS = STORYBOARD_ROWS;
+    const script = get().script;
+    const SHOTS = script?.shots?.length
+      ? script.shots.map((s) => ({
+          shot: s.shot,
+          motion: s.motion,
+          scene: s.scene,
+          elements: s.elements,
+          prompt: s.prompt,
+        }))
+      : STORYBOARD_ROWS.map((r) => ({ ...r, prompt: "" }));
     streamLines(
       "paint",
       [`队列接收 · ${SHOTS.length} 个关键帧 · prompt 已写入…`],
@@ -522,11 +552,13 @@ export const useSC = create<SCState>((set, get) => {
           updateAsset(r.shot, { status: "Generating" });
           appendSummary("paint", `${r.shot} 生成中 · ${r.motion}`);
           try {
-            const fullPrompt = [
-              briefPrompt,
-              KEYFRAME_PROMPT_DETAIL,
-              `Shot ${r.shot} · ${r.scene} · ${r.motion} · ${r.elements}`,
-            ].filter(Boolean).join("\n\n");
+            const fullPrompt = r.prompt
+              ? `${r.prompt}\n\nReference brief: ${briefPrompt}`
+              : [
+                  briefPrompt,
+                  KEYFRAME_PROMPT_DETAIL,
+                  `Shot ${r.shot} · ${r.scene} · ${r.motion} · ${r.elements}`,
+                ].filter(Boolean).join("\n\n");
             const b64 = await streamGenerateImage({
               prompt: fullPrompt,
               quality: "low",
@@ -815,6 +847,7 @@ export const useSC = create<SCState>((set, get) => {
     selection: [],
     chatLog: [],
     currentUserId: null,
+    script: null,
 
     intakeSel: {},
     intakeCustoms: {},
@@ -920,6 +953,7 @@ export const useSC = create<SCState>((set, get) => {
         intakeCustoms: {},
         intakeOthers: null,
         currentUserId: null,
+        script: null,
       }));
       // 异步抓 user id；没登录也允许走假数据 stage（paint/life 会自检并 fallback）
       supabase.auth.getUser().then(({ data }) => {
@@ -1038,6 +1072,7 @@ export const useSC = create<SCState>((set, get) => {
         intakeCustoms: {},
         intakeOthers: null,
         chatLog: [],
+        script: null,
       }));
     },
 
