@@ -1,159 +1,64 @@
-# 后端接入计划
+## 本轮目标
 
-## 整体架构
+只做后端验证，不动 ShortCut 业务流。完成后下一轮再接入。
+
+## 1. 开启认证（邮箱 + Google）
+
+- 调 `supabase--configure_social_auth` 启用 `google`（邮箱默认开启，不动）
+- 不开 auto-confirm（用户没要求）
+- 不开匿名登录
+
+## 2. 最小登录页 `/login`
+
+只放两个按钮，足够拿到 session 给 `requireSupabaseAuth` 用：
+
+- 邮箱注册 / 登录（`supabase.auth.signUp` / `signInWithPassword`，`emailRedirectTo: window.location.origin`）
+- Google 登录（通过 `lovable.auth.signInWithOAuth("google", { redirect_uri })`）
+- 根路由 `__root.tsx` 加 `onAuthStateChange` 监听 + `queryClient.invalidateQueries()`
+
+## 3. 测试页 `/test`
+
+一个页面跑完整链路，所有按钮带状态展示：
 
 ```text
-Client (React)
-  │
-  ├─ POST /api/generate-image        ─→ Lovable AI Gateway (openai/gpt-image-2, SSE)
-  │                                     ↓ partial frames 实时返回
-  │                                     最终图上传 Storage → 拿到 https URL
-  │
-  ├─ POST /api/video/submit          ─→ vb.movieflow.ai/seedance2/<route>
-  │                                     拿 task_id 存 DB
-  │
-  └─ GET  /api/video/poll?task_id=… ─→ vb.movieflow.ai/seedance2/task-status
-                                       返回 status/progress/oss_url
+[1] Prompt 输入框
+[2] 生图按钮 → POST /api/generate-image (SSE)
+    - 实时显示 partial base64 预览（blur，最终去 blur）
+    - 完成后调 uploadBase64Image() → 拿到 Storage public URL
+    - 显示 URL + <img> 预览
+[3] 提交视频按钮（用上一步图 URL）
+    - 调 submitVideoTask({ route: 'first-frame-to-video', payload: { prompt, first_image_url } })
+    - 显示返回的 task_id
+[4] 自动轮询（每 3s 调 pollVideoTask）
+    - 显示 status / progress
+    - status === 'success' 时显示 oss_url + <video> 预览
+    - status === 'failed' 或 5 分钟超时停轮询
+[5] 日志面板：每一步原始返回 JSON 折叠展示
 ```
 
-所有外部 API 调用都在 TanStack 服务端路由里完成，密钥放 secrets。
+文件：`src/routes/test.tsx`（独立路由，不影响首页）
 
-## 第一步：启用 Lovable Cloud + 关键 secrets
+## 4. 路由保护
 
-- 启用 Lovable Cloud（自动 provision `LOVABLE_API_KEY`、Storage、Postgres、Auth）
-- 新增 secret：
-  - `SEEDANCE_HOST` = `https://vb.movieflow.ai`（写死也行，但放 secret 方便切环境）
-  - `SEEDANCE_API_KEY`（**待确认**：文档没写鉴权方式，需要你确认是 Bearer token 还是其它，或者根本不需要）
+`/test` 用最简方式：未登录就显示「请先登录」按钮跳 `/login`，登录后渲染测试 UI。不引入 `_authenticated` 布局（下一轮接 ShortCut 时再统一加）。
 
-## 第二步：数据库表
+## 5. 修一个已知问题
 
-```sql
--- 任务表：用来持久化 task 状态、关联生成的素材
-create table public.video_tasks (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade,
-  title text not null,
-  prompt text not null,
-  status text not null default 'pending',           -- pending|processing|success|failed
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
+`seedance_jobs` 表当前只有 SELECT 策略，缺 INSERT/UPDATE。服务端虽然用 `supabaseAdmin` 写入（绕过 RLS）能成功，但为了 `listVideoTasks` 等读取链路一致，保持 SELECT-only 即可，**不动**。
 
-create table public.assets (
-  id uuid primary key default gen_random_uuid(),
-  task_id uuid references public.video_tasks(id) on delete cascade,
-  user_id uuid references auth.users(id) on delete cascade,
-  kind text not null,                               -- image|video
-  url text not null,                                -- Storage 公开 URL
-  source text not null,                             -- gpt-image-2|seedance|upload
-  meta jsonb,                                       -- {duration, ratio, seed_task_id ...}
-  created_at timestamptz default now()
-);
+## 技术细节
 
-create table public.seedance_jobs (
-  task_id text primary key,                         -- Seedance 返回的 cgt-xxx
-  asset_id uuid references public.assets(id) on delete set null,
-  video_task_id uuid references public.video_tasks(id) on delete cascade,
-  status text not null default 'pending',
-  progress int default 0,
-  oss_url text,
-  raw jsonb,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-```
+- **SSE 客户端解析**：用 `eventsource-parser`（已在 lock 里？没有就 `bun add`），逐帧 `flushSync` 渲染 partial
+- **base64 → Storage**：客户端拿到最终 `b64_json` 后 fetch `data:image/png;base64,...` → `Blob` → `supabase.storage.from('media').upload(...)` → `getPublicUrl()`。已有 `src/lib/upload-image.ts` 直接用
+- **Seedance route 选择**：测试页固定用 `first-frame-to-video`，最贴合"图→视频"链路；payload 形状：`{ prompt, first_image_url, ratio: '16:9' }`
+- **轮询**：TanStack Query `useQuery` + `refetchInterval: (q) => ['success','failed'].includes(q.state.data?.status) ? false : 3000`
+- **错误处理**：429/402 toast 提示，Seedance `code != 0` 显示 `message`
+- **不动 `store.ts`/UI 组件**，下一轮再接
 
-每张表配 `GRANT` + RLS（`auth.uid() = user_id`）。
+## 需要你确认的 1 件事
 
-## 第三步：Storage bucket
-
-```sql
-insert into storage.buckets (id, name, public) values ('media', 'media', true);
-```
-
-公开桶，OpenAI 生成的图、用户上传的图都存这里。Seedance 接口需要 `image_url` 是可公网访问的 https，所以必须 public。
-
-## 第四步：服务端路由
-
-### 4.1 图片生成 `src/routes/api/generate-image.ts`
-
-- 用 TanStack server route（**不能用 createServerFn**，SSE 流不能跨 RPC 序列化）
-- 调 `https://ai.gateway.lovable.dev/v1/images/generations`：
-  ```json
-  {
-    "model": "openai/gpt-image-2",
-    "prompt": "...",
-    "quality": "low",
-    "size": "1024x1024",
-    "stream": true,
-    "partial_images": 2
-  }
-  ```
-- `upstream.body` 直通客户端（保留 SSE 流式渐进预览）
-- 客户端用 `eventsource-parser` + `flushSync` 解析（partial 加 blur，completed 去 blur）
-- 拿到最终 PNG 后：base64 → 上传 Storage → 写入 `assets` 表 → 拿到 https URL
-
-### 4.2 视频提交 `src/routes/api/video/submit.ts`
-
-- `createServerFn` + `requireSupabaseAuth`
-- 入参（Zod 校验）：
-  ```ts
-  {
-    videoTaskId: uuid,
-    route: 'text-to-video' | 'first-frame-to-video' | 'first-last-frame-to-video'
-         | 'reference-image-to-video' | 'reference-video' | 'extend-video' | 'create-task',
-    payload: { prompt, image_url?, first_image_url?, ... }  // 按路由形状校验
-  }
-  ```
-- 自动注入 `model: 'sd2.0-fast'`（除非用户明确要 1080p）
-- POST 到 `${SEEDANCE_HOST}/seedance2/<route>`，带 `SEEDANCE_API_KEY`
-- 拿到 `data.task_id` → 写 `seedance_jobs` 表 → 返回 task_id
-- 隐私风控处理：如果返回 `InputImageSensitiveContentDetected.PrivacyInformation`，自动走 batch-upload-asset → create-task 的兜底路径
-
-### 4.3 视频轮询 `src/routes/api/video/poll.ts`
-
-- `createServerFn`，入参 `{ task_id }`
-- POST 到 `${SEEDANCE_HOST}/seedance2/task-status`，带 `video_name` + `aspect_ratio`
-- 收到 `oss_url` 后：
-  - 写入 `assets`（kind=video, url=oss_url）
-  - 更新 `seedance_jobs.status='success'`
-  - 更新对应 `video_tasks.status`
-- 前端用 TanStack Query `refetchInterval: 3000`，状态变 success/failed 时停轮询
-
-## 第五步：前端接入点
-
-只改 `src/lib/sc/store.ts` 的 stage 推进逻辑，UI 不动：
-
-| Stage | 现状（mock） | 接入后 |
-|---|---|---|
-| `scene`/`structure`/`wardrobe` | 假 thoughts + sample 图 | 调 Lovable AI `gemini-3-flash-preview` 生成分镜文字 |
-| `paint` | sample 关键帧 | 调 `/api/generate-image`，流式显示 partial，最终落 Storage |
-| `qc` | mock | Gemini 多模态校验关键帧一致性 |
-| `life` | sample 视频 | 调 `/api/video/submit`（first-frame-to-video）+ 轮询 `/api/video/poll` |
-| `details` | mock | 收尾、汇总素材 |
-
-`Asset.url` 全部替换成真实 Storage / oss_url，gallery 直接渲染。
-
-任务列表（sidebar）从 `video_tasks` 表读，刷新后状态还在。
-
-## 第六步：登录（最简方案）
-
-默认开邮箱密码 + Google 登录。任务/素材按 `auth.uid()` 隔离。
+**Seedance 鉴权方式**：当前代码默认 `Authorization: Bearer <SEEDANCE_API_KEY>`。如果文档说是 `X-API-Key` 或别的 header，跑通前先告诉我，否则第一次调用会 401。
 
 ---
 
-## 技术备注
-
-- **图片 → 视频 的 URL 桥接**：OpenAI 返回 base64，必须先上传到 Storage 拿到 https URL 才能传给 Seedance（接口只收 URL，不收 base64）
-- **轮询策略**：前端 3s 一次，超时 5 分钟；服务端不长连，节省 Worker 时间
-- **错误透传**：429/402（AI Gateway）、`code != 0`（Seedance）→ 走 toast
-- **不引入新依赖**（`eventsource-parser` 已有的话直接用，否则 `bun add eventsource-parser`）
-- **mock 兼容**：保留一个 `VITE_USE_MOCK=true` 的本地开关，方便没 key 时离线 demo
-
-## 需要你确认的 3 件事（影响实现细节）
-
-1. **Seedance 鉴权方式**：文档里没写。是 `Authorization: Bearer <key>`、`X-API-Key`、还是放在 query/body？key 是什么名字？
-2. **图片 stage 是否每个分镜都用 gpt-image-2 生**？还是只有 `paint`/关键帧用，前面 `scene`/`structure` 仍然纯文本？
-3. **音频**：Seedance 默认 `generate_audio: true`。要默认开还是默认关？（开了会更慢）
-
-回答完我就进 build 模式开干。
+确认后我切到 build 模式做 3 件事：启用 Google → 写 `/login` → 写 `/test`，跑通后告诉你 oss_url 是否拿到。
