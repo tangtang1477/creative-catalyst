@@ -689,6 +689,7 @@ export const useSC = create<SCState>((set, get) => {
     runId: 0,
     selection: [],
     chatLog: [],
+    currentUserId: null,
 
     intakeSel: {},
     intakeCustoms: {},
