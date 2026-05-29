@@ -1043,6 +1043,7 @@ export const useSC = create<SCState>((set, get) => {
         intakeCustoms: {},
         intakeOthers: null,
         chatLog: [],
+        script: null,
       }));
     },
 
