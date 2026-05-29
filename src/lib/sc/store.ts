@@ -69,6 +69,9 @@ interface SCState {
   /** in-task chat messages (user ↔ agent), reset on new task */
   chatLog: ChatMsg[];
 
+  /** cached supabase user id for the current run; populated on submit() */
+  currentUserId: string | null;
+
   intakeSel: Record<string, string>;
   intakeCustoms: Record<string, string[]>;
   intakeOthers: { key: string; label: string } | null;
