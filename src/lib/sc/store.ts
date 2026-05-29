@@ -304,18 +304,17 @@ export const useSC = create<SCState>((set, get) => {
 
   const isAuto = () => get().autoMode === "auto";
 
-  /** Open a soft-gate that auto-advances after 20s in Auto mode. */
+  /** Open a soft-gate that auto-advances after 15s in Auto mode. */
   const openGate = (gate: Gate, defaultAction: () => void) => {
     const auto = isAuto();
     set({
       gate,
-      softGate: auto ? { defaultAction, fireAt: Date.now() + 20000 } : null,
+      softGate: auto ? { defaultAction, fireAt: Date.now() + 15000 } : null,
     });
     if (auto) {
       schedule(() => {
-        // re-check the same gate is still open (user didn't act)
         if (get().gate === gate) defaultAction();
-      }, 20000);
+      }, 15000);
     }
   };
 
@@ -355,12 +354,16 @@ export const useSC = create<SCState>((set, get) => {
   const runScene = () => {
     updateStage("scene", { status: "running", expanded: true });
     runTool("scene", "skill", "ai-video-studio · scene-builder", 1100, 0);
+    const promptTxt = get().prompt || get().brief?.prompt || "";
+    const briefLine = promptTxt
+      ? `锁定主题：${promptTxt.slice(0, 40)}${promptTxt.length > 40 ? "…" : ""}`
+      : "正在分析品牌 brief 与受众…";
     streamLines(
       "scene",
       [
-        "正在分析品牌 brief 与受众…",
-        "锁定情绪：Premium · Twilight",
-        "镜头语言：缓推 + 侧跟 + 微距旋转",
+        briefLine,
+        "拆解情绪/节奏/受众场景…",
+        "为本主题选定镜头语言（推 / 跟 / 特写组合）…",
       ],
       850,
       1300,
@@ -415,11 +418,7 @@ export const useSC = create<SCState>((set, get) => {
 
       updateStage("structure", { status: "ready" });
       consume("structure", "Script + storyboard", 3);
-      if (isAuto()) {
-        schedule(() => runWardrobe(), 1100);
-      } else {
-        openGate("script", () => runWardrobe());
-      }
+      openGate("script", () => runWardrobe());
     })();
   };
 
@@ -475,11 +474,7 @@ export const useSC = create<SCState>((set, get) => {
       updateStage("wardrobe", { status: "ready" });
       collapseAfter("wardrobe", 1600);
       persistCurrent("running");
-      if (isAuto()) {
-        schedule(() => runPaint(), 1200);
-      } else {
-        openGate("wardrobe", () => runPaint());
-      }
+      openGate("wardrobe", () => runPaint());
     }, 4800);
   };
 
