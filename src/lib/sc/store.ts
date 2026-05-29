@@ -697,16 +697,25 @@ export const useSC = create<SCState>((set, get) => {
 
         const started = Date.now();
         let stopped = false;
-        const stop = () => { stopped = true; if (timer) window.clearInterval(timer); };
+        let timer: number | null = null;
+        const stop = () => {
+          stopped = true;
+          if (timer !== null) {
+            window.clearInterval(timer);
+            timer = null;
+          }
+        };
 
         const tick = async () => {
-          if (stopped || get().runId !== startedRunId) return;
+          if (stopped || get().runId !== startedRunId) {
+            stop();
+            return;
+          }
           try {
             const r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
             if (stopped || get().runId !== startedRunId) return;
             if (r.status === "success" && r.ossUrl) {
               stop();
-              // 防重复：只在当前还不是 Ready 时更新
               const cur = get().assets.find((a) => a.id === "V01");
               if (cur?.status !== "Ready") {
                 updateAsset("V01", {
@@ -741,7 +750,6 @@ export const useSC = create<SCState>((set, get) => {
               persistCurrent("failed");
               return;
             }
-            // processing
             updateAsset("V01", { status: "Processing" });
           } catch (e) {
             console.error("[life] poll error", e);
@@ -749,9 +757,9 @@ export const useSC = create<SCState>((set, get) => {
           }
         };
         await tick();
-        const timer: number | null = stopped
-          ? null
-          : (window.setInterval(tick, 3000) as unknown as number);
+        if (!stopped) {
+          timer = window.setInterval(tick, 3000) as unknown as number;
+        }
       } catch (e) {
         console.error("[life] submit failed", e);
         updateAsset("V01", { status: "Failed" });
