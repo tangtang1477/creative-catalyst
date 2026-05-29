@@ -133,16 +133,17 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
         </div>
 
         {/* Theme toggle — sliding pill */}
-        <div className="relative mt-2 flex items-center rounded-full bg-surface-2 p-1">
+        <div className="relative mt-2 flex items-center rounded-full bg-surface-2 p-0.5">
           <span
             aria-hidden
-            className="absolute bottom-1 left-1 top-1 w-[calc(50%-4px)] rounded-full bg-background shadow-sm transition-transform duration-300 ease-out"
-            style={{ transform: theme === "light" ? "translateX(100%)" : "translateX(0%)" }}
+            className="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-background shadow-[0_1px_2px_rgba(0,0,0,.15)] transition-transform duration-300 ease-[cubic-bezier(.4,0,.2,1)]"
+            style={{ transform: theme === "light" ? "translateX(100%)" : "translateX(0)" }}
           />
           <button
-            onClick={() => setTheme("dark")}
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setTheme("dark"); }}
             className={cn(
-              "relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full py-1.5 text-[12px] transition-colors",
+              "relative z-10 flex h-8 flex-1 items-center justify-center gap-1.5 rounded-full text-[12px] transition-colors",
               theme === "dark" ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -150,9 +151,10 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
             Dark
           </button>
           <button
-            onClick={() => setTheme("light")}
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setTheme("light"); }}
             className={cn(
-              "relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full py-1.5 text-[12px] transition-colors",
+              "relative z-10 flex h-8 flex-1 items-center justify-center gap-1.5 rounded-full text-[12px] transition-colors",
               theme === "light" ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -160,6 +162,7 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
             Light
           </button>
         </div>
+
 
         {/* Bottom items */}
         <div className="mt-1.5">
