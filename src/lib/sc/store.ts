@@ -186,6 +186,7 @@ const loadViewMode = (): ViewMode => {
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 export const useSC = create<SCState>((set, get) => {
+  let pendingQcIssues: import("@/lib/qc.functions").QcIssue[] = [];
   const clearTimers = () => {
     for (const t of get().timers) clearTimeout(t);
     set({ timers: [] });
@@ -304,18 +305,17 @@ export const useSC = create<SCState>((set, get) => {
 
   const isAuto = () => get().autoMode === "auto";
 
-  /** Open a soft-gate that auto-advances after 20s in Auto mode. */
+  /** Open a soft-gate that auto-advances after 15s in Auto mode. */
   const openGate = (gate: Gate, defaultAction: () => void) => {
     const auto = isAuto();
     set({
       gate,
-      softGate: auto ? { defaultAction, fireAt: Date.now() + 20000 } : null,
+      softGate: auto ? { defaultAction, fireAt: Date.now() + 15000 } : null,
     });
     if (auto) {
       schedule(() => {
-        // re-check the same gate is still open (user didn't act)
         if (get().gate === gate) defaultAction();
-      }, 20000);
+      }, 15000);
     }
   };
 
@@ -355,12 +355,16 @@ export const useSC = create<SCState>((set, get) => {
   const runScene = () => {
     updateStage("scene", { status: "running", expanded: true });
     runTool("scene", "skill", "ai-video-studio · scene-builder", 1100, 0);
+    const promptTxt = get().prompt || get().brief?.prompt || "";
+    const briefLine = promptTxt
+      ? `锁定主题：${promptTxt.slice(0, 40)}${promptTxt.length > 40 ? "…" : ""}`
+      : "正在分析品牌 brief 与受众…";
     streamLines(
       "scene",
       [
-        "正在分析品牌 brief 与受众…",
-        "锁定情绪：Premium · Twilight",
-        "镜头语言：缓推 + 侧跟 + 微距旋转",
+        briefLine,
+        "拆解情绪/节奏/受众场景…",
+        "为本主题选定镜头语言（推 / 跟 / 特写组合）…",
       ],
       850,
       1300,
@@ -415,11 +419,7 @@ export const useSC = create<SCState>((set, get) => {
 
       updateStage("structure", { status: "ready" });
       consume("structure", "Script + storyboard", 3);
-      if (isAuto()) {
-        schedule(() => runWardrobe(), 1100);
-      } else {
-        openGate("script", () => runWardrobe());
-      }
+      openGate("script", () => runWardrobe());
     })();
   };
 
@@ -475,11 +475,7 @@ export const useSC = create<SCState>((set, get) => {
       updateStage("wardrobe", { status: "ready" });
       collapseAfter("wardrobe", 1600);
       persistCurrent("running");
-      if (isAuto()) {
-        schedule(() => runPaint(), 1200);
-      } else {
-        openGate("wardrobe", () => runPaint());
-      }
+      openGate("wardrobe", () => runPaint());
     }, 4800);
   };
 
@@ -490,15 +486,21 @@ export const useSC = create<SCState>((set, get) => {
     runTool("paint", "skill", "ai-video-studio · keyframe-painter", 800, 0);
     runTool("paint", "tool", "text-to-image · streaming", 1200, 900);
 
+    const scriptForThought = get().script;
+    const shotCount = scriptForThought?.shots?.length ?? STORYBOARD_ROWS.length;
     schedule(
       () =>
         addThought("paint", {
           title: "基于服装/道具素材生成分镜",
           body: [
             "锁定主角 W01 + 配角 W02 + 道具 P01 作为参考。",
-            `将分批生成 ${STORYBOARD_ROWS.length} 个关键帧，覆盖全部镜头。`,
-            "构图：左 1/3 主角，景深虚化背景，强调瓶身高光。",
-            "光照：暮蓝主光 + 暖橙轮廓 + 烛火点缀。",
+            `将分批生成 ${shotCount} 个关键帧，覆盖全部镜头。`,
+            scriptForThought?.cameraLanguage
+              ? `镜头语言：${scriptForThought.cameraLanguage}`
+              : "镜头语言：依据脚本动态选择",
+            scriptForThought?.mood
+              ? `情绪基调：${scriptForThought.mood}`
+              : "情绪基调：贴合用户主题",
           ],
           thumbAssetIds: ["W01", "W02", "P01"],
         }),
@@ -594,63 +596,161 @@ export const useSC = create<SCState>((set, get) => {
       );
       collapseAfter("paint", 1800);
       persistCurrent("running");
-      if (isAuto()) {
-        schedule(() => runQC(), 1200);
-      } else {
-        openGate("keyframe", () => runQC());
-      }
+      openGate("keyframe", () => runQC());
     })();
   };
 
   const runQC = () => {
     closeGate();
     updateStage("qc", { status: "running", expanded: true });
-    runTool("qc", "skill", "qc-consistency-checker", 800, 0);
-    runTool("qc", "tool", "character-consistency", 1100, 900);
-    runTool("qc", "tool", "scene-coherence", 1100, 2000);
-    runTool("qc", "tool", "hallucination-guard", 1100, 3100);
-    runTool("qc", "tool", "compliance-scanner", 900, 4200);
+    const tcId = startToolCall("qc", "skill", "qc-consistency-checker · multimodal");
+    appendSummary("qc", "采集所有关键帧 · 提交多模态一致性检查…");
 
-    streamLines(
-      "qc",
-      [
-        "检查角色一致性（C01 跨镜对比）…",
-        "检查场景一致性（E01 风格统一）…",
-        "检查服装/道具连贯性（W01 / W02 / P01）…",
-        "检查故事节拍 vs 关键帧对齐…",
-        "幻觉/事实性扫描…",
-      ],
-      900,
-      200,
-    );
+    const startedRunId = get().runId;
+    const scriptForQC = get().script;
+    const briefForQC = get().brief;
+    const shotsForQC = get()
+      .assets.filter(
+        (a) => a.stageId === "paint" && a.url && /^https?:\/\//.test(a.url),
+      )
+      .map((a) => {
+        const meta = scriptForQC?.shots?.find((s) => s.shot === a.id);
+        return {
+          id: a.id,
+          url: a.url as string,
+          scene: meta?.scene ?? a.caption ?? "",
+          elements: meta?.elements ?? "",
+        };
+      });
 
-    schedule(() => {
-      appendSummary("qc", "发现 1 处问题：主角妆容在 A03 与 A01 不一致");
+    void (async () => {
+      if (shotsForQC.length === 0) {
+        if (get().runId !== startedRunId) return;
+        finishToolCall("qc", tcId);
+        appendSummary("qc", "未找到可检查的真实关键帧 · 跳过 QC");
+        updateStage("qc", { status: "ready" });
+        collapseAfter("qc", 1400);
+        schedule(() => runLife(), 1100);
+        return;
+      }
+
+      let result: import("@/lib/qc.functions").QcResult;
+      try {
+        const { checkConsistency } = await import("@/lib/qc.functions");
+        result = await checkConsistency({
+          data: {
+            shots: shotsForQC,
+            brief: briefForQC
+              ? { prompt: briefForQC.prompt, adType: briefForQC.adType }
+              : undefined,
+          },
+        });
+      } catch (e) {
+        console.error("[qc] checkConsistency failed", e);
+        result = {
+          issues: [],
+          passedDimensions: [
+            "角色一致性",
+            "场景一致性",
+            "服装/道具连贯",
+            "故事连贯性",
+            "幻觉/事实性",
+            "法务/合规",
+          ],
+          degraded: true,
+          error: (e as Error).message,
+        };
+      }
+      if (get().runId !== startedRunId) return;
+      finishToolCall("qc", tcId);
+
+      // Save issues onto stage thoughts for downstream use
+      pendingQcIssues = result.issues;
+
+      for (const dim of result.passedDimensions) {
+        appendSummary("qc", `${dim} ✓`);
+      }
+
+      if (result.issues.length === 0) {
+        appendSummary(
+          "qc",
+          result.degraded ? "QC 服务降级 · 默认通过" : "一致性全部通过 ✓",
+        );
+        updateStage("qc", { status: "ready" });
+        collapseAfter("qc", 1400);
+        schedule(() => runLife(), 1100);
+        return;
+      }
+
+      appendSummary("qc", `发现 ${result.issues.length} 处问题，需要修正：`);
       addThought("qc", {
         title: "修改建议",
-        body: [
-          "建议：以 A01 妆容为基准，调用快模型重生成 A03 的人物层。",
-          "成本：Fast model · 0 credits · Preview only · 不影响积分。",
-        ],
+        body: result.issues.map(
+          (it) =>
+            `${it.shotId} · ${it.dimension}（${it.severity}）— ${it.suggestion}`,
+        ),
       });
-      if (isAuto()) {
-        schedule(() => applyQCFixInternal(), 1500);
-      } else {
-        openGate("qc-fix", () => applyQCFixInternal());
-      }
-    }, 5400);
+      openGate("qc-fix", () => applyQCFixInternal());
+    })();
   };
 
   const applyQCFixInternal = () => {
     closeGate();
-    appendSummary("qc", "调用快模型重生成 A03（preview · 0 credits）…");
-    runTool("qc", "tool", "fast-model · re-paint", 2200, 0);
-    schedule(() => {
+    const issues = pendingQcIssues;
+    if (!issues.length) {
+      appendSummary("qc", "无待修正项 · 直接进入下一步");
+      updateStage("qc", { status: "ready" });
+      collapseAfter("qc", 1400);
+      schedule(() => runLife(), 1100);
+      return;
+    }
+
+    appendSummary("qc", `调用快模型重生成 ${issues.length} 个镜头…`);
+    const startedRunId = get().runId;
+    const userId = get().currentUserId;
+    const taskId = get().taskId ?? undefined;
+    const briefPrompt = get().brief?.prompt ?? "";
+
+    void (async () => {
+      for (const issue of issues) {
+        if (get().runId !== startedRunId) return;
+        const tcId = startToolCall("qc", "tool", `re-paint · ${issue.shotId}`);
+        updateAsset(issue.shotId, { status: "Generating" });
+        try {
+          if (!userId) {
+            // No backend image-gen available → mark Ready with current url
+            updateAsset(issue.shotId, { status: "Ready" });
+          } else {
+            const fixPrompt = `${issue.fixPrompt}\n\nUser brief: ${briefPrompt}`;
+            const b64 = await streamGenerateImage({
+              prompt: fixPrompt,
+              quality: "low",
+              onPartial: (dataUrl) => {
+                if (get().runId !== startedRunId) return;
+                updateAsset(issue.shotId, { url: dataUrl });
+              },
+            });
+            if (get().runId !== startedRunId) return;
+            const url = await uploadBase64Image({ base64: b64, userId, taskId });
+            if (get().runId !== startedRunId) return;
+            updateAsset(issue.shotId, { status: "Ready", url });
+          }
+          appendSummary("qc", `${issue.shotId} 已修正 (${issue.dimension})`);
+        } catch (e) {
+          console.error("[qc] re-paint failed", issue.shotId, e);
+          updateAsset(issue.shotId, { status: "Failed" });
+          appendSummary("qc", `${issue.shotId} 修正失败：${(e as Error).message}`);
+        } finally {
+          finishToolCall("qc", tcId);
+        }
+      }
+      if (get().runId !== startedRunId) return;
+      pendingQcIssues = [];
       appendSummary("qc", "修正完成 · 一致性全部通过 ✓");
       updateStage("qc", { status: "ready" });
       collapseAfter("qc", 1400);
       schedule(() => runLife(), 1100);
-    }, 2400);
+    })();
   };
 
   const runLife = () => {
@@ -1313,7 +1413,7 @@ export const useSC = create<SCState>((set, get) => {
         taskId: newId(),
         taskKind: "oneoff" as TaskKind,
         brief: {
-          prompt: "Demo: YSL Libre 30s",
+          prompt: "Demo: 城市晚风 30s",
           adType: "Premium",
           format: "9:16 · 30s",
           visualSource: "Generate from prompt",
