@@ -648,6 +648,11 @@ export const useSC = create<SCState>((set, get) => {
     schedule(() => {
       appendSummary("qc", "修正完成 · 一致性全部通过 ✓");
       updateStage("qc", { status: "ready" });
+      collapseAfter("qc", 1400);
+      schedule(() => runLife(), 1100);
+    }, 2400);
+  };
+
   const runLife = () => {
     closeGate();
     const VIDEO_COST = 30;
