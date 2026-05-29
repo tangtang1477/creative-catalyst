@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Download,
   RotateCw,
+  RefreshCw,
 } from "lucide-react";
 import type { Asset } from "@/lib/sc/types";
 import { StatusBadge } from "./StatusBadge";
@@ -13,6 +14,8 @@ import { SCButton } from "./Button";
 import { cn } from "@/lib/utils";
 import { useSC } from "@/lib/sc/store";
 import { AssetActions } from "./AssetActions";
+import { GradientLoader } from "./GradientLoader";
+
 
 interface Props {
   asset: Asset;
@@ -32,7 +35,9 @@ export function AssetCard({
 }: Props) {
   const Icon = asset.kind === "image" ? ImageIcon : Film;
   const focusAsset = useSC((s) => s.focusAsset);
+  const retryAsset = useSC((s) => s.retryAsset);
   const [loaded, setLoaded] = useState(false);
+
 
   const dim =
     asset.width && asset.height
@@ -52,6 +57,27 @@ export function AssetCard({
       setTimeout(() => el.classList.remove("ring-2", "ring-accent"), 1400);
     }
   };
+
+  const isLoadingState =
+    !asset.url &&
+    (asset.status === "Queued" ||
+      asset.status === "Generating" ||
+      asset.status === "Processing" ||
+      asset.status === "Recovering" ||
+      asset.status === "Status checked");
+
+  const loadingLabel =
+    asset.kind === "video"
+      ? asset.status === "Queued"
+        ? "Queued · video"
+        : asset.status === "Recovering"
+          ? "Recovering video"
+          : "Generating video"
+      : asset.status === "Queued"
+        ? "Queued · image"
+        : asset.status === "Recovering"
+          ? "Recovering image"
+          : "Generating image";
 
   return (
     <div
@@ -93,21 +119,34 @@ export function AssetCard({
               </span>
             )}
           </div>
+        ) : isLoadingState ? (
+          <GradientLoader
+            label={loadingLabel}
+            aspect={asset.kind === "image" ? "9 / 16" : "16 / 9"}
+            maxHeight={compact ? (asset.kind === "image" ? 240 : 200) : asset.kind === "image" ? 420 : 360}
+          />
         ) : (
           <div
-            className="flex items-center justify-center bg-background/40 text-[11px] text-muted-foreground"
+            className="relative flex flex-col items-center justify-center gap-2 bg-background/40 text-[11px] text-muted-foreground"
             style={{
               aspectRatio: asset.kind === "image" ? "9 / 16" : "16 / 9",
               maxHeight: compact ? 200 : 280,
             }}
           >
-            {asset.status === "Failed" || asset.status === "Recovering"
-              ? "未返回可用 URL"
-              : "等待生成…"}
+            <span className="text-status-failed">生成失败</span>
+            <SCButton
+              variant="chip"
+              size="sm"
+              className="h-7 gap-1 px-2.5 text-[11px]"
+              onClick={() => retryAsset(asset.id)}
+            >
+              <RefreshCw className="h-3 w-3" />
+              重试
+            </SCButton>
           </div>
         )}
 
-        {asset.kind === "video" && !asset.url && (
+        {asset.kind === "video" && !asset.url && !isLoadingState && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="rounded-full bg-black/40 p-2 backdrop-blur-sm">
               <Play className="h-4 w-4 text-white/80" />
@@ -122,6 +161,8 @@ export function AssetCard({
           variant="card"
         />
       </div>
+
+
 
       <div className="space-y-1.5 px-3 py-2.5">
         <div className="flex items-center justify-between gap-2">

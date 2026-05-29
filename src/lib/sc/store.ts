@@ -22,6 +22,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { streamGenerateImage, uploadBase64Image } from "@/lib/upload-image";
 import { submitVideoTask, pollVideoTask } from "@/lib/seedance.functions";
 import { generateScript, type GeneratedScript } from "@/lib/script.functions";
+import { parseFormatDuration, parseFormatRatio, formatDurationLabel } from "@/lib/sc/format-utils";
+
 
 const consume = (stage: string, label: string, cost: number) =>
   useCredits.getState().consume(stage, label, cost);
@@ -107,6 +109,9 @@ interface SCState {
   forceState: (s: string) => void;
   restoreTask: (id: string) => void;
   deleteTask: (id: string) => void;
+  retryStage: (id: StageId) => void;
+  retryAsset: (assetId: string) => void;
+
 
   toggleSelect: (id: string) => void;
   clearSelection: () => void;
@@ -643,11 +648,6 @@ export const useSC = create<SCState>((set, get) => {
     schedule(() => {
       appendSummary("qc", "修正完成 · 一致性全部通过 ✓");
       updateStage("qc", { status: "ready" });
-      collapseAfter("qc", 1600);
-      schedule(() => runLife(), 1200);
-    }, 2400);
-  };
-
   const runLife = () => {
     closeGate();
     const VIDEO_COST = 30;
@@ -663,9 +663,13 @@ export const useSC = create<SCState>((set, get) => {
       persistCurrent("failed");
       return;
     }
+    const briefFormat = get().brief?.format ?? "";
+    const videoDuration = parseFormatDuration(briefFormat);
+    const videoRatio = parseFormatRatio(briefFormat);
+
     updateStage("life", { status: "running", expanded: true });
     runTool("life", "skill", "first-frame-to-video · Seedance", 1200, 0);
-    streamLines("life", ["提交 V01 first-frame-to-video…"], 0, 100);
+    streamLines("life", [`提交 V01 first-frame-to-video · ${videoDuration}s · ${videoRatio}`], 0, 100);
     set((s) => ({
       assets: [
         ...s.assets,
@@ -673,13 +677,15 @@ export const useSC = create<SCState>((set, get) => {
           id: "V01",
           kind: "video",
           label: "V01",
-          caption: "Hero film · 30s",
+          caption: `Hero film · ${videoDuration}s`,
           status: "Queued",
           stageId: "life",
-          duration: "0:30",
+          duration: formatDurationLabel(videoDuration),
         },
       ],
     }));
+
+
 
     // 取 paint 阶段第一个真实关键帧（http URL，非 data: 预览）
     const firstKeyframeUrl = (() => {
@@ -716,14 +722,15 @@ export const useSC = create<SCState>((set, get) => {
         const { taskId: seedanceTaskId } = await submitVideoTask({
           data: {
             route: "first-frame-to-video",
-            // videoTaskId omitted: store taskId is not a uuid; seedance_jobs.video_task_id stays null
             payload: {
               prompt: briefPrompt,
               image_url: firstKeyframeUrl,
-              ratio: "16:9",
+              ratio: videoRatio,
+              duration: videoDuration,
             },
           },
         });
+
         if (get().runId !== startedRunId) return;
         appendSummary("life", `Seedance task: ${seedanceTaskId}`);
 
@@ -1186,12 +1193,68 @@ export const useSC = create<SCState>((set, get) => {
       }));
     },
 
-
     deleteTask: (id) => {
       const next = get().taskHistory.filter((t) => t.id !== id);
       set({ taskHistory: next });
       saveHistory(next);
     },
+
+    retryStage: (id) => {
+      clearTimers();
+      set((s) => ({
+        runId: s.runId + 1,
+        phase: "running",
+        gate: null,
+        softGate: null,
+        // 清掉该 stage 的 assets，并把该 stage 之后的 stages 全部置回 pending
+        assets: s.assets.filter((a) => a.stageId !== id),
+        stages: STAGE_ORDER.reduce(
+          (acc, sid) => {
+            if (sid === id) {
+              acc[sid] = emptyStage();
+            } else if (STAGE_ORDER.indexOf(sid) > STAGE_ORDER.indexOf(id)) {
+              acc[sid] = emptyStage();
+            } else {
+              acc[sid] = s.stages[sid];
+            }
+            return acc;
+          },
+          {} as Record<StageId, StageState>,
+        ),
+      }));
+      const runners: Partial<Record<StageId, () => void>> = {
+        scene: runScene,
+        structure: runStructure,
+        wardrobe: runWardrobe,
+        paint: runPaint,
+        qc: runQC,
+        life: runLife,
+        details: runDetails,
+      };
+      const runner = runners[id];
+      if (runner) schedule(runner, 200);
+    },
+
+    retryAsset: (assetId) => {
+      const asset = get().assets.find((a) => a.id === assetId);
+      if (!asset || !asset.stageId) return;
+      // V01 / life：整段重跑 life
+      if (asset.stageId === "life") {
+        get().retryStage("life");
+        return;
+      }
+      // paint 阶段：整段重跑 paint（简化处理，单帧重试不容易复用 prompt 顺序）
+      if (asset.stageId === "paint") {
+        get().retryStage("paint");
+        return;
+      }
+      if (asset.stageId === "wardrobe") {
+        get().retryStage("wardrobe");
+        return;
+      }
+    },
+
+
 
     forceState: (s) => {
       clearTimers();

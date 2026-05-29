@@ -1,80 +1,76 @@
-## 本轮目标
+## 问题定位
 
-把验证通过的「生图 → 存桶 → 提视频 → 轮询拿 oss_url」链路接进现有 ShortCut 流程，替代 `paint` 和 `life` 阶段的 `SAMPLE_KEYFRAME` / `SAMPLE_VIDEO` 假数据。同时修掉测试中暴露的轮询重复插 asset 的 bug。
+**1. 剧本仍是 YSL 香水广告**
+- `src/lib/script.functions.ts` 的 `generateScript` 已经能正确产出与"金毛摊煎饼"匹配的剧本，store 里也已经存到 `state.script`。
+- 但是页面上展示的 `ScriptTable` / `StoryboardTable`（`src/components/sc/ScriptTable.tsx`）以及 `WardrobePanel`/`Painting the frame` 的 caption 仍然写死读 `SCRIPT_ROWS` / `STORYBOARD_ROWS`（`src/lib/sc/samples.ts` 里的 YSL Libre 假数据）。
+- 因此后端虽接通，前端却没绑数据 → 看到的还是巴黎香水广告。Paint 阶段的图能跑出煎饼，是因为 `runPaint` 直接读了 `script.shots[].prompt`，但表格 + Wardrobe caption 没改。
 
----
+**2. 视频时长不对（选了 15s 出了 5s）**
+- IntakeCard 选的 `format` 是 `"15s · 9:16（推荐）"`，存进 `brief.format`，但 `runLife()` 调 `submitVideoTask` 时 payload 只传了 `prompt / image_url / ratio`，没传 `duration`。
+- Seedance 默认 `sd2.0-fast` 没传 duration 就用最短的 5s。
 
-## 1. 修 bug：轮询重复插 asset（必须先做）
+**3. 失败后无法重做**
+- `runLife`/`runPaint` 失败后 `phase` 被设为 `failed`、`assets` 状态变 `Failed`，store 没有暴露"重试当前阶段"的入口，AssetCard 里也没有 retry 按钮。
 
-**现象**：`/test` 日志里出现 4 条 `status: success`，每条 `assetId` 不同。
-**原因**：
-- `pollVideoTask` 里判断 `if (normalized === "success" && ossUrl && !job.oss_url)` → 第一次 tick 异步 `insert assets`，但同时下一次 setInterval tick 已经并发跑起来，读到的 `job.oss_url` 仍是空，于是又插一条。
-- 前端 `startPolling` 只在 tick **回调内**判断 success 才 clearInterval，第二次 tick 已经在路上。
-
-**修法**（两端各加一道闸）：
-- **后端 `seedance.functions.ts`**：把"标记完成 + 写 asset"包成原子操作——先 `update seedance_jobs set status='success', oss_url=... where task_id=? and oss_url is null returning *`，只有受影响行数 = 1 才真正 `insert assets`。其余并发 tick 拿不到行就直接返回已有 `asset_id`。
-- **前端 `test.tsx` + 新接入处**：`submitFn` 返回后用 TanStack Query 的 `useQuery` + `refetchInterval` 改写轮询，`refetchInterval` 在 `status === 'success' | 'failed'` 时返回 `false`，天然停轮询。（顺便干掉 `setInterval` 那套手写逻辑。）
-
----
-
-## 2. ShortCut `paint` 阶段接真实生图
-
-文件：`src/lib/sc/store.ts` 的 `runPaint()`（行 455–536）
-
-**改动**：
-- 删掉 `schedule(..., FRAME_MS)` 那套定时器假流程。
-- 对每个 `SHOTS[i]`：
-  1. `updateAsset(r.shot, { status: "Generating" })`
-  2. 调 `streamGenerateImage({ prompt: 拼接 brief + r.motion, onPartial: dataUrl => updateAsset(r.shot, { url: dataUrl }) })` —— partial 帧实时铺到卡片上（带 blur 由卡片自己根据 status 控制）
-  3. 拿到最终 b64 → `uploadBase64Image({ base64, userId, taskId })` → 返回 public URL
-  4. `updateAsset(r.shot, { status: "Ready", url: publicUrl })`，`consume("paint", ...)`
-- 并发策略：**串行**（一个跟一个），避免 SSE 同时打爆。后续可加 `Promise.all` 分批。
-- 失败处理：catch → `updateAsset(status: "Failed")` + `appendSummary("paint", "X 生成失败：...")`，继续下一个。
-- 全部 `Ready` 后保持原 `runQC` 流程不变。
-
-**需要**：store 拿当前 `userId` —— 在 `submit()` 入口处 `supabase.auth.getUser()` 一次缓存到 state（`currentUserId`），没登录直接报错跳 `/login`。
+**4. Loading 动效太丑**
+- 当前 `AssetCard` 在 `url` 为空时只显示纯文字"等待生成…"；视频和图像生成中的卡片都是同样的占位。
+- 需要换成图 5 那种"渐变模糊光晕 + 中心细环"动效，统一应用到 image/video 的 `Queued / Generating / Processing / Recovering` 状态。
 
 ---
 
-## 3. ShortCut `life` 阶段接真实视频
+## 实施方案
 
-文件：`src/lib/sc/store.ts` 的 `runLife()`（行 589–641）
+### A. 让 Script/Storyboard/Wardrobe 真正使用 LLM 输出
 
-**改动**：
-- 取 `paint` 阶段第一个 keyframe 的真实 URL 作为 `image_url`（不再硬编码 V01）。先做单视频，多镜后续。
-- `updateAsset("V01", { status: "Processing" })`
-- 调 `submitVideoTask({ route: 'first-frame-to-video', videoTaskId: taskId, payload: { prompt, image_url: firstKeyframeUrl, ratio: '16:9' } })` 拿 `taskId`
-- 启动轮询（**用 §1 修过的方式**，3s 间隔，5min 超时）：
-  - `processing` → `updateAsset("V01", { status: "Processing" })`
-  - `success` → `updateAsset("V01", { status: "Ready", url: ossUrl, poster: firstKeyframeUrl })`，`consume("life", ..., 30)`，继续 `runDetails`
-  - `failed` / `timeout` → `updateAsset("V01", { status: "Failed" })`，`set({ phase: "failed" })`
-- 删掉 `schedule(..., 7000)` 那套假定时器。
+1. **`src/components/sc/ScriptTable.tsx`**
+   - 改成读 `useSC((s) => s.script)`。
+   - 有 `script` 时：
+     - 用 `script.shots` 直接渲染 Storyboard 表（shot / duration / motion / scene / elements）。
+     - 用 `script.shots` 派生 Script 表（time 累加每段 duration、visual=scene、vo=空 or 简短提示、sound=mood/cameraLanguage 关键词）。
+   - 无 `script` 时 fallback 到原 `SCRIPT_ROWS`/`STORYBOARD_ROWS`（保持 IntakeCard demo 不爆）。
 
-**注**：轮询用纯 JS（`setInterval` + 闭包），不是 React 组件里的 `useQuery`，因为这是在 store action 里跑。但要严格做 dedupe：tick 只在拿到 `success/failed/timeout` 时 `clearInterval`，回调里二次判断 `assets.find(V01).status` 防止重复 update。
+2. **`src/components/sc/WardrobePanel.tsx`** 和 Paint 区的 caption
+   - WardrobePanel 中的 W01/W02/P01 caption 改成读 `script?.wardrobe`。
+   - Paint asset 的 `caption` 在 `runPaint` 里已用 `script` 的 scene，确认无 fallback 漏写。
+
+3. **`Workspace.tsx` 的 `KEYFRAME_PROMPT_DETAIL`（Prompt details 折叠区）**
+   - 替换为 `script?.shots[0]?.prompt`（或拼接全部 5 个 prompt），让"Prompt details"也跟随真实剧本，否则用户展开还是看到香水文案。
+
+### B. 把所选时长传给 Seedance
+
+1. **新增 `src/lib/sc/format-utils.ts`**：`parseFormatDuration(format: string): number` —— 用正则匹配 `^(\d+)s`，没匹配到默认返回 5。
+2. **`src/lib/sc/store.ts` 的 `runLife()`**：在 `submitVideoTask` 的 `payload` 里加 `duration: parseFormatDuration(get().brief?.format)`。
+3. **`src/lib/seedance.functions.ts`** 已在 schema 里允许 `duration: z.number().int().optional()`，无需改。
+4. UI 里 V01 asset 的 `duration` 字段也改成 `\`0:${dur}\``。
+
+### C. 失败可重做
+
+1. **`store.ts` 新增 action**：
+   - `retryStage(id: StageId)`：清掉该 stage 的 `assets`、把 stage 置回 `emptyStage()`、`phase` 回 `running`、重启 `runId`、调用对应的 `runPaint/runLife/runQC/...`。
+   - `retryAsset(assetId: string)`：针对 paint 的某个关键帧（`A0x`）单独重生成；life 的 `V01` 走 `retryStage('life')`。
+2. **`AssetCard.tsx`**：当 `asset.status === 'Failed'` 时在卡片上叠一个明显的 `Retry` 按钮（沿用现有 `Replace` 旁边的位置），点击调 `retryAsset(asset.id)`。
+3. **`StageRow.tsx`**：当 `state.status === 'failed'` 时在标题右侧显示一个 `Retry stage` 小按钮。
+4. **底部 CommandInput**：`phase === 'failed'` 时也允许发送新指令（已支持），但加一个 "Retry last stage" 的快捷 chip。
+
+### D. 新的 Loading 动效（图 5 风格）
+
+1. **新组件 `src/components/sc/GradientLoader.tsx`**
+   - 圆角矩形，按父容器 fill；
+   - 底层是 conic / radial gradient 用主题色 `--accent` + `--primary` + 深色背景，带 `animation: aurora 6s ease-in-out infinite` 缓慢漂移 + `blur(40px)`；
+   - 中心一个 `border` 半圈细环（`border-t-transparent`）做 `animate-spin`，弱透明度；
+   - 底部一个胶囊 `<span>` 显示 `● Generating image` / `● Generating video`，传 label prop。
+   - 全部用 `bg-[radial-gradient(...)]` + `oklch` 中的 `--accent` / `--primary` 派生色，保证和主题协调。
+2. **接入位置**（`AssetCard.tsx`）
+   - 把当前 `等待生成… / 未返回可用 URL` 占位 div 整段替换为 `<GradientLoader label={...} variant={asset.kind} />`。
+   - 触发条件：`!asset.url && (status in {Queued, Generating, Processing, Recovering})`，`Failed` 显示错误占位 + Retry 按钮。
+   - 图像/视频 aspect-ratio 维持原来（9/16 / 16/9）。
+3. **CSS 动画**：在 `src/styles.css` 增加 `@keyframes aurora { 0%,100% {transform: translate3d(0,0,0) scale(1)} 50% {transform: translate3d(4%,-3%,0) scale(1.15)} }` 等关键帧。
 
 ---
 
-## 4. 其他保持不动
+## 验证
 
-- `wardrobe` / `qc` / `scene` / `structure` / `details` 阶段：本轮先继续用假流程（这些不依赖外部 API，验证 paint+life 接通即可）。
-- `seedance_jobs` 表 RLS：保持 SELECT-only，写入走 `supabaseAdmin`。
-- 不动 UI 组件（AssetCard、MediaRail 等），它们已经按 `status` + `url` 渲染，真实 URL 直接生效。
-
----
-
-## 5. 验收（用户在 `/` 跑一次完整任务）
-
-1. 登录 → 主页输入 prompt → 进 intake → 确认 brief
-2. 看 `paint` 阶段：每个关键帧从 blur partial → 清晰真图（来自 Storage public URL）
-3. 看 `life` 阶段：V01 从 Processing → Ready，播放器能播 oss_url 视频
-4. 刷新页面 → `taskHistory` 里能看到这条任务和真实资产
-
----
-
-## 文件改动清单
-
-- `src/lib/seedance.functions.ts` —— `pollVideoTask` 改为条件 update + dedupe insert
-- `src/lib/sc/store.ts` —— `runPaint` / `runLife` 接真接口；`submit` 缓存 `currentUserId`；SCState 加 `currentUserId` 字段
-- `src/routes/test.tsx` —— 轮询改 useQuery（顺手，证明同一套机制）
-
-不动：UI 组件、其它 stage、auth/login 页。
+- 输入"金毛摊煎饼"，重新跑：Structure 表格、Storyboard、Wardrobe caption、Prompt details 全部出现煎饼/金毛相关文案，无任何 YSL/巴黎字样。
+- Intake 选 `15s · 9:16` 后跑完，V01 视频时长 ≈ 15s（Seedance 返回 duration 字段或目测）。
+- 在 paint/life 阶段制造失败（比如断网一次），出现 Retry 按钮，点击后能从该阶段重新跑通。
+- 图像/视频卡片在生成期间显示新的渐变模糊光晕 + 细环 + 胶囊文案，颜色与现有 accent 主题协调；生成完成后顺滑切到真实图/视频。
