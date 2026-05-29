@@ -716,21 +716,21 @@ export const useSC = create<SCState>((set, get) => {
 
     updateAsset("V01", { status: "Processing" });
     appendSummary("life", "Seedance 提交中（first-frame-to-video）…");
+
+    void (async () => {
+      try {
+        const { taskId: seedanceTaskId } = await submitVideoTask({
+          data: {
+            route: "first-frame-to-video",
             payload: {
               prompt: briefPrompt,
               image_url: firstKeyframeUrl,
               ratio: videoRatio,
               duration: videoDuration,
             },
-
-            // videoTaskId omitted: store taskId is not a uuid; seedance_jobs.video_task_id stays null
-            payload: {
-              prompt: briefPrompt,
-              image_url: firstKeyframeUrl,
-              ratio: "16:9",
-            },
           },
         });
+
         if (get().runId !== startedRunId) return;
         appendSummary("life", `Seedance task: ${seedanceTaskId}`);
 
