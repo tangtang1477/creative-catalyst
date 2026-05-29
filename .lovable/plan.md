@@ -1,165 +1,159 @@
-# 实施计划
+# 后端接入计划
 
-## 1. 主题切换滑动胶囊（仅修复 popup 内）
+## 整体架构
 
-**问题**：`UserHoverCard.tsx` popup 内的 pill 视觉上还是"两按钮+背景跳变"，不是顺滑滑动。Sidebar 底部那个独立 Moon/Sun icon 按钮**不动**。
-
-**改动 `src/components/sc/UserHoverCard.tsx`** — 仅 popup 内的主题切换块：
-
-```tsx
-<div className="relative mt-2 inline-flex w-full items-center rounded-full bg-surface-2 p-0.5">
-  {/* 滑块：left+translateX 组合，避免百分比换算误差导致的端点偏移 */}
-  <span
-    aria-hidden
-    className="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-background shadow-[0_1px_2px_rgba(0,0,0,.15)] transition-transform duration-300 ease-[cubic-bezier(.4,0,.2,1)]"
-    style={{ transform: theme === "light" ? "translateX(100%)" : "translateX(0)" }}
-  />
-  <button
-    type="button"
-    onClick={(e) => { e.stopPropagation(); setTheme("dark"); }}
-    className={cn(
-      "relative z-10 flex h-8 flex-1 items-center justify-center gap-1.5 rounded-full text-[12px] transition-colors",
-      theme === "dark" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-    )}
-  >
-    <Moon className="h-3.5 w-3.5" /> Dark
-  </button>
-  <button
-    type="button"
-    onClick={(e) => { e.stopPropagation(); setTheme("light"); }}
-    className={cn(
-      "relative z-10 flex h-8 flex-1 items-center justify-center gap-1.5 rounded-full text-[12px] transition-colors",
-      theme === "light" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-    )}
-  >
-    <Sun className="h-3.5 w-3.5" /> Light
-  </button>
-</div>
+```text
+Client (React)
+  │
+  ├─ POST /api/generate-image        ─→ Lovable AI Gateway (openai/gpt-image-2, SSE)
+  │                                     ↓ partial frames 实时返回
+  │                                     最终图上传 Storage → 拿到 https URL
+  │
+  ├─ POST /api/video/submit          ─→ vb.movieflow.ai/seedance2/<route>
+  │                                     拿 task_id 存 DB
+  │
+  └─ GET  /api/video/poll?task_id=… ─→ vb.movieflow.ai/seedance2/task-status
+                                       返回 status/progress/oss_url
 ```
 
-要点：
-- 滑块用 `left:0.5 + translateX(100%)`（移动自身宽度=50%-2px）替代原本 `w-[calc(50%-4px)]` + `translateX(100%)`（结果=50%-4px，端点偏内 4px 不贴边）
-- transition 用 `cubic-bezier(.4,0,.2,1)` 更顺滑
-- 按钮 `stopPropagation` 防止冒泡关闭 hover card
+所有外部 API 调用都在 TanStack 服务端路由里完成，密钥放 secrets。
 
-Sidebar 底部 collapsed/expanded 行内的单个 Moon/Sun icon 按钮**保持不变**。
+## 第一步：启用 Lovable Cloud + 关键 secrets
 
----
+- 启用 Lovable Cloud（自动 provision `LOVABLE_API_KEY`、Storage、Postgres、Auth）
+- 新增 secret：
+  - `SEEDANCE_HOST` = `https://vb.movieflow.ai`（写死也行，但放 secret 方便切环境）
+  - `SEEDANCE_API_KEY`（**待确认**：文档没写鉴权方式，需要你确认是 Bearer token 还是其它，或者根本不需要）
 
-## 2. 阶段容器改为参考视频的扁平流式样式
+## 第二步：数据库表
 
-**当前问题**：`StageRow.tsx` 把每个阶段渲染成 `rounded-2xl border bg-surface` 卡片 + 嵌套的 `rounded-xl border bg-background/40` details 卡片。视觉上块块割裂，和参考视频里的"会话流"（小方块 icon + 标题 + 直接平铺内容，无边框）完全不同。
+```sql
+-- 任务表：用来持久化 task 状态、关联生成的素材
+create table public.video_tasks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade,
+  title text not null,
+  prompt text not null,
+  status text not null default 'pending',           -- pending|processing|success|failed
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
 
-**参考视频的样式特征**（v2/v3 多帧确认）：
-- 阶段标题 = 16-20px 圆角填充小方块 icon（accent 青色，内嵌白色 sparkle/icon）+ 标题文字 + 末尾小 expand 外链 icon
-- 标题下方直接平铺：纯文字段落、内联问题 chips、`Generating/Queued` 缩略图小方格、"Status checked 2 generations"、"Using skill xxx"、"Generation Started"、"Upload failed"、"Running terminal"、"Uploaded 3 files" 等子事件都是**纯文本行+小 icon**，无 border/bg
-- 整个阶段没有外框，只靠"小 icon+标题"作为分段锚点，内容在主流里和上下文连续
+create table public.assets (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid references public.video_tasks(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  kind text not null,                               -- image|video
+  url text not null,                                -- Storage 公开 URL
+  source text not null,                             -- gpt-image-2|seedance|upload
+  meta jsonb,                                       -- {duration, ratio, seed_task_id ...}
+  created_at timestamptz default now()
+);
 
-### 2.1 重写 `src/components/sc/StageRow.tsx`
-
-去掉外层 `rounded-2xl border bg-surface` 容器：
-
-```tsx
-<section data-stage-id={id} className="[animation:stream-fade_320ms_ease-out_both]">
-  <button
-    type="button"
-    onClick={() => toggleStage(id)}
-    className="group flex w-full items-center gap-2 py-1.5 text-left"
-  >
-    <span className={cn(
-      "flex h-5 w-5 items-center justify-center rounded-md transition-colors",
-      state.status === "running" || state.status === "recovering"
-        ? "bg-accent/20 text-accent"
-        : state.status === "ready"
-          ? "bg-accent text-background"
-          : state.status === "failed"
-            ? "bg-status-failed/20 text-status-failed"
-            : "bg-surface-2 text-muted-foreground"
-    )}>
-      <Icon className="h-3 w-3" />
-    </span>
-    <span className="text-[13.5px] font-medium tracking-tight">{STAGE_LABEL[id]}</span>
-    {state.status === "running" && <Loader2 className="h-3 w-3 animate-spin text-status-generating" />}
-    {state.status === "recovering" && <RotateCw className="h-3 w-3 animate-spin text-status-recovering" />}
-    {state.status === "ready" && <Check className="h-3 w-3 text-status-ready" />}
-    {state.status === "failed" && <AlertCircle className="h-3 w-3 text-status-failed" />}
-    <ChevronDown className={cn(
-      "ml-auto h-3.5 w-3.5 text-muted-foreground/60 opacity-0 transition-all group-hover:opacity-100",
-      expanded && "rotate-180 opacity-100"
-    )} />
-  </button>
-
-  {/* 子事件流（toolCalls/thoughts/summary）— 折叠时只显示最后一条 summary */}
-  {expanded ? (
-    <div className="space-y-1 pl-7">
-      {state.toolCalls.map((tc) => <ToolCallLine key={tc.id} call={tc} />)}
-      {state.thoughts.map((th) => <ThinkingBlock key={th.id} thought={th} />)}
-      {state.summary.map((s, i) => (
-        <div key={`${i}-${s.slice(0,8)}`} className="text-[12.5px] leading-relaxed text-muted-foreground [animation:stream-fade_320ms_ease-out_both]">
-          {s}
-        </div>
-      ))}
-    </div>
-  ) : state.summary.length > 0 && (
-    <div className="pl-7 truncate text-[12px] text-muted-foreground">
-      {state.summary[state.summary.length - 1]}
-    </div>
-  )}
-
-  {/* 主内容（children/details）— 直接平铺，无 border/bg 包裹 */}
-  {(expanded || keepChildrenWhenCollapsed) && children && (
-    <div className="mt-1.5 pl-7">{children}</div>
-  )}
-
-  {expanded && details && (
-    <details className="group mt-1.5 pl-7">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11.5px] text-muted-foreground/80 hover:text-foreground">
-        <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
-        {detailsLabel}
-      </summary>
-      <div className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{details}</div>
-    </details>
-  )}
-</section>
+create table public.seedance_jobs (
+  task_id text primary key,                         -- Seedance 返回的 cgt-xxx
+  asset_id uuid references public.assets(id) on delete set null,
+  video_task_id uuid references public.video_tasks(id) on delete cascade,
+  status text not null default 'pending',
+  progress int default 0,
+  oss_url text,
+  raw jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
 ```
 
-要点：
-- 无 border、无背景色、无外圆角
-- 标题前 20px 小方块 icon：`bg-accent`（ready）/`bg-accent/20`（running/recovering）/`bg-surface-2`（其它）
-- 内容统一 `pl-7` 与标题文字对齐
-- expand chevron 默认隐藏，hover 或展开时显示
-- ready 阶段默认折叠到一行 summary，点击展开；running/recovering 阶段保持自动展开（store 已有逻辑）
-- props 接口完全不变，`Workspace.tsx` 调用处零改动
+每张表配 `GRANT` + RLS（`auth.uid() = user_id`）。
 
-### 2.2 `ToolCallLine.tsx` 改为扁平行
+## 第三步：Storage bucket
 
-去掉外层 border/bg：纯 `flex items-center gap-1.5 py-0.5 text-[12px] text-muted-foreground`，前置小 icon（✦ 或 Loader2），文字直接显示 "Using skill xxx"、"Running terminal"、"Uploaded 3 files"、"Generation Started"、"Status checked 2 generations"，匹配参考视频。
+```sql
+insert into storage.buckets (id, name, public) values ('media', 'media', true);
+```
 
-### 2.3 `ThinkingBlock.tsx` 调整
+公开桶，OpenAI 生成的图、用户上传的图都存这里。Seedance 接口需要 `image_url` 是可公网访问的 https，所以必须 public。
 
-- 折叠态：单行 `✦ Thinking…` / `✦ Thought for Ns`，纯文字无 border
-- 展开态：内容直接平铺（去掉嵌套 border/bg），思考过程结尾的素材缩略图保持现有展示
+## 第四步：服务端路由
 
-### 2.4 `Workspace.tsx` 阶段间距
+### 4.1 图片生成 `src/routes/api/generate-image.ts`
 
-第 147 行 `<div className="flex-1 space-y-3">` → `space-y-5`（无 border 后需要更大的垂直间距区分阶段）。
+- 用 TanStack server route（**不能用 createServerFn**，SSE 流不能跨 RPC 序列化）
+- 调 `https://ai.gateway.lovable.dev/v1/images/generations`：
+  ```json
+  {
+    "model": "openai/gpt-image-2",
+    "prompt": "...",
+    "quality": "low",
+    "size": "1024x1024",
+    "stream": true,
+    "partial_images": 2
+  }
+  ```
+- `upstream.body` 直通客户端（保留 SSE 流式渐进预览）
+- 客户端用 `eventsource-parser` + `flushSync` 解析（partial 加 blur，completed 去 blur）
+- 拿到最终 PNG 后：base64 → 上传 Storage → 写入 `assets` 表 → 拿到 https URL
 
-### 2.5 保留的功能
+### 4.2 视频提交 `src/routes/api/video/submit.ts`
 
-- 点击标题 `toggleStage` 展开/收起
-- summary 流式滚入动画
-- `ApprovalChips`/`IntakeCard` 问题块样式不动（它们本来就是参考视频里的卡片块）
-- `Generation Started`/`Status checked N generations`/`Upload failed`/`Uploaded N files` 通过 `ToolCallLine` 扁平样式自然实现
+- `createServerFn` + `requireSupabaseAuth`
+- 入参（Zod 校验）：
+  ```ts
+  {
+    videoTaskId: uuid,
+    route: 'text-to-video' | 'first-frame-to-video' | 'first-last-frame-to-video'
+         | 'reference-image-to-video' | 'reference-video' | 'extend-video' | 'create-task',
+    payload: { prompt, image_url?, first_image_url?, ... }  // 按路由形状校验
+  }
+  ```
+- 自动注入 `model: 'sd2.0-fast'`（除非用户明确要 1080p）
+- POST 到 `${SEEDANCE_HOST}/seedance2/<route>`，带 `SEEDANCE_API_KEY`
+- 拿到 `data.task_id` → 写 `seedance_jobs` 表 → 返回 task_id
+- 隐私风控处理：如果返回 `InputImageSensitiveContentDetected.PrivacyInformation`，自动走 batch-upload-asset → create-task 的兜底路径
+
+### 4.3 视频轮询 `src/routes/api/video/poll.ts`
+
+- `createServerFn`，入参 `{ task_id }`
+- POST 到 `${SEEDANCE_HOST}/seedance2/task-status`，带 `video_name` + `aspect_ratio`
+- 收到 `oss_url` 后：
+  - 写入 `assets`（kind=video, url=oss_url）
+  - 更新 `seedance_jobs.status='success'`
+  - 更新对应 `video_tasks.status`
+- 前端用 TanStack Query `refetchInterval: 3000`，状态变 success/failed 时停轮询
+
+## 第五步：前端接入点
+
+只改 `src/lib/sc/store.ts` 的 stage 推进逻辑，UI 不动：
+
+| Stage | 现状（mock） | 接入后 |
+|---|---|---|
+| `scene`/`structure`/`wardrobe` | 假 thoughts + sample 图 | 调 Lovable AI `gemini-3-flash-preview` 生成分镜文字 |
+| `paint` | sample 关键帧 | 调 `/api/generate-image`，流式显示 partial，最终落 Storage |
+| `qc` | mock | Gemini 多模态校验关键帧一致性 |
+| `life` | sample 视频 | 调 `/api/video/submit`（first-frame-to-video）+ 轮询 `/api/video/poll` |
+| `details` | mock | 收尾、汇总素材 |
+
+`Asset.url` 全部替换成真实 Storage / oss_url，gallery 直接渲染。
+
+任务列表（sidebar）从 `video_tasks` 表读，刷新后状态还在。
+
+## 第六步：登录（最简方案）
+
+默认开邮箱密码 + Google 登录。任务/素材按 `auth.uid()` 隔离。
 
 ---
 
 ## 技术备注
 
-- 不引入新依赖
-- 颜色全走现有 token：`bg-accent`/`bg-surface-2`/`text-muted-foreground`/`border-border`/`text-status-*`
-- 主题滑块用 `left+translateX` 组合避免百分比误差
-- `StageRow` 重写保留 props 接口（`id`/`state`/`children`/`details`/`detailsLabel`/`keepChildrenWhenCollapsed`），`Workspace.tsx` 调用处零改动
-- 验证步骤：
-  1. 打开 popup 内主题胶囊，滑块平滑左右滑动 300ms，端点贴边
-  2. 跑一个新任务，观察阶段没有卡片边框，只看到"小青色方块+标题+流式内容"
-  3. 点击 ready 阶段标题，能展开/收起 toolCalls + thoughts + summary
+- **图片 → 视频 的 URL 桥接**：OpenAI 返回 base64，必须先上传到 Storage 拿到 https URL 才能传给 Seedance（接口只收 URL，不收 base64）
+- **轮询策略**：前端 3s 一次，超时 5 分钟；服务端不长连，节省 Worker 时间
+- **错误透传**：429/402（AI Gateway）、`code != 0`（Seedance）→ 走 toast
+- **不引入新依赖**（`eventsource-parser` 已有的话直接用，否则 `bun add eventsource-parser`）
+- **mock 兼容**：保留一个 `VITE_USE_MOCK=true` 的本地开关，方便没 key 时离线 demo
+
+## 需要你确认的 3 件事（影响实现细节）
+
+1. **Seedance 鉴权方式**：文档里没写。是 `Authorization: Bearer <key>`、`X-API-Key`、还是放在 query/body？key 是什么名字？
+2. **图片 stage 是否每个分镜都用 gpt-image-2 生**？还是只有 `paint`/关键帧用，前面 `scene`/`structure` 仍然纯文本？
+3. **音频**：Seedance 默认 `generate_audio: true`。要默认开还是默认关？（开了会更慢）
+
+回答完我就进 build 模式开干。
