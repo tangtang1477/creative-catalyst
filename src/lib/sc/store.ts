@@ -794,12 +794,14 @@ export const useSC = create<SCState>((set, get) => {
         intakeSel: {},
         intakeCustoms: {},
         intakeOthers: null,
+        currentUserId: null,
       }));
+      // 异步抓 user id；没登录也允许走假数据 stage（paint/life 会自检并 fallback）
+      supabase.auth.getUser().then(({ data }) => {
+        set({ currentUserId: data.user?.id ?? null });
+      });
       const delay = 1500 + Math.random() * 1000;
       schedule(() => {
-        // Both auto and confirm enter intake first; auto adds a 20s soft-countdown
-        // inside IntakeCard that auto-confirms the prefilled selection if the user
-        // does not interact. Confirm waits indefinitely for user.
         set({ phase: "intake" });
       }, delay);
     },
