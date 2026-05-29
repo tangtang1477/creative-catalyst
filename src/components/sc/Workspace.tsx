@@ -14,8 +14,8 @@ import { QCPanel } from "./QCPanel";
 import { ViewModeToggle } from "./ViewModeToggle";
 import { CanvasView } from "./canvas/CanvasView";
 import { STAGE_ORDER } from "@/lib/sc/types";
-import { KEYFRAME_PROMPT_DETAIL, RECOVERY_NOTES } from "@/lib/sc/samples";
 import { KEYFRAME_PROMPT_DETAIL as FALLBACK_PROMPT_DETAIL, RECOVERY_NOTES } from "@/lib/sc/samples";
+import { SCButton } from "./Button";
 
 import { Calendar, GalleryHorizontal, Zap } from "lucide-react";
 import { Logo } from "./Logo";
