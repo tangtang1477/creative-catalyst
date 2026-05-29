@@ -684,7 +684,7 @@ export const useSC = create<SCState>((set, get) => {
         const { taskId: seedanceTaskId } = await submitVideoTask({
           data: {
             route: "first-frame-to-video",
-            videoTaskId: get().taskId ?? undefined,
+            // videoTaskId omitted: store taskId is not a uuid; seedance_jobs.video_task_id stays null
             payload: {
               prompt: briefPrompt,
               image_url: firstKeyframeUrl,
