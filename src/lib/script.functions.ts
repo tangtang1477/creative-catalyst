@@ -19,6 +19,17 @@ export interface ScriptShot {
 
 export interface ScriptWardrobe {
   id: string;
+  caption: string;
+}
+
+export interface GeneratedScript {
+  mood: string;
+  cameraLanguage: string;
+  structureSummary: string[];
+  wardrobe: ScriptWardrobe[];
+  shots: ScriptShot[];
+}
+
 const SYSTEM_PROMPT = `你是一位资深广告导演 + 视觉总监。你必须**严格围绕用户给出的主题**产出 30 秒短片方案，绝不替换主题或套用现成案例。
 
 强制约束（违反任何一条都视为失败）：
@@ -32,16 +43,6 @@ const SYSTEM_PROMPT = `你是一位资深广告导演 + 视觉总监。你必须
 - structureSummary：5 条中文要点（叙事结构、节奏、声音设计等，全部围绕用户主题）
 - wardrobe：3 个条目 (W01 主角形象, W02 配角或第二形象, P01 关键道具) — 必须是用户主题里真正存在的主体/道具；每个含简短中文 caption
 - shots：5 个分镜 A01-A05，覆盖完整 30s 叙事；每个 shot 含 duration(如 "3s")、motion(英文如 "Slow push-in"、"Side dolly")、scene(中文场景，紧扣用户主题)、elements(中文元素)、prompt(英文完整 text-to-image prompt，~60 词，主体必须是用户主题里的对象)`;
-  shots: ScriptShot[];
-}
-
-const SYSTEM_PROMPT = `你是一位资深广告导演 + 视觉总监。根据用户的一句话需求，产出 30 秒短片的完整方案：
-- mood：情绪/氛围一句话
-- cameraLanguage：镜头语言一句话
-- structureSummary：5 条中文要点（叙事结构、节奏、声音设计等）
-- wardrobe：3 个条目 (W01 主角服装/形象, W02 配角或第二形象, P01 关键道具)，每个含简短中文 caption
-- shots：5 个分镜 A01-A05，覆盖完整 30s 叙事；每个 shot 含 duration(如 "3s")、motion(英文如 "Slow push-in"、"Side dolly")、scene(中文场景)、elements(中文元素)、prompt(英文完整 text-to-image prompt，包含主体/构图/光照/镜头/风格，~60 词)
-所有文案紧扣用户主题，绝不照搬其他案例（不要 YSL/巴黎/丝绒，除非用户明确要求）。`;
 
 const TOOL = {
   type: "function" as const,
