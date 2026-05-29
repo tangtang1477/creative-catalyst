@@ -48,7 +48,8 @@ export function ThinkingBlock({ thought }: { thought: Thought }) {
         />
       </button>
       {open && (
-        <div className="space-y-1.5 pl-4.5 pt-1 text-[12px] leading-relaxed text-foreground/85 [animation:stream-fade_320ms_ease-out_both]">
+        <div className="space-y-1.5 pl-[18px] pt-1 text-[12px] leading-relaxed text-foreground/85 [animation:stream-fade_320ms_ease-out_both]">
+
           <div className="space-y-0.5">
             {thought.body.map((line, i) => (
               <p key={i} className="text-muted-foreground">
