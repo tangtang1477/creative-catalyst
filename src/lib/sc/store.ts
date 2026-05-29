@@ -620,7 +620,6 @@ export const useSC = create<SCState>((set, get) => {
     closeGate();
     const VIDEO_COST = 30;
     if (!canAfford(VIDEO_COST)) {
-      // not enough credits → pause flow, render inline pill in stage body
       updateStage("life", {
         status: "recovering",
         expanded: true,
@@ -633,7 +632,7 @@ export const useSC = create<SCState>((set, get) => {
       return;
     }
     updateStage("life", { status: "running", expanded: true });
-    runTool("life", "skill", "first-frame-to-video · MovieFlow", 1200, 0);
+    runTool("life", "skill", "first-frame-to-video · Seedance", 1200, 0);
     streamLines("life", ["提交 V01 first-frame-to-video…"], 0, 100);
     set((s) => ({
       assets: [
@@ -650,24 +649,118 @@ export const useSC = create<SCState>((set, get) => {
       ],
     }));
 
-    schedule(() => updateAsset("V01", { status: "Processing" }), 1200);
-    schedule(() => appendSummary("life", "MovieFlow 渲染中（first-frame-to-video）"), 1300);
-    schedule(() => updateAsset("V01", { status: "Status checked" }), 4500);
-    schedule(() => appendSummary("life", "Status checked · 视频流可用"), 4600);
+    // 取 paint 阶段第一个真实关键帧（http URL，非 data: 预览）
+    const firstKeyframeUrl = (() => {
+      const a = get().assets.find(
+        (x) => x.stageId === "paint" && x.url && /^https?:\/\//.test(x.url),
+      );
+      return a?.url;
+    })();
+    const userId = get().currentUserId;
+    const briefPrompt = get().brief?.prompt ?? "";
+    const startedRunId = get().runId;
 
-    schedule(() => {
-      updateAsset("V01", {
-        status: "Ready",
-        url: SAMPLE_VIDEO,
-        poster: SAMPLE_KEYFRAME,
-      });
-      updateStage("life", { status: "ready" });
-      consume("life", "Video V01 · 30s render", VIDEO_COST);
-      appendSummary("life", "V01 Ready · 30s · 9:16 · 画质验证通过");
-      collapseAfter("life", 1800);
-      persistCurrent("running");
-      schedule(() => runDetails(), 1600);
-    }, 7000);
+    if (!userId || !firstKeyframeUrl) {
+      // fallback：未登录或没有真图，走示例视频
+      appendSummary("life", "未登录或无关键帧 · 使用示例视频");
+      schedule(() => updateAsset("V01", { status: "Processing" }), 1200);
+      schedule(() => {
+        updateAsset("V01", { status: "Ready", url: SAMPLE_VIDEO, poster: SAMPLE_KEYFRAME });
+        updateStage("life", { status: "ready" });
+        consume("life", "Video V01 · sample", VIDEO_COST);
+        appendSummary("life", "V01 Ready (sample)");
+        collapseAfter("life", 1800);
+        persistCurrent("running");
+        schedule(() => runDetails(), 1600);
+      }, 3000);
+      return;
+    }
+
+    updateAsset("V01", { status: "Processing" });
+    appendSummary("life", "Seedance 提交中（first-frame-to-video）…");
+
+    void (async () => {
+      try {
+        const { taskId: seedanceTaskId } = await submitVideoTask({
+          data: {
+            route: "first-frame-to-video",
+            videoTaskId: get().taskId ?? undefined,
+            payload: {
+              prompt: briefPrompt,
+              image_url: firstKeyframeUrl,
+              ratio: "16:9",
+            },
+          },
+        });
+        if (get().runId !== startedRunId) return;
+        appendSummary("life", `Seedance task: ${seedanceTaskId}`);
+
+        const started = Date.now();
+        let stopped = false;
+        const stop = () => { stopped = true; if (timer) window.clearInterval(timer); };
+
+        const tick = async () => {
+          if (stopped || get().runId !== startedRunId) return;
+          try {
+            const r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
+            if (stopped || get().runId !== startedRunId) return;
+            if (r.status === "success" && r.ossUrl) {
+              stop();
+              // 防重复：只在当前还不是 Ready 时更新
+              const cur = get().assets.find((a) => a.id === "V01");
+              if (cur?.status !== "Ready") {
+                updateAsset("V01", {
+                  status: "Ready",
+                  url: r.ossUrl,
+                  poster: firstKeyframeUrl,
+                });
+                updateStage("life", { status: "ready" });
+                consume("life", "Video V01 · seedance", VIDEO_COST);
+                appendSummary("life", "V01 Ready · seedance oss_url 已写入");
+                collapseAfter("life", 1800);
+                persistCurrent("running");
+                schedule(() => runDetails(), 1600);
+              }
+              return;
+            }
+            if (r.status === "failed") {
+              stop();
+              updateAsset("V01", { status: "Failed" });
+              appendSummary("life", "Seedance 渲染失败");
+              updateStage("life", { status: "failed" });
+              set({ phase: "failed" });
+              persistCurrent("failed");
+              return;
+            }
+            if (Date.now() - started > 5 * 60_000) {
+              stop();
+              updateAsset("V01", { status: "Failed" });
+              appendSummary("life", "Seedance 轮询超时（5min）");
+              updateStage("life", { status: "failed" });
+              set({ phase: "failed" });
+              persistCurrent("failed");
+              return;
+            }
+            // processing
+            updateAsset("V01", { status: "Processing" });
+          } catch (e) {
+            console.error("[life] poll error", e);
+            appendSummary("life", `轮询出错：${(e as Error).message}`);
+          }
+        };
+        await tick();
+        const timer: number | null = stopped
+          ? null
+          : (window.setInterval(tick, 3000) as unknown as number);
+      } catch (e) {
+        console.error("[life] submit failed", e);
+        updateAsset("V01", { status: "Failed" });
+        appendSummary("life", `提交失败：${(e as Error).message}`);
+        updateStage("life", { status: "failed" });
+        set({ phase: "failed" });
+        persistCurrent("failed");
+      }
+    })();
   };
 
   const runDetails = () => {
