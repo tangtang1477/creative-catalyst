@@ -648,11 +648,6 @@ export const useSC = create<SCState>((set, get) => {
     schedule(() => {
       appendSummary("qc", "修正完成 · 一致性全部通过 ✓");
       updateStage("qc", { status: "ready" });
-      collapseAfter("qc", 1600);
-      schedule(() => runLife(), 1200);
-    }, 2400);
-  };
-
   const runLife = () => {
     closeGate();
     const VIDEO_COST = 30;
@@ -668,9 +663,13 @@ export const useSC = create<SCState>((set, get) => {
       persistCurrent("failed");
       return;
     }
+    const briefFormat = get().brief?.format ?? "";
+    const videoDuration = parseFormatDuration(briefFormat);
+    const videoRatio = parseFormatRatio(briefFormat);
+
     updateStage("life", { status: "running", expanded: true });
     runTool("life", "skill", "first-frame-to-video · Seedance", 1200, 0);
-    streamLines("life", ["提交 V01 first-frame-to-video…"], 0, 100);
+    streamLines("life", [`提交 V01 first-frame-to-video · ${videoDuration}s · ${videoRatio}`], 0, 100);
     set((s) => ({
       assets: [
         ...s.assets,
@@ -678,8 +677,14 @@ export const useSC = create<SCState>((set, get) => {
           id: "V01",
           kind: "video",
           label: "V01",
-          caption: "Hero film · 30s",
+          caption: `Hero film · ${videoDuration}s`,
           status: "Queued",
+          stageId: "life",
+          duration: formatDurationLabel(videoDuration),
+        },
+      ],
+    }));
+
           stageId: "life",
           duration: "0:30",
         },
