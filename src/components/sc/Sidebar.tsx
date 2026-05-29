@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useHydrated } from "@tanstack/react-router";
 import {
   Plus,
   Search,
@@ -50,10 +51,12 @@ export function Sidebar() {
   } = useSC();
   const openPricing = useCredits((s) => s.openPricing);
 
-  const [open, setOpen] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    return window.localStorage.getItem(SIDEBAR_KEY) !== "0";
-  });
+  const hydrated = useHydrated();
+  const [open, setOpen] = useState<boolean>(true);
+  useEffect(() => {
+    const v = window.localStorage.getItem(SIDEBAR_KEY);
+    if (v === "0") setOpen(false);
+  }, []);
   useEffect(() => {
     try {
       window.localStorage.setItem(SIDEBAR_KEY, open ? "1" : "0");
@@ -175,7 +178,7 @@ export function Sidebar() {
                 )}
               />
             </button>
-            {tasksOpen && (
+            {tasksOpen && hydrated && (
               <div className="flex flex-col gap-0.5">
                 {tasks.length === 0 && (
                   <div className="px-2 py-3 text-[11px] text-muted-foreground">
