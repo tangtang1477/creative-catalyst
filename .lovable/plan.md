@@ -1,100 +1,165 @@
 # 实施计划
 
-## 1. 主题切换器改为滑块（图1）
+## 1. 主题切换滑动胶囊（仅修复 popup 内）
 
-**文件**：`src/components/sc/UserHoverCard.tsx`
+**问题**：`UserHoverCard.tsx` popup 内的 pill 视觉上还是"两按钮+背景跳变"，不是顺滑滑动。Sidebar 底部那个独立 Moon/Sun icon 按钮**不动**。
 
-将现有的 Dark/Light 两个分立按钮改为一个带滑块的胶囊：
-- 容器 `relative` + `bg-surface-2` 圆角 pill，两个按钮 `flex-1`、`z-10` 透明背景。
-- 在容器内绝对定位一个 `bg-background shadow` 的滑块 `absolute top-1 bottom-1 left-1 w-[calc(50%-4px)]`，根据 `theme` 状态用 `translate-x-full` 平移。
-- 过渡：`transition-transform duration-300 ease-out`。
-- 文字/图标颜色由 `theme` 决定 active/inactive（`text-foreground` vs `text-muted-foreground`），不再依赖背景。
-
-## 2. 用户消息合入主对话流（图2，ChatGPT 风）
-
-**问题**：当前 `chatLog` 在 `Workspace` 底部独立渲染，与上方 agent 阶段输出割裂；并且需要保证不跨 task 残留。
-
-**改动**：
-
-### 2.1 把 chat 消息渲染进主滚动区
-- `src/components/sc/Workspace.tsx`：删除底部 `chatLog` 滚动块（291–314 行那段）。
-- 在 `inFlow` 分支的最后（`gate` 之前/之后均可，放在所有 `STAGE_ORDER.map` 之后）追加 `chatLog.map`，气泡样式不变：
-  - user → 右对齐 `bg-surface-2`；
-  - agent → 左对齐 `border bg-surface`，前置一个 `Logo size={14}`。
-- 这样新消息会随主区滚动到底部，跟 stage 输出共用一条时间线。
-- 主区底部留一个 `<div ref={endRef} />`，每次 `chatLog` 或 `stages` 变化时 `endRef.scrollIntoView({ behavior: "smooth" })`，模仿 ChatGPT 自动滚动。
-
-### 2.2 task 隔离
-- `src/lib/sc/store.ts`：
-  - `submit()` 开始新 task 时 `set({ chatLog: [] })`（确认当前已重置；若无则加上）。
-  - `reset()` 已清空，但 `restoreTask()` 也需 `chatLog: []`，避免历史 task 带入当前对话。
-  - `cancel()` 不清空 chatLog（用户暂停后还可能继续聊）。
-
-### 2.3 chat 不再在阶段中插入"已收到"
-保留 agent 回复（`chatMessage` 内部 1.2s 后回的那条），但文案根据当前 phase 区分：`running` 时回 "已记录，将在当前镜头完成后调整"，`done` 时回 "好的，需要我重新渲染哪些镜头？"。
-
-## 3. 素材通用工具栏（图3 / 4 / 5）
-
-目标：所有素材卡（gallery `AssetThumbCard`、`AssetCard`、stage 内联的 paint/life 卡）共享同一套 hover 工具栏：
-- 左上角：选择框（hover 显示，选中后常驻并填色）
-- 右上角：Download
-- 右下角：Add to task
-- 多选时底部出现浮动批量操作条（图4）
-- Add to task → 缩略图出现在输入框上方 attachment chips（图5）
-
-### 3.1 抽出共享组件
-
-新建 `src/components/sc/AssetActions.tsx`：
+**改动 `src/components/sc/UserHoverCard.tsx`** — 仅 popup 内的主题切换块：
 
 ```tsx
-export function AssetActions({
-  asset,
-  selectable,   // 多选模式是否激活
-  selected,
-  onToggle,     // (id)
-  onAddToTask,  // (asset)
-  onDownload,   // (asset)
-  variant,      // "thumb" | "card"
-})
+<div className="relative mt-2 inline-flex w-full items-center rounded-full bg-surface-2 p-0.5">
+  {/* 滑块：left+translateX 组合，避免百分比换算误差导致的端点偏移 */}
+  <span
+    aria-hidden
+    className="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-background shadow-[0_1px_2px_rgba(0,0,0,.15)] transition-transform duration-300 ease-[cubic-bezier(.4,0,.2,1)]"
+    style={{ transform: theme === "light" ? "translateX(100%)" : "translateX(0)" }}
+  />
+  <button
+    type="button"
+    onClick={(e) => { e.stopPropagation(); setTheme("dark"); }}
+    className={cn(
+      "relative z-10 flex h-8 flex-1 items-center justify-center gap-1.5 rounded-full text-[12px] transition-colors",
+      theme === "dark" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+    )}
+  >
+    <Moon className="h-3.5 w-3.5" /> Dark
+  </button>
+  <button
+    type="button"
+    onClick={(e) => { e.stopPropagation(); setTheme("light"); }}
+    className={cn(
+      "relative z-10 flex h-8 flex-1 items-center justify-center gap-1.5 rounded-full text-[12px] transition-colors",
+      theme === "light" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+    )}
+  >
+    <Sun className="h-3.5 w-3.5" /> Light
+  </button>
+</div>
 ```
 
-渲染 3 个绝对定位按钮：
-- 左上 checkbox：`opacity-0 group-hover:opacity-100`，`selected || selectable` 时强制 `opacity-100`，圆角小方框（不是圆形）以匹配图3。
-- 右上 download：`opacity-0 group-hover:opacity-100`，背景 `bg-black/55 backdrop-blur`，调用 `onDownload(asset)`（先用 `<a href={asset.url} download>` 模拟）。
-- 右下 add-to-task：`opacity-0 group-hover:opacity-100`，胶囊形 `+ Add to task` 文案；`variant="thumb"` 下只显示 `+` 图标节省空间。
+要点：
+- 滑块用 `left:0.5 + translateX(100%)`（移动自身宽度=50%-2px）替代原本 `w-[calc(50%-4px)]` + `translateX(100%)`（结果=50%-4px，端点偏内 4px 不贴边）
+- transition 用 `cubic-bezier(.4,0,.2,1)` 更顺滑
+- 按钮 `stopPropagation` 防止冒泡关闭 hover card
 
-`onAddToTask` 默认调用 store 的 `addAttachment`，把 asset 转成 `Attachment`：
-```ts
-{ id: uid(), kind: asset.kind, name: asset.label, url: asset.url, thumb: asset.kind === "image" ? asset.url : asset.poster, source: "asset", ref: asset.label }
+Sidebar 底部 collapsed/expanded 行内的单个 Moon/Sun icon 按钮**保持不变**。
+
+---
+
+## 2. 阶段容器改为参考视频的扁平流式样式
+
+**当前问题**：`StageRow.tsx` 把每个阶段渲染成 `rounded-2xl border bg-surface` 卡片 + 嵌套的 `rounded-xl border bg-background/40` details 卡片。视觉上块块割裂，和参考视频里的"会话流"（小方块 icon + 标题 + 直接平铺内容，无边框）完全不同。
+
+**参考视频的样式特征**（v2/v3 多帧确认）：
+- 阶段标题 = 16-20px 圆角填充小方块 icon（accent 青色，内嵌白色 sparkle/icon）+ 标题文字 + 末尾小 expand 外链 icon
+- 标题下方直接平铺：纯文字段落、内联问题 chips、`Generating/Queued` 缩略图小方格、"Status checked 2 generations"、"Using skill xxx"、"Generation Started"、"Upload failed"、"Running terminal"、"Uploaded 3 files" 等子事件都是**纯文本行+小 icon**，无 border/bg
+- 整个阶段没有外框，只靠"小 icon+标题"作为分段锚点，内容在主流里和上下文连续
+
+### 2.1 重写 `src/components/sc/StageRow.tsx`
+
+去掉外层 `rounded-2xl border bg-surface` 容器：
+
+```tsx
+<section data-stage-id={id} className="[animation:stream-fade_320ms_ease-out_both]">
+  <button
+    type="button"
+    onClick={() => toggleStage(id)}
+    className="group flex w-full items-center gap-2 py-1.5 text-left"
+  >
+    <span className={cn(
+      "flex h-5 w-5 items-center justify-center rounded-md transition-colors",
+      state.status === "running" || state.status === "recovering"
+        ? "bg-accent/20 text-accent"
+        : state.status === "ready"
+          ? "bg-accent text-background"
+          : state.status === "failed"
+            ? "bg-status-failed/20 text-status-failed"
+            : "bg-surface-2 text-muted-foreground"
+    )}>
+      <Icon className="h-3 w-3" />
+    </span>
+    <span className="text-[13.5px] font-medium tracking-tight">{STAGE_LABEL[id]}</span>
+    {state.status === "running" && <Loader2 className="h-3 w-3 animate-spin text-status-generating" />}
+    {state.status === "recovering" && <RotateCw className="h-3 w-3 animate-spin text-status-recovering" />}
+    {state.status === "ready" && <Check className="h-3 w-3 text-status-ready" />}
+    {state.status === "failed" && <AlertCircle className="h-3 w-3 text-status-failed" />}
+    <ChevronDown className={cn(
+      "ml-auto h-3.5 w-3.5 text-muted-foreground/60 opacity-0 transition-all group-hover:opacity-100",
+      expanded && "rotate-180 opacity-100"
+    )} />
+  </button>
+
+  {/* 子事件流（toolCalls/thoughts/summary）— 折叠时只显示最后一条 summary */}
+  {expanded ? (
+    <div className="space-y-1 pl-7">
+      {state.toolCalls.map((tc) => <ToolCallLine key={tc.id} call={tc} />)}
+      {state.thoughts.map((th) => <ThinkingBlock key={th.id} thought={th} />)}
+      {state.summary.map((s, i) => (
+        <div key={`${i}-${s.slice(0,8)}`} className="text-[12.5px] leading-relaxed text-muted-foreground [animation:stream-fade_320ms_ease-out_both]">
+          {s}
+        </div>
+      ))}
+    </div>
+  ) : state.summary.length > 0 && (
+    <div className="pl-7 truncate text-[12px] text-muted-foreground">
+      {state.summary[state.summary.length - 1]}
+    </div>
+  )}
+
+  {/* 主内容（children/details）— 直接平铺，无 border/bg 包裹 */}
+  {(expanded || keepChildrenWhenCollapsed) && children && (
+    <div className="mt-1.5 pl-7">{children}</div>
+  )}
+
+  {expanded && details && (
+    <details className="group mt-1.5 pl-7">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11.5px] text-muted-foreground/80 hover:text-foreground">
+        <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
+        {detailsLabel}
+      </summary>
+      <div className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{details}</div>
+    </details>
+  )}
+</section>
 ```
 
-### 3.2 接入 AssetThumbCard 和 AssetCard
-- `AssetThumbCard.tsx`：删除现有 top status row 中的 checkbox 逻辑，改成 `<AssetActions variant="thumb" .../>`；保留状态点。
-- `AssetCard.tsx`：删除右上角原 checkbox，改成 `<AssetActions variant="card" .../>`；保留下方 Open/Replace/Download 行（gallery 之外的内联展示也享受 hover 工具栏）。
+要点：
+- 无 border、无背景色、无外圆角
+- 标题前 20px 小方块 icon：`bg-accent`（ready）/`bg-accent/20`（running/recovering）/`bg-surface-2`（其它）
+- 内容统一 `pl-7` 与标题文字对齐
+- expand chevron 默认隐藏，hover 或展开时显示
+- ready 阶段默认折叠到一行 summary，点击展开；running/recovering 阶段保持自动展开（store 已有逻辑）
+- props 接口完全不变，`Workspace.tsx` 调用处零改动
 
-### 3.3 自动激活多选 + 浮动操作条（图4）
+### 2.2 `ToolCallLine.tsx` 改为扁平行
 
-- `MediaRail.tsx`：去掉手动的多选按钮"打开/关闭"语义。改为：**任意素材一旦被选中（`selection.length > 0`）即视为多选模式**，`AssetActions` 接收 `selectable = selection.length > 0 || hover`。
-  - 顶部多选按钮保留为"全选当前过滤集合"的快捷开关。
-- 删除 MediaRail 内部那个 `border-b` 的多选 toolbar；改成 `position: absolute; bottom: 12px; left: 12px; right: 12px` 的浮动胶囊条，仅当 `selection.length > 0` 时挂载，带 `[animation:stream-fade_240ms_ease-out_both]` 滑入动画。
-- 浮动条内容：
-  - 左：`已选 N`
-  - 中按钮：`Add to task`（批量把选中素材推入 attachments），`Download`（zip 暂用提示），`批量修改`（沿用 `BatchEditDialog`）
-  - 右：关闭 X（= `clearSelection()`）
+去掉外层 border/bg：纯 `flex items-center gap-1.5 py-0.5 text-[12px] text-muted-foreground`，前置小 icon（✦ 或 Loader2），文字直接显示 "Using skill xxx"、"Running terminal"、"Uploaded 3 files"、"Generation Started"、"Status checked 2 generations"，匹配参考视频。
 
-### 3.4 消息流中的内联素材也支持
+### 2.3 `ThinkingBlock.tsx` 调整
 
-- `Workspace.tsx` paint 阶段（212–232 行）和 life 阶段的 `AssetCard` 已自动继承 3.2 改动，无需额外改动。
-- `ThinkingBlock` 内的 thumb 也用 `AssetThumbCard` 渲染则自动获得（如目前用 `<img>` 简化则保持不变）。
+- 折叠态：单行 `✦ Thinking…` / `✦ Thought for Ns`，纯文字无 border
+- 展开态：内容直接平铺（去掉嵌套 border/bg），思考过程结尾的素材缩略图保持现有展示
 
-### 3.5 attachment chips 兼容
-`AttachmentChips.tsx` 已支持 `thumb` + `source: "asset"`，无需改动；视觉与图5一致（小方块缩略图 + `@label`）。
+### 2.4 `Workspace.tsx` 阶段间距
+
+第 147 行 `<div className="flex-1 space-y-3">` → `space-y-5`（无 border 后需要更大的垂直间距区分阶段）。
+
+### 2.5 保留的功能
+
+- 点击标题 `toggleStage` 展开/收起
+- summary 流式滚入动画
+- `ApprovalChips`/`IntakeCard` 问题块样式不动（它们本来就是参考视频里的卡片块）
+- `Generation Started`/`Status checked N generations`/`Upload failed`/`Uploaded N files` 通过 `ToolCallLine` 扁平样式自然实现
 
 ---
 
 ## 技术备注
 
-- 不引入新依赖。
-- 所有颜色用 `var(--accent)`/`bg-surface-2`/`border-border` 等已有 token；浮动操作条用 `bg-background/95 backdrop-blur shadow-2xl ring-1 ring-border`。
-- `AssetActions` 内按钮 `stopPropagation()`，防止点击下载/add 触发卡片的"跳转到 stage"。
-- chat 自动滚动通过 `useEffect([chatLog.length, stagesSerialized])` 触发；阶段变化太频繁时用 throttled ref 防抖。
+- 不引入新依赖
+- 颜色全走现有 token：`bg-accent`/`bg-surface-2`/`text-muted-foreground`/`border-border`/`text-status-*`
+- 主题滑块用 `left+translateX` 组合避免百分比误差
+- `StageRow` 重写保留 props 接口（`id`/`state`/`children`/`details`/`detailsLabel`/`keepChildrenWhenCollapsed`），`Workspace.tsx` 调用处零改动
+- 验证步骤：
+  1. 打开 popup 内主题胶囊，滑块平滑左右滑动 300ms，端点贴边
+  2. 跑一个新任务，观察阶段没有卡片边框，只看到"小青色方块+标题+流式内容"
+  3. 点击 ready 阶段标题，能展开/收起 toolCalls + thoughts + summary

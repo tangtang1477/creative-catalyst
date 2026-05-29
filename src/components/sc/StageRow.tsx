@@ -2,7 +2,6 @@ import { type ReactNode } from "react";
 import {
   Loader2,
   Check,
-  Clock,
   AlertCircle,
   RotateCw,
   ChevronDown,
@@ -18,7 +17,6 @@ import type { StageId, StageState } from "@/lib/sc/types";
 import { STAGE_LABEL } from "@/lib/sc/types";
 import { useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
-import { Collapse } from "./Collapse";
 import { ToolCallLine } from "./ToolCallLine";
 import { ThinkingBlock } from "./ThinkingBlock";
 
@@ -53,110 +51,98 @@ export function StageRow({
   const Icon = stageIcon[id];
   const expanded = state.expanded;
 
-  let StatusIcon = Clock;
-  let statusClass = "text-muted-foreground";
-  let spin = false;
-  if (state.status === "running") {
-    StatusIcon = Loader2;
-    statusClass = "text-status-generating";
-    spin = true;
-  } else if (state.status === "ready") {
-    StatusIcon = Check;
-    statusClass = "text-status-ready";
-  } else if (state.status === "recovering") {
-    StatusIcon = RotateCw;
-    statusClass = "text-status-recovering";
-    spin = true;
-  } else if (state.status === "failed") {
-    StatusIcon = AlertCircle;
-    statusClass = "text-status-failed";
-  }
-
   if (state.status === "pending") return null;
 
+  const iconBoxClass =
+    state.status === "running" || state.status === "recovering"
+      ? "bg-accent/20 text-accent"
+      : state.status === "ready"
+        ? "bg-accent text-background"
+        : state.status === "failed"
+          ? "bg-status-failed/20 text-status-failed"
+          : "bg-surface-2 text-muted-foreground";
+
   return (
-    <div
+    <section
       data-stage-id={id}
-      className="rounded-2xl border border-border bg-surface transition-shadow"
+      className="[animation:stream-fade_320ms_ease-out_both]"
     >
       <button
         type="button"
         onClick={() => toggleStage(id)}
-        className="flex w-full items-start gap-3 px-3.5 py-3 text-left focus:outline-none focus-visible:rounded-2xl focus-visible:ring-2 focus-visible:ring-accent"
+        className="group flex w-full items-center gap-2 py-1.5 text-left focus:outline-none"
       >
-        <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-surface-2">
-          <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-[13px] font-medium tracking-tight">
-              {STAGE_LABEL[id]}
-            </span>
-            <StatusIcon
-              className={cn("h-3.5 w-3.5", statusClass, spin && "animate-spin")}
-            />
-            <ChevronDown
-              className={cn(
-                "ml-auto h-3.5 w-3.5 text-muted-foreground transition-transform duration-300",
-                expanded && "rotate-180",
-              )}
-            />
-          </div>
-
-          <Collapse open={expanded && (state.toolCalls.length > 0 || state.thoughts.length > 0 || state.summary.length > 0)}>
-            <div className="mt-2 space-y-1.5">
-              {state.toolCalls.map((tc) => (
-                <ToolCallLine key={tc.id} call={tc} />
-              ))}
-              {state.thoughts.map((th) => (
-                <ThinkingBlock key={th.id} thought={th} />
-              ))}
-              {state.summary.length > 0 && (
-                <ul className="space-y-0.5 pt-1 text-[12.5px] text-muted-foreground">
-                  {state.summary.map((s, i) => (
-                    <li
-                      key={`${i}-${s.slice(0, 8)}`}
-                      className="leading-snug [animation:stream-fade_320ms_ease-out_both]"
-                    >
-                      · {s}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </Collapse>
-
-          {!expanded && state.summary.length > 0 && (
-            <div className="mt-1 truncate text-[12px] text-muted-foreground">
-              · {state.summary[state.summary.length - 1]}
-            </div>
+        <span
+          className={cn(
+            "flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition-colors",
+            iconBoxClass,
           )}
-        </div>
+        >
+          <Icon className="h-3 w-3" />
+        </span>
+        <span className="text-[13.5px] font-medium tracking-tight">
+          {STAGE_LABEL[id]}
+        </span>
+        {state.status === "running" && (
+          <Loader2 className="h-3 w-3 animate-spin text-status-generating" />
+        )}
+        {state.status === "recovering" && (
+          <RotateCw className="h-3 w-3 animate-spin text-status-recovering" />
+        )}
+        {state.status === "ready" && (
+          <Check className="h-3 w-3 text-status-ready" />
+        )}
+        {state.status === "failed" && (
+          <AlertCircle className="h-3 w-3 text-status-failed" />
+        )}
+        <ChevronDown
+          className={cn(
+            "ml-auto h-3.5 w-3.5 text-muted-foreground/60 opacity-0 transition-all duration-200 group-hover:opacity-100",
+            expanded && "rotate-180 opacity-100",
+          )}
+        />
       </button>
 
-      {keepChildrenWhenCollapsed ? (
-        children && <div className="px-3.5 pb-3">{children}</div>
+      {expanded ? (
+        <div className="space-y-1 pl-7">
+          {state.toolCalls.map((tc) => (
+            <ToolCallLine key={tc.id} call={tc} />
+          ))}
+          {state.thoughts.map((th) => (
+            <ThinkingBlock key={th.id} thought={th} />
+          ))}
+          {state.summary.map((s, i) => (
+            <div
+              key={`${i}-${s.slice(0, 8)}`}
+              className="text-[12.5px] leading-relaxed text-muted-foreground [animation:stream-fade_320ms_ease-out_both]"
+            >
+              {s}
+            </div>
+          ))}
+        </div>
       ) : (
-        <Collapse open={expanded && !!children}>
-          {children && <div className="px-3.5 pb-3">{children}</div>}
-        </Collapse>
+        state.summary.length > 0 && (
+          <div className="truncate pl-7 text-[12px] text-muted-foreground">
+            {state.summary[state.summary.length - 1]}
+          </div>
+        )
       )}
 
-      <Collapse open={expanded && !!details}>
-        {details && (
-          <div className="px-3.5 pb-3">
-            <details className="group rounded-xl border border-border bg-background/40 open:bg-background/60">
-              <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2.5 py-1.5 text-[11.5px] text-muted-foreground hover:text-foreground">
-                <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
-                {detailsLabel}
-              </summary>
-              <div className="px-3 pb-2.5 pt-1 text-[12px] leading-relaxed text-muted-foreground">
-                {details}
-              </div>
-            </details>
+      {(expanded || keepChildrenWhenCollapsed) && children && (
+        <div className="mt-1.5 pl-7">{children}</div>
+      )}
+
+      {expanded && details && (
+        <details className="group mt-1.5 pl-7">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11.5px] text-muted-foreground/80 hover:text-foreground">
+            <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
+            {detailsLabel}
+          </summary>
+          <div className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+            {details}
           </div>
-        )}
-      </Collapse>
-    </div>
+        </details>
+      )}
+    </section>
   );
 }

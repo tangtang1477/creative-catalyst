@@ -5,8 +5,8 @@ import type { Thought } from "@/lib/sc/types";
 import { useSC } from "@/lib/sc/store";
 
 /**
- * Foldable "thought" block. Renders an inline preview when collapsed, and the
- * full reasoning + reference asset thumbnails when expanded.
+ * Flat foldable thought block. No card border — single icon + title row when
+ * collapsed; expanded reveals body + reference thumbnails directly inline.
  */
 export function ThinkingBlock({ thought }: { thought: Thought }) {
   const [open, setOpen] = useState(false);
@@ -19,27 +19,17 @@ export function ThinkingBlock({ thought }: { thought: Thought }) {
   const preview = thought.summary ?? thought.body[0] ?? "";
 
   return (
-    <div
-      className={cn(
-        "overflow-hidden rounded-xl border-l-2 border-accent/40 bg-gradient-to-r from-accent/[0.06] via-accent/[0.02] to-transparent",
-        "transition-all",
-        open && "from-accent/[0.10]",
-      )}
-    >
+    <div className="[animation:stream-fade_280ms_ease-out_both]">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11.5px] text-foreground/85 hover:text-foreground"
+        className="flex w-full items-center gap-1.5 py-0.5 text-left text-[12px] text-foreground/85 hover:text-foreground"
       >
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
-          <Brain className="h-2.5 w-2.5" />
-        </span>
-        <span className="shrink-0 text-[10.5px] font-medium uppercase tracking-wider text-accent/90">
-          Thought
-        </span>
-        <span className="truncate text-[11.5px]">{thought.title}</span>
+        <Brain className="h-3 w-3 shrink-0 text-accent" />
+        <span className="shrink-0 text-muted-foreground">Thought</span>
+        <span className="truncate text-foreground/85">{thought.title}</span>
         {!open && preview && (
-          <span className="hidden truncate text-[11px] text-muted-foreground sm:inline">
+          <span className="hidden truncate text-[11.5px] text-muted-foreground sm:inline">
             · {preview}
           </span>
         )}
@@ -51,15 +41,16 @@ export function ThinkingBlock({ thought }: { thought: Thought }) {
         )}
         <ChevronDown
           className={cn(
-            "h-3 w-3 shrink-0 text-muted-foreground transition-transform",
+            "h-3 w-3 shrink-0 text-muted-foreground/60 transition-transform",
             thumbs.length > 0 ? "ml-1" : "ml-auto",
             open && "rotate-180",
           )}
         />
       </button>
       {open && (
-        <div className="space-y-2 border-t border-accent/10 px-3 pb-3 pt-2 text-[12px] leading-relaxed text-foreground/85 [animation:stream-fade_320ms_ease-out_both]">
-          <div className="space-y-1">
+        <div className="space-y-1.5 pl-[18px] pt-1 text-[12px] leading-relaxed text-foreground/85 [animation:stream-fade_320ms_ease-out_both]">
+
+          <div className="space-y-0.5">
             {thought.body.map((line, i) => (
               <p key={i} className="text-muted-foreground">
                 <span className="mr-1 text-accent/60">·</span>
@@ -68,8 +59,8 @@ export function ThinkingBlock({ thought }: { thought: Thought }) {
             ))}
           </div>
           {thumbs.length > 0 && (
-            <div className="mt-2 border-t border-border/60 pt-2">
-              <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            <div className="mt-1.5">
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/80">
                 参考素材 · {thumbs.length}
               </div>
               <div className="flex flex-wrap gap-1.5">

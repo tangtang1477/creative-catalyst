@@ -144,7 +144,8 @@ export function Workspace() {
               )}
 
               {inFlow && (
-                <div className="flex-1 space-y-3">
+                <div className="flex-1 space-y-5">
+
                   {brief?.prompt && (
                     <div className="ml-auto w-fit max-w-[80%] rounded-2xl bg-surface-2 px-3.5 py-2 text-[13px]">
                       {brief.prompt}
