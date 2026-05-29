@@ -552,11 +552,13 @@ export const useSC = create<SCState>((set, get) => {
           updateAsset(r.shot, { status: "Generating" });
           appendSummary("paint", `${r.shot} 生成中 · ${r.motion}`);
           try {
-            const fullPrompt = [
-              briefPrompt,
-              KEYFRAME_PROMPT_DETAIL,
-              `Shot ${r.shot} · ${r.scene} · ${r.motion} · ${r.elements}`,
-            ].filter(Boolean).join("\n\n");
+            const fullPrompt = r.prompt
+              ? `${r.prompt}\n\nReference brief: ${briefPrompt}`
+              : [
+                  briefPrompt,
+                  KEYFRAME_PROMPT_DETAIL,
+                  `Shot ${r.shot} · ${r.scene} · ${r.motion} · ${r.elements}`,
+                ].filter(Boolean).join("\n\n");
             const b64 = await streamGenerateImage({
               prompt: fullPrompt,
               quality: "low",
