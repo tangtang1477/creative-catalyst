@@ -365,6 +365,9 @@ export const useSC = create<SCState>((set, get) => {
         collapseAfter("scene", 1400);
         schedule(() => runStructure(), 1600);
       },
+    );
+  };
+
   const runStructure = () => {
     updateStage("structure", { status: "running", expanded: true });
     const tcId = startToolCall("structure", "tool", "video-script-writer · LLM");
