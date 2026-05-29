@@ -462,9 +462,8 @@ export const useSC = create<SCState>((set, get) => {
     closeGate();
     updateStage("paint", { status: "running", expanded: true });
     runTool("paint", "skill", "ai-video-studio · keyframe-painter", 800, 0);
-    runTool("paint", "tool", "text-to-image · MovieFlow (batch)", 8200, 900);
+    runTool("paint", "tool", "text-to-image · streaming", 1200, 900);
 
-    // thought with wardrobe thumbnails — explains we're producing N frames
     schedule(
       () =>
         addThought("paint", {
@@ -488,7 +487,7 @@ export const useSC = create<SCState>((set, get) => {
       200,
     );
 
-    // Insert all assets in Queued state up-front
+    // 全部以 Queued 插入
     const paintAssets: Asset[] = SHOTS.map((r) => ({
       id: r.shot,
       kind: "image" as const,
@@ -504,28 +503,53 @@ export const useSC = create<SCState>((set, get) => {
       rail: { ...s.rail, open: true, flashId: SHOTS[0]?.shot },
     }));
 
-    // Stream each frame: stagger start, 2.4s per frame
-    const STEP = 700;
-    const FRAME_MS = 2400;
-    SHOTS.forEach((r, i) => {
-      const startOffset = 1100 + i * STEP;
-      schedule(() => updateAsset(r.shot, { status: "Generating" }), startOffset);
-      schedule(
-        () => updateAsset(r.shot, { status: "Processing" }),
-        startOffset + FRAME_MS * 0.5,
-      );
-      schedule(
-        () => {
-          updateAsset(r.shot, { status: "Ready", url: SAMPLE_KEYFRAME });
-          consume("paint", `Keyframe ${r.shot} · MovieFlow`, 5);
-          appendSummary("paint", `${r.shot} Ready · ${r.motion}`);
-        },
-        startOffset + FRAME_MS,
-      );
-    });
+    // 串行真实生图
+    const startedRunId = get().runId;
+    void (async () => {
+      const userId = get().currentUserId;
+      const taskId = get().taskId ?? undefined;
+      const briefPrompt = get().brief?.prompt ?? "";
 
-    const totalEnd = 1100 + (SHOTS.length - 1) * STEP + FRAME_MS + 400;
-    schedule(() => {
+      if (!userId) {
+        appendSummary("paint", "未登录 · 跳过真实生图，使用示例图");
+        for (const r of SHOTS) {
+          if (get().runId !== startedRunId) return;
+          updateAsset(r.shot, { status: "Ready", url: SAMPLE_KEYFRAME });
+        }
+      } else {
+        for (const r of SHOTS) {
+          if (get().runId !== startedRunId) return;
+          updateAsset(r.shot, { status: "Generating" });
+          appendSummary("paint", `${r.shot} 生成中 · ${r.motion}`);
+          try {
+            const fullPrompt = [
+              briefPrompt,
+              KEYFRAME_PROMPT_DETAIL,
+              `Shot ${r.shot} · ${r.scene} · ${r.motion} · ${r.elements}`,
+            ].filter(Boolean).join("\n\n");
+            const b64 = await streamGenerateImage({
+              prompt: fullPrompt,
+              quality: "low",
+              onPartial: (dataUrl) => {
+                if (get().runId !== startedRunId) return;
+                updateAsset(r.shot, { url: dataUrl });
+              },
+            });
+            if (get().runId !== startedRunId) return;
+            const url = await uploadBase64Image({ base64: b64, userId, taskId });
+            if (get().runId !== startedRunId) return;
+            updateAsset(r.shot, { status: "Ready", url });
+            consume("paint", `Keyframe ${r.shot} · stream-gen`, 5);
+            appendSummary("paint", `${r.shot} Ready · ${r.motion}`);
+          } catch (e) {
+            console.error("[paint] failed", r.shot, e);
+            updateAsset(r.shot, { status: "Failed" });
+            appendSummary("paint", `${r.shot} 生成失败：${(e as Error).message}`);
+          }
+        }
+      }
+
+      if (get().runId !== startedRunId) return;
       updateStage("paint", { status: "ready" });
       appendSummary(
         "paint",
@@ -538,7 +562,7 @@ export const useSC = create<SCState>((set, get) => {
       } else {
         openGate("keyframe", () => runQC());
       }
-    }, totalEnd);
+    })();
   };
 
   const runQC = () => {
