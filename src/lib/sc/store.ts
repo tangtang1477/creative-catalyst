@@ -1191,12 +1191,68 @@ export const useSC = create<SCState>((set, get) => {
       }));
     },
 
-
     deleteTask: (id) => {
       const next = get().taskHistory.filter((t) => t.id !== id);
       set({ taskHistory: next });
       saveHistory(next);
     },
+
+    retryStage: (id) => {
+      clearTimers();
+      set((s) => ({
+        runId: s.runId + 1,
+        phase: "running",
+        gate: null,
+        softGate: null,
+        // 清掉该 stage 的 assets，并把该 stage 之后的 stages 全部置回 pending
+        assets: s.assets.filter((a) => a.stageId !== id),
+        stages: STAGE_ORDER.reduce(
+          (acc, sid) => {
+            if (sid === id) {
+              acc[sid] = emptyStage();
+            } else if (STAGE_ORDER.indexOf(sid) > STAGE_ORDER.indexOf(id)) {
+              acc[sid] = emptyStage();
+            } else {
+              acc[sid] = s.stages[sid];
+            }
+            return acc;
+          },
+          {} as Record<StageId, StageState>,
+        ),
+      }));
+      const runners: Partial<Record<StageId, () => void>> = {
+        scene: runScene,
+        structure: runStructure,
+        wardrobe: runWardrobe,
+        paint: runPaint,
+        qc: runQC,
+        life: runLife,
+        details: runDetails,
+      };
+      const runner = runners[id];
+      if (runner) schedule(runner, 200);
+    },
+
+    retryAsset: (assetId) => {
+      const asset = get().assets.find((a) => a.id === assetId);
+      if (!asset || !asset.stageId) return;
+      // V01 / life：整段重跑 life
+      if (asset.stageId === "life") {
+        get().retryStage("life");
+        return;
+      }
+      // paint 阶段：整段重跑 paint（简化处理，单帧重试不容易复用 prompt 顺序）
+      if (asset.stageId === "paint") {
+        get().retryStage("paint");
+        return;
+      }
+      if (asset.stageId === "wardrobe") {
+        get().retryStage("wardrobe");
+        return;
+      }
+    },
+
+
 
     forceState: (s) => {
       clearTimers();
