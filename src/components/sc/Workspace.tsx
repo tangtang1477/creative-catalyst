@@ -224,7 +224,7 @@ export function Workspace() {
                           <StageRow
                             id={id}
                             state={st}
-                            details={KEYFRAME_PROMPT_DETAIL}
+                            details={FALLBACK_PROMPT_DETAIL}
                             detailsLabel="Prompt details"
                             keepChildrenWhenCollapsed
                           >
