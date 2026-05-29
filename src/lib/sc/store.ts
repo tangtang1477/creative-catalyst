@@ -422,26 +422,36 @@ export const useSC = create<SCState>((set, get) => {
     closeGate();
     updateStage("wardrobe", { status: "running", expanded: true });
     runTool("wardrobe", "tool", "wardrobe-stylist · text-to-image", 1500, 0);
+
+    const script = get().script;
+    const wardrobeSpec = script?.wardrobe?.length
+      ? script.wardrobe
+      : [
+          { id: "W01", caption: "主角形象" },
+          { id: "W02", caption: "配角形象" },
+          { id: "P01", caption: "关键道具" },
+        ];
+
     streamLines(
       "wardrobe",
-      [
-        "解析年代/世界观背景 → 1920s 巴黎",
-        "主角 W01：丝绒长裙 + 珍珠头饰",
-        "配角 W02：燕尾礼服 + 怀表",
-        "关键道具 P01：水晶香水瓶",
-      ],
+      wardrobeSpec.map((w) => `${w.id}：${w.caption}`),
       650,
       300,
     );
 
-    const wardrobeAssets: Asset[] = [
-      { id: "W01", kind: "image", label: "W01", caption: "主角服装 · 1920s 丝绒礼服", status: "Queued", stageId: "wardrobe", width: 768, height: 1024 },
-      { id: "W02", kind: "image", label: "W02", caption: "配角服装 · 燕尾礼服", status: "Queued", stageId: "wardrobe", width: 768, height: 1024 },
-      { id: "P01", kind: "image", label: "P01", caption: "关键道具 · 水晶香水瓶", status: "Queued", stageId: "wardrobe", width: 768, height: 768 },
-    ];
+    const wardrobeAssets: Asset[] = wardrobeSpec.map((w) => ({
+      id: w.id,
+      kind: "image",
+      label: w.id,
+      caption: w.caption,
+      status: "Queued",
+      stageId: "wardrobe",
+      width: w.id === "P01" ? 768 : 768,
+      height: w.id === "P01" ? 768 : 1024,
+    }));
     set((s) => ({
       assets: [...s.assets, ...wardrobeAssets],
-      rail: { ...s.rail, open: true, flashId: "W01" },
+      rail: { ...s.rail, open: true, flashId: wardrobeSpec[0]?.id },
     }));
 
     wardrobeAssets.forEach((a, i) => {
@@ -456,7 +466,7 @@ export const useSC = create<SCState>((set, get) => {
     });
 
     schedule(() => {
-      appendSummary("wardrobe", "服装/道具准备完毕 · 风格统一 · 与 1920s 背景吻合");
+      appendSummary("wardrobe", "服装/道具准备完毕 · 风格统一");
       updateStage("wardrobe", { status: "ready" });
       collapseAfter("wardrobe", 1600);
       persistCurrent("running");
@@ -467,6 +477,7 @@ export const useSC = create<SCState>((set, get) => {
       }
     }, 4800);
   };
+
 
   const runPaint = () => {
     closeGate();
