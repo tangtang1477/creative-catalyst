@@ -72,6 +72,8 @@ interface SCState {
 
   /** cached supabase user id for the current run; populated on submit() */
   currentUserId: string | null;
+  /** LLM-generated script for the current run (null until structure stage finishes) */
+  script: GeneratedScript | null;
 
   intakeSel: Record<string, string>;
   intakeCustoms: Record<string, string[]>;
