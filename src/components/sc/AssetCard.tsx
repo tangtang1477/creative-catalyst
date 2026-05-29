@@ -35,10 +35,9 @@ export function AssetCard({
 }: Props) {
   const Icon = asset.kind === "image" ? ImageIcon : Film;
   const focusAsset = useSC((s) => s.focusAsset);
-  const [loaded, setLoaded] = useState(false);
-  const focusAsset = useSC((s) => s.focusAsset);
   const retryAsset = useSC((s) => s.retryAsset);
   const [loaded, setLoaded] = useState(false);
+
 
   const dim =
     asset.width && asset.height
