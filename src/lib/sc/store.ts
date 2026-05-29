@@ -500,7 +500,16 @@ export const useSC = create<SCState>((set, get) => {
       1200,
     );
 
-    const SHOTS = STORYBOARD_ROWS;
+    const script = get().script;
+    const SHOTS = script?.shots?.length
+      ? script.shots.map((s) => ({
+          shot: s.shot,
+          motion: s.motion,
+          scene: s.scene,
+          elements: s.elements,
+          prompt: s.prompt,
+        }))
+      : STORYBOARD_ROWS.map((r) => ({ ...r, prompt: "" }));
     streamLines(
       "paint",
       [`队列接收 · ${SHOTS.length} 个关键帧 · prompt 已写入…`],
