@@ -365,48 +365,55 @@ export const useSC = create<SCState>((set, get) => {
         collapseAfter("scene", 1400);
         schedule(() => runStructure(), 1600);
       },
-    );
-  };
-
   const runStructure = () => {
     updateStage("structure", { status: "running", expanded: true });
-    runTool("structure", "tool", "video-script-writer", 1600, 0);
-    runTool("structure", "tool", "storyboard-planner", 1800, 1700);
+    const tcId = startToolCall("structure", "tool", "video-script-writer · LLM");
+    appendSummary("structure", "调用大模型生成本次剧本与分镜…");
 
-    // a foldable thought block (no thumbs yet — wardrobe / paint not run)
-    schedule(
-      () =>
+    const startedRunId = get().runId;
+    const b = get().brief;
+    void (async () => {
+      let script: GeneratedScript | null = null;
+      try {
+        script = await generateScript({
+          data: {
+            prompt: b?.prompt ?? "",
+            adType: b?.adType ?? "",
+            format: b?.format ?? "",
+            visualSource: b?.visualSource ?? "",
+          },
+        });
+      } catch (e) {
+        console.error("[structure] generateScript failed", e);
+        appendSummary("structure", `脚本生成失败：${(e as Error).message}`);
+      }
+      if (get().runId !== startedRunId) return;
+      finishToolCall("structure", tcId);
+
+      if (script) {
+        set({ script });
+        appendSummary("structure", `情绪：${script.mood}`);
+        appendSummary("structure", `镜头语言：${script.cameraLanguage}`);
+        for (const line of script.structureSummary) appendSummary("structure", line);
         addThought("structure", {
-          title: "脚本结构推导",
-          body: [
-            "5 镜头叙事：环境建立 → 人物登场 → 产品互动 → 主题升华 → 品牌收尾。",
-            "节奏控制：前 3s 强 hook，10s 处情绪转折，最后 2s 留 logo。",
-            "音效层：弦乐铺底 + 鼓点过渡 + 收尾混响。",
-          ],
-        }),
-      2200,
-    );
+          title: "分镜方案",
+          body: script.shots.map(
+            (s) => `${s.shot} · ${s.duration} · ${s.motion} — ${s.scene}（${s.elements}）`,
+          ),
+        });
+      } else {
+        appendSummary("structure", "使用默认 5 镜头结构作为兜底。");
+      }
 
-    streamLines(
-      "structure",
-      [
-        "撰写脚本与分镜结构…",
-        "30s · 9:16 · 5 个镜头连续叙事",
-        "镜头 1：环境建立 + 产品开场",
-        "镜头 2-4：人物互动与产品特写",
-        "镜头 5：品牌 logo 收尾",
-        "VO 中性低音 + 弦乐 + 鼓点过渡",
-      ],
-      700,
-      3600,
-      () => {
-        updateStage("structure", { status: "ready" });
-        consume("structure", "Script + storyboard", 3);
-        if (isAuto()) {
-          schedule(() => runWardrobe(), 1100);
-        } else {
-          openGate("script", () => runWardrobe());
-        }
+      updateStage("structure", { status: "ready" });
+      consume("structure", "Script + storyboard", 3);
+      if (isAuto()) {
+        schedule(() => runWardrobe(), 1100);
+      } else {
+        openGate("script", () => runWardrobe());
+      }
+    })();
+  };
       },
     );
   };
