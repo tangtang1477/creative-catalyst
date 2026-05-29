@@ -178,7 +178,7 @@ export function Sidebar() {
                 )}
               />
             </button>
-            {tasksOpen && (
+            {tasksOpen && hydrated && (
               <div className="flex flex-col gap-0.5">
                 {tasks.length === 0 && (
                   <div className="px-2 py-3 text-[11px] text-muted-foreground">
