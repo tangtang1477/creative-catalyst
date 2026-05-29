@@ -19,8 +19,7 @@ const ROUTES = [
 
 const SubmitInput = z.object({
   route: z.enum(ROUTES),
-  videoTaskId: z.string().uuid().optional(),
-  /** 透传给 Seedance 的请求体；不同路由形状不一样，最外层只校验关键字段 */
+  videoTaskId: z.string().uuid().optional().nullable(),
   payload: z
     .object({
       prompt: z.string().min(1).max(4000),
