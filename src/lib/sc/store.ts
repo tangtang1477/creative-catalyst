@@ -15,9 +15,12 @@ import {
   type ViewMode,
   STAGE_ORDER,
 } from "./types";
-import { SAMPLE_KEYFRAME, SAMPLE_VIDEO, SERIES_DEMO, STORYBOARD_ROWS } from "./samples";
+import { SAMPLE_KEYFRAME, SAMPLE_VIDEO, SERIES_DEMO, STORYBOARD_ROWS, KEYFRAME_PROMPT_DETAIL } from "./samples";
 import { inferTaskTitle } from "./intake-engine";
 import { useCredits } from "./credits-store";
+import { supabase } from "@/integrations/supabase/client";
+import { streamGenerateImage, uploadBase64Image } from "@/lib/upload-image";
+import { submitVideoTask, pollVideoTask } from "@/lib/seedance.functions";
 
 const consume = (stage: string, label: string, cost: number) =>
   useCredits.getState().consume(stage, label, cost);
