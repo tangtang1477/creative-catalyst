@@ -219,7 +219,7 @@ export const pollVideoTask = createServerFn({ method: "POST" })
         progress,
         oss_url: ossUrl,
         asset_id: assetId,
-        raw: envelope.data ?? null,
+        raw: (envelope.data ?? null) as unknown as never,
       })
       .eq("task_id", data.taskId);
 

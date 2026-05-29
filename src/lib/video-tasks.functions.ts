@@ -21,7 +21,7 @@ export const createVideoTask = createServerFn({ method: "POST" })
         title: data.title,
         prompt: data.prompt,
         kind: data.kind ?? "oneoff",
-        brief: data.brief ?? null,
+        brief: (data.brief ?? null) as unknown as never,
       })
       .select("*")
       .single();
