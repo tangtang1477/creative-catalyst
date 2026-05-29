@@ -916,25 +916,62 @@ export const useSC = create<SCState>((set, get) => {
         ts: Date.now(),
       };
       set((s) => ({ chatLog: [...s.chatLog, userMsg] }));
-      const phase = get().phase;
-      const reply =
-        phase === "running" || phase === "thinking" || phase === "intake"
-          ? "已记录，将在当前镜头完成后调整。"
-          : phase === "done"
-            ? "好的，需要我重新渲染哪些镜头？"
-            : phase === "failed"
-              ? "当前任务已暂停，需要我恢复或新建任务？"
-              : "已收到。";
-      schedule(() => {
-        const agentMsg: ChatMsg = {
-          id: uid(),
-          role: "agent",
-          text: reply,
-          ts: Date.now(),
-        };
-        set((s) => ({ chatLog: [...s.chatLog, agentMsg] }));
-      }, 1200);
+
+      void (async () => {
+        try {
+          const { chatReply } = await import("@/lib/chat.functions");
+          const s = get();
+          const history = s.chatLog.slice(-10).map((m) => ({
+            role: (m.role === "agent" ? "assistant" : "user") as
+              | "assistant"
+              | "user",
+            content: m.text,
+          }));
+          const messages = [
+            ...history,
+            { role: "user" as const, content: t },
+          ];
+          const ctxScript = s.script
+            ? {
+                mood: s.script.mood,
+                shots: s.script.shots?.map((sh) => ({
+                  shot: sh.shot,
+                  duration: sh.duration,
+                  scene: sh.scene,
+                })),
+              }
+            : undefined;
+          const result = await chatReply({
+            data: {
+              messages,
+              context: {
+                phase: s.phase,
+                brief: s.brief ?? undefined,
+                script: ctxScript,
+              },
+            },
+          });
+          const agentMsg: ChatMsg = {
+            id: uid(),
+            role: "agent",
+            text: result.reply,
+            ts: Date.now(),
+          };
+          set((st) => ({ chatLog: [...st.chatLog, agentMsg] }));
+        } catch (err) {
+          const agentMsg: ChatMsg = {
+            id: uid(),
+            role: "agent",
+            text:
+              "AI 暂不可用：" +
+              (err instanceof Error ? err.message : "未知错误"),
+            ts: Date.now(),
+          };
+          set((st) => ({ chatLog: [...st.chatLog, agentMsg] }));
+        }
+      })();
     },
+
 
     addAttachment: (a) => set((s) => ({ attachments: [...s.attachments, a] })),
     removeAttachment: (id) =>
