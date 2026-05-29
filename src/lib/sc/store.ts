@@ -1412,7 +1412,7 @@ export const useSC = create<SCState>((set, get) => {
         assets: [] as Asset[],
         taskId: newId(),
         taskKind: "oneoff" as TaskKind,
-        brief: {
+          prompt: "Demo: 城市晚风 30s",
           prompt: "Demo: YSL Libre 30s",
           adType: "Premium",
           format: "9:16 · 30s",
