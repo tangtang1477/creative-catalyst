@@ -816,7 +816,8 @@ export const useSC = create<SCState>((set, get) => {
     timers: [],
     runId: 0,
     selection: [],
-    chatLog: [],
+    currentUserId: null,
+    script: null,
     currentUserId: null,
 
     intakeSel: {},
