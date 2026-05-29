@@ -417,9 +417,6 @@ export const useSC = create<SCState>((set, get) => {
       }
     })();
   };
-      },
-    );
-  };
 
   const runWardrobe = () => {
     closeGate();
