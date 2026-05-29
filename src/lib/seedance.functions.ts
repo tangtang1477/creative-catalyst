@@ -19,7 +19,7 @@ const ROUTES = [
 
 const SubmitInput = z.object({
   route: z.enum(ROUTES),
-  videoTaskId: z.union([z.string().uuid(), z.literal(""), z.null()]).optional(),
+  videoTaskId: z.string().uuid().optional().nullable(),
   payload: z
     .object({
       prompt: z.string().min(1).max(4000),
