@@ -924,6 +924,7 @@ export const useSC = create<SCState>((set, get) => {
         intakeCustoms: {},
         intakeOthers: null,
         currentUserId: null,
+        script: null,
       }));
       // 异步抓 user id；没登录也允许走假数据 stage（paint/life 会自检并 fallback）
       supabase.auth.getUser().then(({ data }) => {
