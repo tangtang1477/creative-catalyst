@@ -163,12 +163,7 @@ export function AssetCard({
         />
       </div>
 
-          asset={asset}
-          selectable={selectable}
-          selected={selected}
-          variant="card"
-        />
-      </div>
+
 
       <div className="space-y-1.5 px-3 py-2.5">
         <div className="flex items-center justify-between gap-2">
