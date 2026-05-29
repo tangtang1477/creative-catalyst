@@ -72,7 +72,7 @@ function TestPage() {
       const r = await submitFn({
         data: {
           route: "first-frame-to-video",
-          payload: { prompt, first_image_url: imageUrl, ratio: "16:9" },
+          payload: { prompt, image_url: imageUrl, ratio: "16:9" },
         },
       });
       setTaskId(r.taskId); setPollStatus("processing");
