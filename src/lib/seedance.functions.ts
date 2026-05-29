@@ -190,38 +190,65 @@ export const pollVideoTask = createServerFn({ method: "POST" })
 
     let assetId: string | null = job.asset_id ?? null;
 
-    if (normalized === "success" && ossUrl && !job.oss_url) {
-      // 写 asset
-      const { data: asset, error: assetErr } = await supabaseAdmin
-        .from("assets")
-        .insert({
-          user_id: userId,
-          task_id: job.video_task_id ?? null,
-          kind: "video",
-          url: ossUrl,
-          source: "seedance",
-          stage: "life",
-          meta: { seedance_task_id: data.taskId },
+    if (normalized === "success" && ossUrl) {
+      // 原子声明：只有当 oss_url 仍为空的那行才能更新成功，并返回。
+      // 并发的 tick 拿不到行，就跳过 insert，避免重复写 asset。
+      const { data: claimed, error: claimErr } = await supabaseAdmin
+        .from("seedance_jobs")
+        .update({
+          status: "success",
+          progress: 100,
+          oss_url: ossUrl,
+          raw: (envelope.data ?? null) as unknown as never,
         })
-        .select("id")
-        .single();
-      if (assetErr) {
-        console.error("[seedance] insert asset failed", assetErr);
-      } else {
-        assetId = asset.id;
-      }
-    }
+        .eq("task_id", data.taskId)
+        .is("oss_url", null)
+        .select("task_id")
+        .maybeSingle();
+      if (claimErr) console.error("[seedance] claim failed", claimErr);
 
-    await supabaseAdmin
-      .from("seedance_jobs")
-      .update({
-        status: normalized,
-        progress,
-        oss_url: ossUrl,
-        asset_id: assetId,
-        raw: (envelope.data ?? null) as unknown as never,
-      })
-      .eq("task_id", data.taskId);
+      if (claimed) {
+        const { data: asset, error: assetErr } = await supabaseAdmin
+          .from("assets")
+          .insert({
+            user_id: userId,
+            task_id: job.video_task_id ?? null,
+            kind: "video",
+            url: ossUrl,
+            source: "seedance",
+            stage: "life",
+            meta: { seedance_task_id: data.taskId },
+          })
+          .select("id")
+          .single();
+        if (assetErr) {
+          console.error("[seedance] insert asset failed", assetErr);
+        } else {
+          assetId = asset.id;
+          await supabaseAdmin
+            .from("seedance_jobs")
+            .update({ asset_id: assetId })
+            .eq("task_id", data.taskId);
+        }
+      } else {
+        // 别人已经声明并写了 asset，复读一次拿到 asset_id
+        const { data: refreshed } = await supabaseAdmin
+          .from("seedance_jobs")
+          .select("asset_id, oss_url")
+          .eq("task_id", data.taskId)
+          .maybeSingle();
+        assetId = refreshed?.asset_id ?? assetId;
+      }
+    } else {
+      await supabaseAdmin
+        .from("seedance_jobs")
+        .update({
+          status: normalized,
+          progress,
+          raw: (envelope.data ?? null) as unknown as never,
+        })
+        .eq("task_id", data.taskId);
+    }
 
     if (job.video_task_id && normalized !== "processing") {
       await supabaseAdmin
