@@ -78,6 +78,10 @@ interface SCState {
   selection: string[];
   /** in-task chat messages (user ↔ agent), reset on new task */
   chatLog: ChatMsg[];
+  /** Asset id currently shown in the VersionDrawer (null = closed). */
+  versionDrawerAssetId: string | null;
+
+
 
   /** cached supabase user id for the current run; populated on submit() */
   currentUserId: string | null;
