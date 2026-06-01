@@ -1,10 +1,16 @@
+import { useMemo } from "react";
 import { useSC } from "@/lib/sc/store";
 import { AssetCard } from "./AssetCard";
 
 /** Wardrobe + props asset gallery — renders cards from the wardrobe stage. */
 export function WardrobePanel() {
-  const assets = useSC((s) =>
-    s.assets.filter((a) => a.stageId === "wardrobe"),
+  // Select the full assets array (stable reference) then filter in render to
+  // avoid returning a fresh array from the zustand selector on every store
+  // update — which would trigger an infinite useSyncExternalStore loop.
+  const allAssets = useSC((s) => s.assets);
+  const assets = useMemo(
+    () => allAssets.filter((a) => a.stageId === "wardrobe"),
+    [allAssets],
   );
   if (!assets.length) return null;
   return (
