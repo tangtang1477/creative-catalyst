@@ -108,6 +108,8 @@ interface SCState {
   submit: (prompt: string) => void;
   chatMessage: (text: string) => void;
   confirmBrief: (brief: Brief) => void;
+  submitOptionCard: (msgId: string, cardId: string, answers: Record<string, { selected: string[]; otherText?: string }>) => void;
+  skipOptionCard: (msgId: string, cardId: string) => void;
   skipIntake: () => void;
   approveScript: () => void;
   tweakScript: () => void;
