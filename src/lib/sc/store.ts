@@ -975,7 +975,7 @@ export const useSC = create<SCState>((set, get) => {
       updateStage("life", { status: "failed" });
       appendSummary("life", `生成失败：${reason}（未扣积分）`);
       set({ phase: "failed" });
-      persistCurrent("failed", reason);
+      persistCurrent("failed");
       return;
     }
 
