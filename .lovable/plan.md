@@ -1,85 +1,146 @@
+# 改造目标
 
-# 修复 In-task Chat：真流式 + 思考步骤 + Loading 占位
+让 in-task 聊天 + 整个生成流程的"流式输出"完全对齐参考视频（Higgsfield 风格）；并在用户真正开拍前主动弹出一组选项卡片让用户点选，而不是逼用户自己输入。
 
-## 问题分析
+---
 
-当前 `/api/chat-stream` + `store.chatMessage` 已经接了 SSE，但用户看到的体验是：
-1. **1.1s 后整段文字一次性出现** —— 不是真的逐字流。原因：单条 `chat-director · streaming reply` tool 行 1.1s 后才标记 done，配合 Gemini-2.5-flash 第一个 chunk 较大 + Worker 透传时被缓冲，token 没有"流"出来。
-2. **首字到达前没有 loading** —— `ChatAgentMessage` 在 `text === ""` 时只显示一个闪烁竖线 caret，看起来像没反应。
-3. **没有任务细节/思考过程** —— 只有一条 tool 行。之前主生成流程是多条 `ThinkingBlock` + 多条 `ToolCallLine`（理解需求 → 匹配镜头 → 评估改动范围 → 生成回复），chat 没复刻这个体验。
+## 1. 修复 M 头像尺寸（`ChatAgentMessage.tsx`）
 
-## 方案
+参考视频里 AI 回合根本**没有头像气泡**，只有顶部一行 `✨ Using skill xxx`。我们既要保留品牌 M，又要解决用户截图里"M 太小、跟右侧 toolCall 卡片不齐"的问题：
 
-### 1. 后端 `/api/chat-stream.ts`：升级为"分阶段事件流"
+- 删除当前 `h-6 w-6` 的小 M 头像。
+- 改为参考视频的版式：
+  - **顶部一行** `[小图标] Using skill chat-director`（小号 11px，accent 渐变文本）。
+  - **正文/卡片左侧**不再有头像列，整段贴左对齐，最大宽度撑满 chat 列。
+- 把 M Logo 留在 `phase === "empty"` 的 hero 区（已经存在的 12×12 大图标）和侧边栏，不在每条聊天里重复。
 
-不再单纯透传 upstream.body，改为 server 主动编排一条 SSE 流，发出自定义事件：
+这样视觉上就不会出现"M 比容器矮一截"的问题。
+
+---
+
+## 2. 重做"流式输出"主体样式
+
+让 `ChatAgentMessage` 的渲染顺序完全对齐视频（自顶向下）：
 
 ```
-event: phase    data: {"id":"intent", "label":"理解需求"}
-event: phase    data: {"id":"context","label":"匹配当前镜头与品牌"}
-event: phase    data: {"id":"plan",   "label":"评估改动范围"}
-event: phase    data: {"id":"reply",  "label":"生成回复"}
-event: phase-start  data: {"id":"intent"}
-event: thinking     data: {"text":"用户希望调整 A03…"}     // 逐段
-event: phase-done   data: {"id":"intent","summary":"调整 A03 关键帧的镜头节奏"}
-...
-event: phase-start  data: {"id":"reply"}
-event: token        data: {"text":"好"}                   // 逐字 / 小批
-event: token        data: {"text":"的，"}
-...
-event: done
+✨ Using skill chat-director
+（流式 markdown 正文，逐字出现，无气泡背景，直接贴页面）
+┌──────────────────────────────────────────┐
+│ 1. 问题 A?                               │
+│   [选项 1] [选项 2] [选项 3] [Other]     │
+│ 2. 问题 B?                               │
+│   [选项 a] [选项 b] [Other]              │
+│                          [Skip] [Continue]│
+└──────────────────────────────────────────┘
+（继续流式正文…）
+[ ⏳ Building the scene ]   ← 底部状态药丸
 ```
 
-实现做法（避免双次 LLM 调用拖长延迟）：
-- 单次调用 `google/gemini-2.5-flash`，stream=true，system prompt 改为：先用 `<thinking>` 块输出 4 段简短分析（意图/上下文/计划/回复策略），再输出最终回复正文。
-- Server 端用 ReadableStream 主动 `controller.enqueue`：
-  - 立刻 emit `phase` 事件（4 个预设步骤）+ `phase-start: intent`。
-  - 解析 upstream token：在 `<thinking>` 内的内容映射到当前 step 的 `thinking` 事件 + 在子段（用 `\n##` 或 `· ` 分隔）切换 phase-start/phase-done。
-  - 离开 `</thinking>` 后切到 `phase-start: reply`，剩余 token 全部转为 `token` 事件。
-  - 流结束 emit `phase-done: reply` + `done`。
-- 关键头：`Content-Type: text/event-stream`、`Cache-Control: no-cache, no-transform`、`X-Accel-Buffering: no`，并在每个事件后立刻 enqueue（不要积累），让 Cloudflare 不缓冲。
+具体改动：
 
-### 2. 前端 `store.chatMessage`（store.ts）：解析自定义事件，维护多 step 状态
+- **去掉现有 `toolCalls` 4 行列表卡片**（理解需求 / 匹配镜头 / 评估改动 / 生成回复）。视频里没有这种"分步骤打勾"的样式，它会让流式看起来卡顿。改成：
+  - 顶部 `Using skill` 一行（图标 + 渐变色技能名 + 灰色副标题，例如 `chat-director · refining shot`）。
+  - 正文直接 markdown 渲染（用 `react-markdown`），支持流式逐字（保留闪烁光标）。
+  - 流式 phase 的进度感放到**底部状态药丸**里（见下），不再占顶部空间。
 
-- agent 占位结构升级：
-  ```ts
-  agentMsg = {
-    streaming: true,
-    text: "",
-    thinking: "",
-    toolCalls: [],          // 每个 phase 一条
-    actions: ...
+- **底部状态药丸 `StreamStatusPill`**（新组件，固定在该 AI 回合最末）：
+  - 圆角方块图标 + 一句正在做的事，文案随阶段轮换：`Building the scene` → `Adding the details` → `Painting the frame` → `Bringing it to life` → `Awaiting your input`。
+  - 完成时整个药丸收起（不留痕迹）。
+  - 后端 SSE 的 `phase-start` / `phase-done` 事件继续用，但只驱动药丸文案 + 进度光标，不再生成可展开 tool 行。
+
+- **用户消息气泡**保持现在的 `bg-surface-2 rounded-2xl`，不动。
+
+---
+
+## 3. 开拍前的"选项卡片"（核心新增）
+
+参考视频最重要的一点：模型并不会等用户自己写"60 秒 / 冷静反差 / 全程交给你发挥"，而是**主动列出 3–4 个有限选项让用户点**。我们要在 `phase === "intake"` 之后、`stages.structure` 开跑之前，加一段交互式 brief refinement。
+
+### 数据结构
+
+`src/lib/sc/types.ts` 新增：
+
+```ts
+export interface ChatOptionQuestion {
+  id: string;                 // "duration" / "tone" / "subject" ...
+  label: string;              // "大概想要多长的短片？"
+  multi?: boolean;            // 默认单选
+  options: Array<{ id: string; label: string; hint?: string }>;
+  allowOther?: boolean;       // 是否带 Other 自定义
+  selected?: string[];        // 用户选中的 id
+  otherText?: string;
+}
+
+export interface ChatOptionCard {
+  id: string;
+  questions: ChatOptionQuestion[];
+  status: "awaiting" | "submitted" | "skipped";
+  primaryLabel?: string;      // 默认 "Continue"
+}
+```
+
+`ChatMsg` 增加 `optionCards?: ChatOptionCard[]`。
+
+### 后端 / 编排
+
+`src/lib/sc/store.ts` 在收到 brief 后新增 `requestPreflightOptions()`：
+- 调 `/api/chat-stream`，给一个新的 `mode: "preflight-options"` 让 server 端用专门的 system prompt 让 Gemini 直接输出 JSON（不是 thinking 块）：
+
+  ```json
+  {
+    "intro": "好，这是个 Full Heavy 流程（多场景叙事短片）。先问几个关键细节再开始：",
+    "questions": [
+      { "id": "duration", "label": "大概想要多长的短片？",
+        "options": [
+          {"id":"60s","label":"~60秒（4个场景）"},
+          {"id":"2m","label":"~2分钟（8个场景）"},
+          {"id":"3m","label":"~3分钟（12个场景）"}
+        ], "allowOther": true },
+      { "id": "tone", "label": "搞笑恐怖的方向偏哪种？",
+        "options": [...], "allowOther": true },
+      { "id": "character", "label": "角色方面有偏好吗？",
+        "options": [...], "allowOther": true }
+    ],
+    "outro": "选完点 Continue，我就跑完整流程；想自己说也可以直接 Skip。"
   }
   ```
-- SSE 解析支持 `event:` + `data:` 双行格式：
-  - `phase` → push 一条 `toolCalls[]`（status: "pending"，icon=skill，label=步骤名）。
-  - `phase-start` → 把该 id 的 toolCall 改为 `running`（startedAt=now）。
-  - `thinking` → 追加 `agentMsg.thinking`，并把当前 running step 的 `input` 字段也增量更新（展开后可见）。
-  - `phase-done` → 该 toolCall `status: "done"`，`durationMs`，`output: summary`。
-  - `token` → 追加 `agentMsg.text`。
-  - `done` → `streaming: false`，所有未 done 的 toolCall 强制 done。
-- 失败（HTTP 非 ok 或网络中断）：回退到单条 fail toolCall + 友好提示，沿用现有逻辑。
 
-### 3. 前端 `ChatAgentMessage.tsx`：增加 Loading 占位 + Thinking 块
+- `chat-stream` 增加分支：当 `mode === "preflight-options"`，跳过 thinking 解析，直接把整段 JSON 作为 `event: option-card data: {...}` 一次性推送，正文部分继续 token 流（intro/outro 分别用 `event: token`）。
+- 前端 `store.chatMessage` 解析 `option-card` 事件 → 追加到 `optionCards`。
 
-- **首字未到的 loading 状态**：当 `streaming && !text && toolCalls.every(tc => tc.status !== 'done')` 时，在 text 区域显示：
-  - 三个 pulse 点（复用现有 `.thinking-dots`）+ "正在思考…" 灰字。
-- **Thinking 展示**：在 toolCalls 区域上方插入一个可折叠 `<ThinkingBlock>` 样式块（直接复用或新建一个轻量版 `ChatThinking`，body 行按 `\n` split），默认收起，标题取当前 running step 的 label。
-- **多 step toolCalls**：现已支持，无需改 — 但要确保 `Loader2` 在 running 时一直转，pending（未开始）的 step 显示一个空心圆点占位。
-- **token 流式渲染**：保留 `[animation:stream-fade]` 不变；caret 在 `streaming && text.length > 0` 才显示。
+### 前端 UI
 
-### 4. 验收
+新增 `src/components/sc/ChatOptionCard.tsx`：
+- 圆角边框卡片（`rounded-xl border border-border/60 bg-surface/40 px-4 py-3`，配合视频里的浅描边）。
+- 每个 question 渲染：编号 + 标题 + 一排 chip 按钮（复用 `SCButton variant="chip"`）。
+- 选中态用 accent border；`allowOther` 显示 `Other` chip，点开变成 inline `<input>`。
+- 底部右对齐 `Skip` (ghost) + `Continue` (primary，带 ⌘↩ 提示)。
+- 提交时调用 store 的 `submitPreflightAnswers(cardId, answers)`，把答案合并到 `brief.refinements`，再调 `runStage("structure")` 等后续流程；卡片状态切到 `submitted`，所有 chip 锁定为只读高亮。
 
-1. 发送消息后 **<100ms** 内 agent 气泡出现 4 行 phase（前 3 行 pending、第 1 行 running 旋转 loader），同时显示"正在思考…"占位。
-2. 看到 phase 一个个变 done（带 ✓ + 耗时），点击任一行展开能看到该阶段的输入/思考摘要。
-3. 切到 `reply` 阶段后，文字**逐字**追加，caret 跟随，整体感受像 ChatGPT 流式。
-4. 错误（429/402/网络中断）时回退到一条失败 toolCall + 文字错误提示，不影响后续重试。
+### 复用范围
 
-## 改动文件
+`ChatOptionCard` 不止用在开拍前——把现有 `ApprovalChips`（每个 stage 完成后让用户 approve / retry / refine）也迁到这套数据结构，统一视觉。这样：
+- 流程开始前：`preflight options` 卡。
+- 每个 stage 完成后：`approval` 卡（"这版巴黎公寓场景图符合预期吗？" + chips）。
+- 用户在 chat 里发文本时，AI 回复也可以再附 chip 卡片（例如 "想要哪种镜头节奏？"）。
 
-- `src/routes/api/chat-stream.ts` — 重写为分阶段 SSE 编排（ReadableStream + token 解析 `<thinking>` 包裹）。
-- `src/lib/sc/store.ts` — `chatMessage` 内的 SSE 解析升级为支持 `event:` 行 + 6 类事件，扩展 agentMsg 字段。
-- `src/lib/sc/types.ts` — `ChatMsg.toolCalls[]` 元素新增 `pending` 状态；新增可选 `thinking?: string`（若未加）。
-- `src/components/sc/ChatAgentMessage.tsx` — 加 loading 占位、pending 步骤样式、可选 ChatThinking 折叠块。
+---
 
-不动主生成流程（runLife / Seedance）— 本次只修 chat。
+## 4. 技术细节
+
+- 文件
+  - 改：`src/components/sc/ChatAgentMessage.tsx`、`src/components/sc/Workspace.tsx`、`src/lib/sc/store.ts`、`src/lib/sc/types.ts`、`src/routes/api/chat-stream.ts`、`src/components/sc/ApprovalChips.tsx`
+  - 新增：`src/components/sc/ChatOptionCard.tsx`、`src/components/sc/StreamStatusPill.tsx`
+- 依赖：`bun add react-markdown remark-gfm`（正文流式 markdown）。
+- Tokens：所有颜色走 `--surface / --border / --accent`，不写裸 hex。
+- 兼容：旧的 `toolCalls` 字段保留可选，渲染时优雅降级（如果没拿到 `optionCards`/markdown，就回退到现状）。
+
+---
+
+## 验收
+
+1. M 头像问题消失：每条 AI 回合顶部只有 `✨ Using skill xxx`，无错位的小圆头像。
+2. 流式正文像参考视频一样**逐字铺在页面上**（无气泡背景），右下角有闪烁光标。
+3. 用户首次确认 brief 后，**自动出现一张多问题选项卡**，能点 chip、能 Other 自定义、能 Skip / Continue；提交后才推进到脚本阶段。
+4. 流程中 AI 的每条新回复都按这个版式渲染；底部状态药丸文案随阶段切换，结束时收起。
+5. 视觉细节（描边、间距、chip 圆角、字号）与三段视频一致。
