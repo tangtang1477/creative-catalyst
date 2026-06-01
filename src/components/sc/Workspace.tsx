@@ -175,15 +175,6 @@ export function Workspace() {
                     const st = stages[id];
                     if (st.status === "pending") return null;
 
-                    // For restored tasks, skip interactive children to prevent
-                    // crashes against missing runtime data.
-                    if (isRestored) {
-                      return (
-                        <StageBoundary key={id}>
-                          <StageRow id={id} state={st} />
-                        </StageBoundary>
-                      );
-                    }
 
                     if (id === "structure") {
                       return (
