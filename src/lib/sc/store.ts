@@ -1475,8 +1475,6 @@ export const useSC = create<SCState>((set, get) => {
             text:
               m.text || "AI 没有返回内容，请换种说法再试一次。",
           }));
-          // 抑制未使用变量警告
-          void pendingEvent;
         } catch (err) {
           const reason = err instanceof Error ? err.message : "未知错误";
           failWith(reason);
