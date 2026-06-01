@@ -1533,7 +1533,68 @@ export const useSC = create<SCState>((set, get) => {
 
     confirmBrief: (brief) => {
       set({ brief });
-      startRunning();
+      // 不再立刻 startRunning：先让 AI 抛一张多问题选项卡
+      requestPreflightOptions(brief);
+    },
+
+    submitOptionCard: (msgId, cardId, answers) => {
+      const summaryParts: string[] = [];
+      set((s) => ({
+        chatLog: s.chatLog.map((m) => {
+          if (m.id !== msgId || !m.optionCards) return m;
+          return {
+            ...m,
+            optionCards: m.optionCards.map((c) => {
+              if (c.id !== cardId) return c;
+              const nextQs = c.questions.map((q) => {
+                const a = answers[q.id];
+                if (!a) return q;
+                const labels = a.selected
+                  .map((sid) => q.options.find((o) => o.id === sid)?.label ?? sid)
+                  .filter(Boolean);
+                if (a.otherText) labels.push(a.otherText);
+                if (labels.length) summaryParts.push(`${q.label} → ${labels.join(" / ")}`);
+                return { ...q, selected: a.selected, otherText: a.otherText };
+              });
+              return { ...c, questions: nextQs, status: "submitted" as const };
+            }),
+          };
+        }),
+      }));
+      // 把答案落到 brief 上，方便下游脚本生成参考
+      const cur = get().brief;
+      if (cur) {
+        const extra = summaryParts.join("\n");
+        set({
+          brief: {
+            ...cur,
+            prompt: extra ? `${cur.prompt}\n\n[偏好]\n${extra}` : cur.prompt,
+          },
+        });
+      }
+      // 触发后续流程
+      const card = get().chatLog
+        .find((m) => m.id === msgId)?.optionCards
+        ?.find((c) => c.id === cardId);
+      if (card?.intent === "preflight") startRunning();
+    },
+
+    skipOptionCard: (msgId, cardId) => {
+      set((s) => ({
+        chatLog: s.chatLog.map((m) => {
+          if (m.id !== msgId || !m.optionCards) return m;
+          return {
+            ...m,
+            optionCards: m.optionCards.map((c) =>
+              c.id === cardId ? { ...c, status: "skipped" as const } : c,
+            ),
+          };
+        }),
+      }));
+      const card = get().chatLog
+        .find((m) => m.id === msgId)?.optionCards
+        ?.find((c) => c.id === cardId);
+      if (card?.intent === "preflight") startRunning();
     },
 
     skipIntake: () => {
