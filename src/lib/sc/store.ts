@@ -561,13 +561,18 @@ export const useSC = create<SCState>((set, get) => {
     runTool("paint", "tool", "text-to-image · streaming", 1200, 900);
 
     const scriptForThought = get().script;
+    const wardrobeIds = get()
+      .assets.filter((a) => a.stageId === "wardrobe")
+      .map((a) => a.id);
     const shotCount = scriptForThought?.shots?.length ?? STORYBOARD_ROWS.length;
     schedule(
       () =>
         addThought("paint", {
           title: "基于服装/道具素材生成分镜",
           body: [
-            "锁定主角 W01 + 配角 W02 + 道具 P01 作为参考。",
+            wardrobeIds.length
+              ? `锁定服装/道具参考：${wardrobeIds.join(" · ")}`
+              : "未生成服装/道具参考 · 直接按 prompt 渲染",
             `将分批生成 ${shotCount} 个关键帧，覆盖全部镜头。`,
             scriptForThought?.cameraLanguage
               ? `镜头语言：${scriptForThought.cameraLanguage}`
@@ -576,7 +581,7 @@ export const useSC = create<SCState>((set, get) => {
               ? `情绪基调：${scriptForThought.mood}`
               : "情绪基调：贴合用户主题",
           ],
-          thumbAssetIds: ["W01", "W02", "P01"],
+          thumbAssetIds: wardrobeIds,
         }),
       1200,
     );
