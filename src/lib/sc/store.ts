@@ -362,14 +362,27 @@ export const useSC = create<SCState>((set, get) => {
 
   /** Persist current task snapshot into taskHistory */
   const persistCurrent = (status: TaskRecord["status"]) => {
-    const { taskId, taskTitle, brief, assets, taskHistory, taskKind, stages } = get();
+    const { taskId, taskTitle, brief, assets, taskHistory, taskKind, stages, script } = get();
     if (!taskId) return;
     const now = Date.now();
     const existing = taskHistory.find((t) => t.id === taskId);
     const stageSummaries: Partial<Record<StageId, string[]>> = {};
+    const stageSnapshots: Partial<Record<StageId, StageSnapshot>> = {};
+    let failureReason: string | undefined;
     for (const sid of STAGE_ORDER) {
-      const sum = stages[sid].summary;
-      if (sum.length) stageSummaries[sid] = sum.slice(-6);
+      const st = stages[sid];
+      if (st.summary.length) stageSummaries[sid] = st.summary.slice();
+      if (st.summary.length || st.toolCalls.length || st.thoughts.length) {
+        stageSnapshots[sid] = {
+          status: st.status,
+          summary: st.summary.slice(),
+          toolCalls: st.toolCalls.slice(),
+          thoughts: st.thoughts.slice(),
+        };
+      }
+      if (status === "failed" && st.status === "failed" && !failureReason) {
+        failureReason = st.summary[st.summary.length - 1] ?? `${STAGE_LABEL[sid]} 失败`;
+      }
     }
     const record: TaskRecord = {
       id: taskId,
@@ -381,12 +394,16 @@ export const useSC = create<SCState>((set, get) => {
       kind: taskKind,
       assets,
       stageSummaries,
+      stageSnapshots,
+      script: script ?? existing?.script,
+      failureReason: failureReason ?? existing?.failureReason,
       brief,
     };
     const next = [record, ...taskHistory.filter((t) => t.id !== taskId)];
     set({ taskHistory: next });
     saveHistory(next);
   };
+
 
 
   // -------- Stage runners --------
