@@ -51,13 +51,6 @@ const SubmitInput = z.object({
     })
     .passthrough(),
 });
-      ratio: z.string().optional(),
-      resolution: z.enum(["480p", "720p", "1080p"]).optional(),
-      duration: z.number().int().optional(),
-      generate_audio: z.boolean().optional(),
-    })
-    .passthrough(),
-});
 
 function buildAuthHeaders(): Record<string, string> {
   const key = process.env.SEEDANCE_API_KEY;
