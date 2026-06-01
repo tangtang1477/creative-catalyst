@@ -1199,59 +1199,143 @@ export const useSC = create<SCState>((set, get) => {
         text: t,
         ts: Date.now(),
       };
-      set((s) => ({ chatLog: [...s.chatLog, userMsg] }));
+      const agentId = uid();
+      const toolId = uid();
+      const startedAt = Date.now();
+      const agentMsg: ChatMsg = {
+        id: agentId,
+        role: "agent",
+        text: "",
+        ts: Date.now(),
+        streaming: true,
+        toolCalls: [
+          {
+            id: toolId,
+            kind: "skill",
+            label: "chat-director · streaming reply",
+            status: "running",
+            startedAt,
+            input: t,
+          },
+        ],
+      };
+      set((s) => ({ chatLog: [...s.chatLog, userMsg, agentMsg] }));
+
+      const patchAgent = (patch: Partial<ChatMsg>) =>
+        set((s) => ({
+          chatLog: s.chatLog.map((m) =>
+            m.id === agentId ? { ...m, ...patch } : m,
+          ),
+        }));
+      const patchTool = (
+        patch: Partial<import("./types").ChatToolCall>,
+      ) =>
+        set((s) => ({
+          chatLog: s.chatLog.map((m) =>
+            m.id === agentId
+              ? {
+                  ...m,
+                  toolCalls: (m.toolCalls ?? []).map((tc) =>
+                    tc.id === toolId ? { ...tc, ...patch } : tc,
+                  ),
+                }
+              : m,
+          ),
+        }));
 
       void (async () => {
-        try {
-          const { chatReply } = await import("@/lib/chat.functions");
-          const s = get();
-          const history = s.chatLog.slice(-10).map((m) => ({
+        const s = get();
+        const history = s.chatLog
+          .slice(-12)
+          .filter((m) => m.id !== agentId && m.text)
+          .map((m) => ({
             role: (m.role === "agent" ? "assistant" : "user") as
               | "assistant"
               | "user",
             content: m.text,
           }));
-          const messages = [
-            ...history,
-            { role: "user" as const, content: t },
-          ];
-          const ctxScript = s.script
-            ? {
-                mood: s.script.mood,
-                shots: s.script.shots?.map((sh) => ({
-                  shot: sh.shot,
-                  duration: sh.duration,
-                  scene: sh.scene,
-                })),
-              }
-            : undefined;
-          const result = await chatReply({
-            data: {
-              messages,
-              context: {
-                phase: s.phase,
-                brief: s.brief ?? undefined,
-                script: ctxScript,
-              },
-            },
+        if (!history.length || history[history.length - 1]?.content !== t) {
+          history.push({ role: "user", content: t });
+        }
+        const ctxScript = s.script
+          ? {
+              mood: s.script.mood,
+              shots: s.script.shots?.map((sh) => ({
+                shot: sh.shot,
+                duration: sh.duration,
+                scene: sh.scene,
+              })),
+            }
+          : undefined;
+        const payload = {
+          messages: history,
+          context: {
+            phase: s.phase,
+            brief: s.brief ?? undefined,
+            script: ctxScript,
+          },
+        };
+
+        try {
+          const res = await fetch("/api/chat-stream", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
           });
-          const agentMsg: ChatMsg = {
-            id: uid(),
-            role: "agent",
-            text: result.reply,
-            ts: Date.now(),
-          };
-          set((st) => ({ chatLog: [...st.chatLog, agentMsg] }));
+          if (!res.ok || !res.body) {
+            const errText = await res.text().catch(() => "");
+            throw new Error(
+              res.status === 429
+                ? "请求过于频繁，请稍后再试"
+                : res.status === 402
+                  ? "AI 额度已用尽，请到 Settings · Usage 充值后再试"
+                  : errText || `HTTP ${res.status}`,
+            );
+          }
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buf = "";
+          let acc = "";
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split(/\r?\n/);
+            buf = lines.pop() ?? "";
+            for (const raw of lines) {
+              const line = raw.trim();
+              if (!line.startsWith("data:")) continue;
+              const data = line.slice(5).trim();
+              if (!data || data === "[DONE]") continue;
+              try {
+                const j = JSON.parse(data) as {
+                  choices?: Array<{ delta?: { content?: string } }>;
+                };
+                const delta = j.choices?.[0]?.delta?.content;
+                if (delta) {
+                  acc += delta;
+                  patchAgent({ text: acc });
+                }
+              } catch {
+                /* keep streaming on malformed lines */
+              }
+            }
+          }
+          const durationMs = Date.now() - startedAt;
+          patchTool({ status: "done", durationMs, output: acc || "(空回复)" });
+          patchAgent({
+            streaming: false,
+            text: acc || "AI 没有返回内容，请换种说法再试一次。",
+          });
         } catch (err) {
-          const agentMsg: ChatMsg = {
-            id: uid(),
-            role: "agent",
-            text:
-              "AI 暂不可用：" +
-              (err instanceof Error ? err.message : "未知错误"),
-            ts: Date.now(),
-          };
-          set((st) => ({ chatLog: [...st.chatLog, agentMsg] }));
+          const reason =
+            err instanceof Error ? err.message : "未知错误";
+          const durationMs = Date.now() - startedAt;
+          patchTool({ status: "failed", durationMs, output: reason });
+          patchAgent({
+            streaming: false,
+            text: "AI 暂不可用：" + reason,
+          });
         }
       })();
     },
