@@ -122,6 +122,31 @@ export interface ChatToolCall {
   output?: string;
 }
 
+export interface ChatOptionItem {
+  id: string;
+  label: string;
+  hint?: string;
+}
+
+export interface ChatOptionQuestion {
+  id: string;
+  label: string;
+  multi?: boolean;
+  options: ChatOptionItem[];
+  allowOther?: boolean;
+  selected?: string[];
+  otherText?: string;
+}
+
+export interface ChatOptionCard {
+  id: string;
+  questions: ChatOptionQuestion[];
+  status: "awaiting" | "submitted" | "skipped";
+  primaryLabel?: string;
+  /** which downstream action to fire on submit */
+  intent?: "preflight" | "refine";
+}
+
 
 export interface Brief {
   prompt: string;
