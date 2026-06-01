@@ -956,32 +956,29 @@ export const useSC = create<SCState>((set, get) => {
 
 
 
-    // 取 paint 阶段第一个真实关键帧（http URL，非 data: 预览）
+    // 取 paint 阶段第一个有 url 的关键帧（http URL 优先；data:/静态资源也可作为占位首帧）
     const firstKeyframeUrl = (() => {
-      const a = get().assets.find(
-        (x) => x.stageId === "paint" && x.url && /^https?:\/\//.test(x.url),
-      );
-      return a?.url;
+      const paintAssets = get().assets.filter((x) => x.stageId === "paint" && x.url);
+      const httpFirst = paintAssets.find((x) => /^https?:\/\//.test(x.url!));
+      return (httpFirst ?? paintAssets[0])?.url;
     })();
     const userId = get().currentUserId;
     const briefPrompt = get().brief?.prompt ?? "";
     const startedRunId = get().runId;
 
     if (!userId || !firstKeyframeUrl) {
-      // fallback：未登录或没有真图，走示例视频
-      appendSummary("life", "未登录或无关键帧 · 使用示例视频");
-      schedule(() => updateAsset("V01", { status: "Processing" }), 1200);
-      schedule(() => {
-        updateAsset("V01", { status: "Ready", url: SAMPLE_VIDEO, poster: SAMPLE_KEYFRAME });
-        updateStage("life", { status: "ready" });
-        consume("life", "Video V01 · sample", VIDEO_COST, get().taskId);
-        appendSummary("life", "V01 Ready (sample)");
-        collapseAfter("life", 1800);
-        persistCurrent("running");
-        schedule(() => runDetails(), 1600);
-      }, 3000);
+      // 没有真实生成路径：直接 Failed（不扣分、不塞示例视频）
+      const reason = !userId
+        ? "未登录，无法生成真实视频。请先登录后重试。"
+        : "缺少首帧关键帧。请先重跑 Keyframes 阶段，再生成视频。";
+      updateAsset("V01", { status: "Failed", errorMessage: reason });
+      updateStage("life", { status: "failed" });
+      appendSummary("life", `生成失败：${reason}（未扣积分）`);
+      set({ phase: "failed" });
+      persistCurrent("failed");
       return;
     }
+
 
     updateAsset("V01", { status: "Processing" });
     appendSummary("life", "Seedance 提交中（first-frame-to-video）…");

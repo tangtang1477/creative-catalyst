@@ -90,7 +90,7 @@ export function AssetCard({
         selected && "ring-2 ring-accent",
       )}
     >
-      <div className="relative">
+      <div className="relative w-full">
         {asset.kind === "image" && asset.url ? (
           <img
             src={asset.url}
@@ -130,7 +130,7 @@ export function AssetCard({
           />
         ) : (
           <div
-            className="relative flex flex-col items-center justify-center gap-2 overflow-hidden border border-status-failed/40 bg-[radial-gradient(ellipse_at_top,_color-mix(in_oklab,var(--status-failed)_10%,transparent)_0%,_transparent_60%)] p-4 text-center"
+            className="relative flex w-full flex-col items-center justify-center gap-2 overflow-hidden border border-status-failed/40 bg-[radial-gradient(ellipse_at_top,_color-mix(in_oklab,var(--status-failed)_10%,transparent)_0%,_transparent_60%)] p-4 text-center"
             style={{
               aspectRatio: asset.kind === "image" ? "9 / 16" : "16 / 9",
               maxHeight: compact ? (asset.kind === "image" ? 240 : 200) : asset.kind === "image" ? 420 : 360,
@@ -165,13 +165,6 @@ export function AssetCard({
           </div>
         )}
 
-        {asset.kind === "video" && !asset.url && !isLoadingState && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="rounded-full bg-black/40 p-2 backdrop-blur-sm">
-              <Play className="h-4 w-4 text-white/80" />
-            </div>
-          </div>
-        )}
 
         <AssetActions
           asset={asset}
