@@ -81,7 +81,7 @@ export interface StageState {
 export interface AssetVersion {
   url: string;
   createdAt: number;
-  source: "init" | "qc-fix" | "manual-retry" | "batch-edit" | "manual-edit";
+  source: "init" | "qc-fix" | "manual-retry" | "batch-edit" | "manual-edit" | "manual-revert";
   note?: string;
 }
 
