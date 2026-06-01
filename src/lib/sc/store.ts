@@ -287,6 +287,35 @@ export const useSC = create<SCState>((set, get) => {
       assets: s.assets.map((a) => (a.id === id ? { ...a, ...patch } : a)),
     }));
 
+  /**
+   * Update an asset's `url` while preserving the previous URL in `versions[]`.
+   * Use this for any user-visible regeneration (QC fix, manual retry,
+   * batch-edit) so the gallery can show every prior version.
+   */
+  const updateAssetWithVersion = (
+    id: string,
+    nextUrl: string,
+    source: import("./types").AssetVersion["source"],
+    note?: string,
+    extra?: Partial<Asset>,
+  ) =>
+    set((s) => ({
+      assets: s.assets.map((a) => {
+        if (a.id !== id) return a;
+        const prev = a.url;
+        const versions = a.versions ? [...a.versions] : [];
+        if (prev && /^https?:\/\//.test(prev) && prev !== nextUrl) {
+          versions.push({
+            url: prev,
+            createdAt: Date.now(),
+            source: a.versions?.length ? source : "init",
+            note,
+          });
+        }
+        return { ...a, ...extra, url: nextUrl, versions };
+      }),
+    }));
+
   const streamLines = (
     id: StageId,
     lines: string[],
