@@ -1,71 +1,43 @@
-## 目标
+# 修复四个收尾问题
 
-修掉 5 个一致性问题，让 Vibe Aideo 的流水线真正跟着用户输入跑，并把 Auto 模式也变成"15s 内不操作就继续"的确认流。
+## 1. Wardrobe（服装/道具）阶段不再用假图
+**现状**：`store.ts` runWardrobe 里 W01/W02/P01 三张全部硬塞 `SAMPLE_KEYFRAME`（香水那张），所以无论用户主题是什么，前面 3 张都长一样。
+**改法**：和 Paint 阶段一致，走真实 `streamGenerateImage`：
+- 根据 `script.wardrobe[i].caption` + `brief.prompt` 生成英文 prompt（W01 主角形象 / W02 配角 / P01 关键道具，主体必须是用户主题里的对象）
+- 串行生成，`onPartial` 给 data URL 做模糊预览，完成后 `uploadBase64Image` 拿 https URL
+- 失败走和 Paint 一样的 Failed 流程
+- 未登录回退仍可保留 SAMPLE_KEYFRAME（仅 fallback）
 
----
+## 2. Loading 样式去掉两个半圆线圈
+**现状**：`GradientLoader.tsx` 中央有两个反向旋转的环（你截图里那两个蓝色半圆）。
+**改法**：移除 `Dual counter-rotating rings` 整块 div，只保留蓝色 aurora 渐变 + 横向 shimmer 扫光 + 底部 label。让 loading 看起来是「整图在流式渲染」而不是 spinner。
 
-## 1. 剧本/前置阶段仍是"香水/YSL"问题
+## 3. QC 修正后角色仍不一致
+**根因**：`applyQCFixInternal` 用纯 text-to-image (`streamGenerateImage`) 重生成，没有把 W01/W02/P01 参考图喂进去，所以模型每次都重新想象角色 → 自然飘。
+**改法**：把"修正"从 text-to-image 升级到 image-edit + 多参考图：
+- 新增 server fn `src/lib/image-edit.functions.ts`，调用 `google/gemini-3.1-flash-image-preview`（聊天 multimodal shape），messages 里依次塞入：W01/W02/P01 图 URL（角色/道具锁），原始失败镜头的 URL（构图锁），+ `issue.fixPrompt` + `brief.prompt`
+- `applyQCFixInternal` 改成调这个新 fn，拿 b64 → `uploadBase64Image` → `updateAsset(shotId, { url })`
+- 同时把首轮 Paint 也可选地用 image-edit（W01-P01 作为 ref）保证一开始就一致；本次只做 QC 修正路径，避免改动面过大
 
-根因有两处：
-- **AI 输出**：`script.functions.ts` 的 system prompt 已禁 YSL，但只是负面词，模型仍漂移。需要在 prompt 里把用户原始 prompt 放在最顶部并强约束输出主题词必须命中用户主题，加 1 条反例 few-shot。
-- **前端硬编码**：流水线里有写死的"YSL/巴黎/暮蓝/烛火"，即使 AI 给出正确剧本也会被覆盖：
-  - `store.ts:363` Building the scene 默认 summary "镜头语言：缓推 + 侧跟 + 微距旋转" — 改成读 `script.cameraLanguage`，没有就用 brief.prompt 派生的一句通用描述。
-  - `store.ts:497-503` Paint 阶段 thought 文案"暮蓝主光 + 烛火点缀"等 — 改成读 `script.shots` 的 motion/scene/elements 自动汇总（"基于 W01/W02/P01，将生成 N 个关键帧，构图/光照依据 {script.mood}"）。
-  - `samples.ts` 的 `STORYBOARD_ROWS` / `KEYFRAME_PROMPT_DETAIL` / `SCRIPT_ROWS` 含 YSL 文案 — 作为 fallback 时不要直接拼到 prompt。把 paint 阶段 fallback 的 `KEYFRAME_PROMPT_DETAIL` 拼接改成只用 `brief.prompt + shot.scene/motion/elements`（参考样板只在没有任何用户 brief 时才用，且改成中性"商品/人物特写"占位）。
-  - `store.ts:1316` Demo 入口 "Demo: YSL Libre 30s" → 改成中性 demo（例如 "Demo: 城市晚风 30s"）。
+## 4. 生成失败 UI 重做 + 真实错误原因 + 不扣积分提示
+**现状**：`AssetCard.tsx` 失败态只有"生成失败 + 重试"两行红字；`Asset` 类型没有 `error` 字段；store 把错误信息只塞进 stage summary。
+**改法**：
+- `types.ts` 给 `Asset` 加 `errorMessage?: string`、`errorCode?: string`
+- store 里所有 `updateAsset(id, { status: "Failed" })` 同时写入 `errorMessage`（`(e as Error).message` 或 seedance 失败原因 / 轮询超时文案）；并且**失败时不调用 `consume()`**（当前实现已经如此，仅需在 UI 上明示"未扣积分"）
+- `AssetCard.tsx` 失败态换成卡片化设计：
+  - 顶部一个柔和红色 icon + "生成失败"标题
+  - 下方一行细字显示 `asset.errorMessage`（截断 2 行）
+  - 一行绿色小标"本次未扣除积分"
+  - 底部一排按钮：重试（主） / 查看详情（hover 显示完整错误 tooltip）
+  - 整体用 `bg-surface-2/60` + `border-status-failed/30` 而不是大红字
+- 同步在 GradientLoader 旁边失败回退也用这套样式
 
-## 2. Wardrobe 必须显式确认（不能 auto 直接进 Paint）
+## 技术清单
+- 编辑 `src/lib/sc/store.ts`：runWardrobe 改真实生图；applyQCFixInternal 改 image-edit；所有 Failed 分支带上 errorMessage
+- 新建 `src/lib/image-edit.functions.ts`（multimodal Gemini edit，server fn）
+- 编辑 `src/lib/sc/types.ts`：Asset 增加 `errorMessage`/`errorCode`
+- 编辑 `src/components/sc/GradientLoader.tsx`：删两个旋转环
+- 编辑 `src/components/sc/AssetCard.tsx`：失败态新样式 + "未扣积分"提示
+- 跑构建验证
 
-`runWardrobe` 完成后目前只有 confirm 模式下才 `openGate("wardrobe")`，auto 模式直接 `runPaint`。改成：
-- 不管 auto / confirm，都 `openGate("wardrobe", () => runPaint())`，由 softGate 倒计时托底（见 §5）。
-- 确认 UI 已经存在（`ApprovalChips` + `gate==="wardrobe"`），无需新增组件，只需让它在 auto 模式也出现。
-
-## 3. Loader 改蓝色 + 更动感
-
-改 `src/components/sc/GradientLoader.tsx`：
-- 三块 aurora blob 颜色从 `--accent / --status-recovering / --status-processing`（青绿系）换成蓝色梯度：深靛蓝 `oklch(0.45 0.18 265)` + 电光蓝 `oklch(0.7 0.2 250)` + 冰青蓝 `oklch(0.85 0.12 220)`，统一在 `styles.css` 新增 `--loader-blue-1/2/3` 三个 token。
-- 动效更强：
-  - aurora 动画时长 7s/9s/11s → 4s/5s/6.5s，曲线改 `cubic-bezier(.4,0,.2,1)`，加 scale 1→1.2 抖动。
-  - 中心环：从单层 `animate-spin` 改成"双层反向旋转 + 外圈进度 dash"，dash 用 `stroke-dasharray` 动态滚动。
-  - 增加一条横向 shimmer 高光条（绝对定位，3s 周期从左滑到右），制造"流动"感。
-
-## 4. QC 阶段接入真后端（不再 setTimeout 假修正）
-
-当前 `runQC` / `applyQCFixInternal` 全是 `schedule(...)` 假流程。改成：
-
-新建 **`src/lib/qc.functions.ts`**：
-- `checkConsistency` server fn (POST)：入参 `{ shots: { id, url, scene, elements }[], brief }`。调用 Lovable AI `google/gemini-2.5-flash`（多模态，传 `image_url`），通过 tool calling 返回结构化 `{ issues: { shotId, dimension: '角色'|'场景'|'服装'|'故事'|'幻觉'|'合规', severity, suggestion, fixPrompt }[], passedDimensions: string[] }`。
-- 缺 LOVABLE_API_KEY 时降级返回 `{ issues: [], passedDimensions: [...] }` 不中断流程。
-
-store 的 `runQC`：
-- 串行 streamLines 改为：发起 `checkConsistency`，等真实结果再 `appendSummary` "发现 N 处问题" 或 "全部通过"。
-- 6 个维度 chip 来自 `passedDimensions` + `issues[].dimension`，不再写死。
-
-store 的 `applyQCFixInternal`：
-- 对每个 issue.shotId，调用 `streamGenerateImage`（已有）用 `fixPrompt + 原 scene + brief.prompt` 重新生成图，覆盖该 shot 的 asset url（替换原本只跑动画的假流程）。
-- 真实失败时降级到"保留原样"并写明原因。
-
-## 5. Auto 模式 = 15s 倒计时确认（每个关键节点）
-
-在 store.ts 集中改：
-- `openGate` 中的 `fireAt: Date.now() + 20000` → `15000`，schedule 的延迟同步成 15000。
-- 三个"现在 auto 直接 schedule 下一步"的位置统一改成"无论 auto/confirm 都 openGate"：
-  1. `runStructure` 完成 → `openGate("script", () => runWardrobe())`
-  2. `runWardrobe` 完成 → `openGate("wardrobe", () => runPaint())`（§2）
-  3. `runPaint` 完成 → `openGate("keyframe", () => runQC())`
-  4. `runQC` 完成且有 issues → `openGate("qc-fix", () => applyQCFixInternal())`
-- UI 已通过 `softGate.fireAt` 计算倒计时；只需确认 `ApprovalChips`/`gate` 文案显示"15s 后自动继续"。如果当前显示的是 20s，把硬编码常量也改成 15。
-
----
-
-## 文件变更
-
-- 修改：`src/lib/script.functions.ts`（强化 system prompt + 反例）
-- 修改：`src/lib/sc/store.ts`（去硬编码文案、wardrobe gate、auto 全部走 gate、QC 接真后端、demo 文案）
-- 修改：`src/lib/sc/samples.ts`（fallback 文案中性化）
-- 修改：`src/components/sc/GradientLoader.tsx`（蓝色 + 更动感）
-- 修改：`src/styles.css`（新增 `--loader-blue-*` token + 新 aurora keyframes）
-- 修改：`src/components/sc/ApprovalChips.tsx`（如显示 "20s" 文案则改 "15s"）
-- 新建：`src/lib/qc.functions.ts`（一致性检查 server fn）
-
-完成后跑构建验证。
+确认后我会按顺序执行。
