@@ -1464,20 +1464,31 @@ export const useSC = create<SCState>((set, get) => {
       if (!rec) return;
       clearTimers();
       const stages = initialStages();
-      // Restore stages strictly from the persisted summaries. Mark them ready
-      // (or failed for the failed task) but DO NOT mark stages without snapshot
-      // data as ready, so Workspace knows to skip rendering interactive children
-      // that would otherwise crash on missing runtime data.
-      const snap = rec.stageSummaries ?? {};
+      // Prefer full snapshots (toolCalls + thoughts). Fall back to legacy
+      // summaries-only records.
+      const snaps = rec.stageSnapshots ?? {};
+      const sums = rec.stageSummaries ?? {};
+      let failedStageId: StageId | undefined;
       for (const sid of STAGE_ORDER) {
-        const sum = snap[sid];
-        if (sum && sum.length) {
+        const snap = snaps[sid];
+        const sum = sums[sid];
+        if (snap) {
+          stages[sid] = {
+            status: snap.status,
+            summary: snap.summary.slice(),
+            toolCalls: snap.toolCalls.slice(),
+            thoughts: snap.thoughts.slice(),
+            expanded: true,
+          };
+          if (snap.status === "failed" && !failedStageId) failedStageId = sid;
+        } else if (sum && sum.length) {
           stages[sid] = {
             ...emptyStage(),
             status: rec.status === "failed" && sid === "life" ? "failed" : "ready",
             summary: sum,
-            expanded: false,
+            expanded: true,
           };
+          if (rec.status === "failed" && sid === "life" && !failedStageId) failedStageId = sid;
         }
       }
       const restoredBrief: Brief = rec.brief ?? {
@@ -1487,6 +1498,23 @@ export const useSC = create<SCState>((set, get) => {
         visualSource: "—",
         mode: "—",
       };
+      const chatLog: ChatMsg[] = [];
+      if (rec.status === "failed") {
+        const stageLabel = failedStageId ? STAGE_LABEL[failedStageId] : "运行";
+        const reason = rec.failureReason ?? "未知错误";
+        chatLog.push({
+          id: `restore-${rec.id}`,
+          role: "agent",
+          ts: Date.now(),
+          text: `该任务在「${stageLabel}」阶段失败：${reason}。要我重做这一步，还是从头再跑一遍？`,
+          actions: [
+            ...(failedStageId
+              ? [{ label: "重做此步", kind: "retry-stage" as const, stageId: failedStageId }]
+              : []),
+            { label: "整任务重跑", kind: "rerun-all" as const },
+          ],
+        });
+      }
       set((s) => ({
         runId: s.runId + 1,
         phase: rec.status === "done" ? "done" : "failed",
@@ -1494,15 +1522,17 @@ export const useSC = create<SCState>((set, get) => {
         taskTitle: rec.title,
         taskKind: rec.kind,
         brief: restoredBrief,
+        script: (rec.script as GeneratedScript | undefined) ?? null,
         stages,
         assets: rec.assets,
         gate: null,
         softGate: null,
         selection: [],
-        chatLog: [],
+        chatLog,
         rail: { open: rec.assets.length > 0 },
       }));
     },
+
 
     deleteTask: (id) => {
       const next = get().taskHistory.filter((t) => t.id !== id);
