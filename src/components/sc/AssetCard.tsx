@@ -36,6 +36,9 @@ export function AssetCard({
   const Icon = asset.kind === "image" ? ImageIcon : Film;
   const focusAsset = useSC((s) => s.focusAsset);
   const retryAsset = useSC((s) => s.retryAsset);
+  const openVersionDrawer = useSC((s) => s.openVersionDrawer);
+  const versionCount = (asset.versions?.length ?? 0) + (asset.url ? 1 : 0);
+  const hasVersions = versionCount >= 2;
   const [loaded, setLoaded] = useState(false);
 
 
