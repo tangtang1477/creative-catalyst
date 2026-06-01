@@ -24,6 +24,7 @@ import { LowCreditToast } from "./credits/LowCreditToast";
 import { InlineLowCredit } from "./credits/InlineLowCredit";
 import { useCredits, creditsSelectors } from "@/lib/sc/credits-store";
 import { StageBoundary } from "./StageBoundary";
+import { VersionDrawer } from "./VersionDrawer";
 
 import { cn } from "@/lib/utils";
 
