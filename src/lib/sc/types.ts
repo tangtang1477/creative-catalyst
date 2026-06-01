@@ -78,6 +78,13 @@ export interface StageState {
   thoughts: Thought[];
 }
 
+export interface AssetVersion {
+  url: string;
+  createdAt: number;
+  source: "init" | "qc-fix" | "manual-retry" | "batch-edit" | "manual-edit";
+  note?: string;
+}
+
 export interface Asset {
   id: string;
   kind: "image" | "video";
@@ -96,6 +103,8 @@ export interface Asset {
   errorMessage?: string;
   /** Optional machine code, e.g. "timeout", "gateway_500". */
   errorCode?: string;
+  /** Previous versions (oldest first); current `url` is always the active. */
+  versions?: AssetVersion[];
 }
 
 export interface Brief {
@@ -132,6 +141,13 @@ export interface Attachment {
   ref?: string;
 }
 
+export interface StageSnapshot {
+  status: StageStatus;
+  summary: string[];
+  toolCalls: ToolCall[];
+  thoughts: Thought[];
+}
+
 export interface TaskRecord {
   id: string;
   title: string;
@@ -141,8 +157,14 @@ export interface TaskRecord {
   status: "running" | "done" | "failed" | "interrupted";
   kind: TaskKind;
   assets: Asset[];
-  /** Lightweight per-stage snapshot so restored tasks can show meaningful summary. */
+  /** Legacy lightweight per-stage summary (read-only fallback for old records). */
   stageSummaries?: Partial<Record<StageId, string[]>>;
+  /** Full per-stage snapshot for playback (summary + toolCalls + thoughts). */
+  stageSnapshots?: Partial<Record<StageId, StageSnapshot>>;
+  /** LLM script captured at run time so playback can re-render tables. */
+  script?: unknown;
+  /** Final failure reason (life stage error, if any). */
+  failureReason?: string;
   brief?: Brief | null;
 }
 

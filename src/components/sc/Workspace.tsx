@@ -303,10 +303,12 @@ export function Workspace() {
                     ) : (
                       <div
                         key={m.id}
-                        className="mr-auto flex w-fit max-w-[80%] items-start gap-2 rounded-2xl border border-border bg-surface px-3.5 py-2 text-[13px] text-foreground/85 [animation:stream-fade_280ms_ease-out_both]"
+                        className="mr-auto flex w-fit max-w-[80%] items-start gap-2.5 px-1 py-1 text-[13px] text-foreground/90 [animation:stream-fade_280ms_ease-out_both]"
                       >
-                        <Logo size={14} />
-                        <span>{m.text}</span>
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full ring-1 ring-border bg-surface">
+                          <Logo size={12} />
+                        </span>
+                        <span className="leading-relaxed">{m.text}</span>
                       </div>
                     ),
                   )}

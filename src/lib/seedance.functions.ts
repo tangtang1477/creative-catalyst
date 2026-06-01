@@ -39,7 +39,14 @@ const SubmitInput = z.object({
         .optional(),
       ratio: z.string().optional(),
       resolution: z.enum(["480p", "720p", "1080p"]).optional(),
-      duration: z.number().int().optional(),
+      // Doubao Seedance 2.0 i2v only accepts 5 or 10 seconds.
+      duration: z
+        .number()
+        .int()
+        .refine((n) => n === 5 || n === 10, {
+          message: "duration must be 5 or 10 for doubao-seedance-2-0 i2v",
+        })
+        .optional(),
       generate_audio: z.boolean().optional(),
     })
     .passthrough(),

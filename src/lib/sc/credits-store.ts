@@ -5,6 +5,7 @@ export interface CreditEvent {
   stage: string;
   label: string;
   cost: number;
+  taskId?: string | null;
 }
 
 interface CreditsState {
@@ -15,7 +16,9 @@ interface CreditsState {
   lowOpen: boolean;
   lowDismissedFor: string | null; // taskId user dismissed for
   pulseId: number; // bump on each consume for UI animation triggers
-  consume: (stage: string, label: string, cost: number) => void;
+  /** Whether we have synced with the backend ledger for the current user. */
+  synced: boolean;
+  consume: (stage: string, label: string, cost: number, taskId?: string | null) => void;
   topUp: (n: number) => void;
   resetUsed: () => void;
   canAfford: (cost: number) => boolean;
@@ -23,6 +26,8 @@ interface CreditsState {
   closePricing: () => void;
   openLow: (taskId?: string) => void;
   closeLow: (taskId?: string) => void;
+  /** Pull balance from backend ledger and replace local cache. */
+  syncFromBackend: () => Promise<void>;
 }
 
 const KEY = "sc.credits.v1";
@@ -65,18 +70,39 @@ export const useCredits = create<CreditsState>((set, get) => {
     lowOpen: false,
     lowDismissedFor: null,
     pulseId: 0,
+    synced: false,
 
-    consume: (stage, label, cost) => {
+    consume: (stage, label, cost, taskId) => {
       if (cost <= 0) return;
       set((s) => {
         const used = Math.min(s.total, s.used + cost);
         const history = [
           ...s.history,
-          { ts: Date.now(), stage, label, cost },
+          { ts: Date.now(), stage, label, cost, taskId: taskId ?? null },
         ].slice(-20);
         persist({ total: s.total, used, history });
         return { used, history, pulseId: s.pulseId + 1 };
       });
+      // Fire-and-forget backend ledger insert. If it fails we keep the
+      // optimistic local change (best-effort), but on next syncFromBackend()
+      // the truth from DB wins.
+      void (async () => {
+        try {
+          const { consumeCredits } = await import("@/lib/credits.functions");
+          const r = await consumeCredits({
+            data: {
+              taskId: taskId ?? null,
+              stage,
+              label,
+              cost,
+            },
+          });
+          set({ used: r.used, total: r.total, synced: true });
+          persist({ total: r.total, used: r.used, history: get().history });
+        } catch (err) {
+          console.warn("[credits] backend ledger insert failed", err);
+        }
+      })();
     },
     topUp: (n) => {
       set((s) => {
@@ -99,6 +125,17 @@ export const useCredits = create<CreditsState>((set, get) => {
     },
     closeLow: (taskId) =>
       set({ lowOpen: false, lowDismissedFor: taskId ?? get().lowDismissedFor }),
+
+    syncFromBackend: async () => {
+      try {
+        const { getCreditsBalance } = await import("@/lib/credits.functions");
+        const r = await getCreditsBalance();
+        set({ used: r.used, total: r.total, synced: true });
+        persist({ total: r.total, used: r.used, history: get().history });
+      } catch (err) {
+        console.warn("[credits] backend balance fetch failed", err);
+      }
+    },
   };
 });
 

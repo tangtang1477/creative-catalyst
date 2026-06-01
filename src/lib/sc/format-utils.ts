@@ -21,3 +21,19 @@ export function formatDurationLabel(seconds: number): string {
   const ss = s % 60;
   return `${mm}:${ss.toString().padStart(2, "0")}`;
 }
+
+/**
+ * Doubao Seedance 2.0 (i2v / first-frame-to-video) only accepts 5 or 10 second
+ * durations. Clamp arbitrary user-requested durations to the nearest legal
+ * value, capped at 10s. Returns { duration, clamped } so callers can surface
+ * a note when the value was changed.
+ */
+export function clampSeedanceDuration(seconds: number): {
+  duration: 5 | 10;
+  clamped: boolean;
+} {
+  const n = Number.isFinite(seconds) ? Math.round(seconds) : 5;
+  if (n <= 5) return { duration: 5, clamped: n !== 5 };
+  if (n <= 7) return { duration: 5, clamped: true };
+  return { duration: 10, clamped: n !== 10 };
+}

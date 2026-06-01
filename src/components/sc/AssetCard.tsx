@@ -127,27 +127,27 @@ export function AssetCard({
           />
         ) : (
           <div
-            className="relative flex flex-col items-center justify-center gap-2 overflow-hidden rounded-xl border border-status-failed/30 bg-[radial-gradient(ellipse_at_top,_rgba(239,68,68,0.08),_transparent_60%)] px-4 text-center"
+            className="relative flex flex-col items-center justify-center gap-2 overflow-hidden border border-status-failed/40 bg-[radial-gradient(ellipse_at_top,_color-mix(in_oklab,var(--status-failed)_10%,transparent)_0%,_transparent_60%)] p-4 text-center"
             style={{
               aspectRatio: asset.kind === "image" ? "9 / 16" : "16 / 9",
-              maxHeight: compact ? 200 : 280,
+              maxHeight: compact ? (asset.kind === "image" ? 240 : 200) : asset.kind === "image" ? 420 : 360,
             }}
           >
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-status-failed/15 text-status-failed">
-              <RefreshCw className="h-3.5 w-3.5" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-status-failed/15 text-status-failed">
+              <RefreshCw className="h-4 w-4" />
             </div>
-            <div className="text-[12px] font-medium text-foreground/90">
+            <div className="text-[12.5px] font-semibold text-foreground/90">
               生成失败
             </div>
             {asset.errorMessage && (
               <div
-                className="line-clamp-2 max-w-[200px] text-[10.5px] leading-snug text-muted-foreground"
+                className="line-clamp-3 max-w-[85%] text-[10.5px] leading-snug text-muted-foreground"
                 title={asset.errorMessage}
               >
                 {asset.errorMessage}
               </div>
             )}
-            <div className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+            <div className="rounded-full bg-emerald-500/12 px-2 py-0.5 text-[10px] font-medium text-emerald-400 ring-1 ring-emerald-500/20">
               本次未扣除积分
             </div>
             <SCButton

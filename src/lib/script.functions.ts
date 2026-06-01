@@ -30,19 +30,22 @@ export interface GeneratedScript {
   shots: ScriptShot[];
 }
 
-const SYSTEM_PROMPT = `你是一位资深广告导演 + 视觉总监。你必须**严格围绕用户给出的主题**产出 30 秒短片方案，绝不替换主题或套用现成案例。
+const SYSTEM_PROMPT = `你是一位资深广告导演 + 视觉总监。严格围绕用户给出的主题产出短片方案，绝不替换主题或套用现成案例。
 
-强制约束（违反任何一条都视为失败）：
-- 所有 scene/elements/prompt 必须出现用户主题里的主体（例如用户写"金毛摊煎饼"，那就是金毛 + 煎饼摊，不是香水 / 不是模特 / 不是巴黎公寓）。
-- 禁止出现下列词，除非用户原文里有：YSL、Libre、Parisian、Paris、巴黎、Haussmann、perfume、香水、丝绒、velvet、模特剪影、化妆台。
-- 不要默认"奢侈品广告"模板。如果用户主题是宠物/食物/科技/游戏/纪录片，画面、光照、节奏都要切换到那个语境。
+强制约束：
+- 所有 scene/elements/prompt 必须围绕用户主题的真实主体（用户写"金毛摊煎饼"就是金毛 + 煎饼摊，不是香水 / 模特 / 巴黎）。
+- 禁止默认"奢侈品广告"模板；按主题切换语境（宠物 / 食物 / 科技 / 游戏 / 纪录片 / MV …）。
+- **数量按主题复杂度真实评估，不要硬凑也不要硬限**：
+  - wardrobe：2–8 个条目（角色 W01/W02/W03… + 关键道具 P01/P02…），主题简单就 2–3 个，多角色或多道具时就多生成。
+  - shots：3–12 个分镜（A01…A0N），简单概念片 3–5 个，叙事丰富时 6–12 个。
+  - structureSummary：3–8 条要点，足够说清叙事即可。
 
 输出字段：
-- mood：情绪/氛围一句话（贴用户主题）
+- mood：情绪/氛围一句话
 - cameraLanguage：镜头语言一句话
-- structureSummary：5 条中文要点（叙事结构、节奏、声音设计等，全部围绕用户主题）
-- wardrobe：3 个条目 (W01 主角形象, W02 配角或第二形象, P01 关键道具) — 必须是用户主题里真正存在的主体/道具；每个含简短中文 caption
-- shots：5 个分镜 A01-A05，覆盖完整 30s 叙事；每个 shot 含 duration(如 "3s")、motion(英文如 "Slow push-in"、"Side dolly")、scene(中文场景，紧扣用户主题)、elements(中文元素)、prompt(英文完整 text-to-image prompt，~60 词，主体必须是用户主题里的对象)`;
+- structureSummary：3–8 条中文要点
+- wardrobe：每条含 id（W01/W02/W03…/P01/P02… 自增）+ 简短中文 caption
+- shots：每条含 shot(A01..A0N 自增)、duration(如 "3s")、motion(英文)、scene(中文)、elements(中文)、prompt(英文 ~60 词 text-to-image prompt)`;
 
 const TOOL = {
   type: "function" as const,
@@ -62,12 +65,15 @@ const TOOL = {
         },
         wardrobe: {
           type: "array",
-          minItems: 3,
-          maxItems: 3,
+          minItems: 2,
+          maxItems: 8,
           items: {
             type: "object",
             properties: {
-              id: { type: "string", enum: ["W01", "W02", "P01"] },
+              id: {
+                type: "string",
+                description: "W01/W02/W03... for characters, P01/P02... for props",
+              },
               caption: { type: "string" },
             },
             required: ["id", "caption"],
@@ -76,14 +82,14 @@ const TOOL = {
         },
         shots: {
           type: "array",
-          minItems: 5,
-          maxItems: 5,
+          minItems: 3,
+          maxItems: 12,
           items: {
             type: "object",
             properties: {
               shot: {
                 type: "string",
-                enum: ["A01", "A02", "A03", "A04", "A05"],
+                description: "A01, A02, ... sequential id",
               },
               duration: { type: "string" },
               motion: { type: "string" },

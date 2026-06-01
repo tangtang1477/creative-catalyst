@@ -22,11 +22,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { streamGenerateImage, uploadBase64Image } from "@/lib/upload-image";
 import { submitVideoTask, pollVideoTask } from "@/lib/seedance.functions";
 import { generateScript, type GeneratedScript } from "@/lib/script.functions";
-import { parseFormatDuration, parseFormatRatio, formatDurationLabel } from "@/lib/sc/format-utils";
+import { parseFormatDuration, parseFormatRatio, formatDurationLabel, clampSeedanceDuration } from "@/lib/sc/format-utils";
 
 
-const consume = (stage: string, label: string, cost: number) =>
-  useCredits.getState().consume(stage, label, cost);
+const consume = (stage: string, label: string, cost: number, taskId?: string | null) =>
+  useCredits.getState().consume(stage, label, cost, taskId);
 const canAfford = (cost: number) => useCredits.getState().canAfford(cost);
 
 interface RailState {
@@ -287,6 +287,35 @@ export const useSC = create<SCState>((set, get) => {
       assets: s.assets.map((a) => (a.id === id ? { ...a, ...patch } : a)),
     }));
 
+  /**
+   * Update an asset's `url` while preserving the previous URL in `versions[]`.
+   * Use this for any user-visible regeneration (QC fix, manual retry,
+   * batch-edit) so the gallery can show every prior version.
+   */
+  const updateAssetWithVersion = (
+    id: string,
+    nextUrl: string,
+    source: import("./types").AssetVersion["source"],
+    note?: string,
+    extra?: Partial<Asset>,
+  ) =>
+    set((s) => ({
+      assets: s.assets.map((a) => {
+        if (a.id !== id) return a;
+        const prev = a.url;
+        const versions = a.versions ? [...a.versions] : [];
+        if (prev && /^https?:\/\//.test(prev) && prev !== nextUrl) {
+          versions.push({
+            url: prev,
+            createdAt: Date.now(),
+            source: a.versions?.length ? source : "init",
+            note,
+          });
+        }
+        return { ...a, ...extra, url: nextUrl, versions };
+      }),
+    }));
+
   const streamLines = (
     id: StageId,
     lines: string[],
@@ -370,7 +399,7 @@ export const useSC = create<SCState>((set, get) => {
       1300,
       () => {
         updateStage("scene", { status: "ready" });
-        consume("scene", "Scene · brief analysis", 1);
+        consume("scene", "Scene · brief analysis", 1, get().taskId);
         collapseAfter("scene", 1400);
         schedule(() => runStructure(), 1600);
       },
@@ -418,7 +447,7 @@ export const useSC = create<SCState>((set, get) => {
       }
 
       updateStage("structure", { status: "ready" });
-      consume("structure", "Script + storyboard", 3);
+      consume("structure", "Script + storyboard", 3, get().taskId);
       openGate("script", () => runWardrobe());
     })();
   };
@@ -475,12 +504,13 @@ export const useSC = create<SCState>((set, get) => {
         for (const w of wardrobeAssets) {
           if (get().runId !== startedRunId) return;
           updateAsset(w.id, { status: "Generating", errorMessage: undefined });
-          const role =
-            w.id === "P01"
-              ? "key prop / object hero shot, centered, studio lighting, neutral background"
-              : w.id === "W01"
-                ? "main character / hero subject portrait, full body, neutral background, reference sheet style"
-                : "secondary character / supporting subject portrait, full body, neutral background, reference sheet style";
+          const isProp = /^P/i.test(w.id);
+          const isHero = /^W0*1$/i.test(w.id);
+          const role = isProp
+            ? "key prop / object hero shot, centered, studio lighting, neutral background"
+            : isHero
+              ? "main character / hero subject portrait, full body, neutral background, reference sheet style"
+              : "secondary character / supporting subject portrait, full body, neutral background, reference sheet style";
           const fullPrompt = [
             `Reference asset ${w.id} for the short film. Subject: ${w.caption}.`,
             `Style: ${role}.`,
@@ -499,7 +529,7 @@ export const useSC = create<SCState>((set, get) => {
             const url = await uploadBase64Image({ base64: b64, userId, taskId });
             if (get().runId !== startedRunId) return;
             updateAsset(w.id, { status: "Ready", url, errorMessage: undefined });
-            consume("wardrobe", `Wardrobe · ${w.id}`, 2);
+            consume("wardrobe", `Wardrobe · ${w.id}`, 2, get().taskId);
           } catch (e) {
             console.error("[wardrobe] failed", w.id, e);
             updateAsset(w.id, {
@@ -532,13 +562,18 @@ export const useSC = create<SCState>((set, get) => {
     runTool("paint", "tool", "text-to-image · streaming", 1200, 900);
 
     const scriptForThought = get().script;
+    const wardrobeIds = get()
+      .assets.filter((a) => a.stageId === "wardrobe")
+      .map((a) => a.id);
     const shotCount = scriptForThought?.shots?.length ?? STORYBOARD_ROWS.length;
     schedule(
       () =>
         addThought("paint", {
           title: "基于服装/道具素材生成分镜",
           body: [
-            "锁定主角 W01 + 配角 W02 + 道具 P01 作为参考。",
+            wardrobeIds.length
+              ? `锁定服装/道具参考：${wardrobeIds.join(" · ")}`
+              : "未生成服装/道具参考 · 直接按 prompt 渲染",
             `将分批生成 ${shotCount} 个关键帧，覆盖全部镜头。`,
             scriptForThought?.cameraLanguage
               ? `镜头语言：${scriptForThought.cameraLanguage}`
@@ -547,7 +582,7 @@ export const useSC = create<SCState>((set, get) => {
               ? `情绪基调：${scriptForThought.mood}`
               : "情绪基调：贴合用户主题",
           ],
-          thumbAssetIds: ["W01", "W02", "P01"],
+          thumbAssetIds: wardrobeIds,
         }),
       1200,
     );
@@ -623,7 +658,7 @@ export const useSC = create<SCState>((set, get) => {
             const url = await uploadBase64Image({ base64: b64, userId, taskId });
             if (get().runId !== startedRunId) return;
             updateAsset(r.shot, { status: "Ready", url });
-            consume("paint", `Keyframe ${r.shot} · stream-gen`, 5);
+            consume("paint", `Keyframe ${r.shot} · stream-gen`, 5, get().taskId);
             appendSummary("paint", `${r.shot} Ready · ${r.motion}`);
           } catch (e) {
             console.error("[paint] failed", r.shot, e);
@@ -856,11 +891,18 @@ export const useSC = create<SCState>((set, get) => {
       return;
     }
     const briefFormat = get().brief?.format ?? "";
-    const videoDuration = parseFormatDuration(briefFormat);
+    const requestedDuration = parseFormatDuration(briefFormat);
+    const { duration: videoDuration, clamped } = clampSeedanceDuration(requestedDuration);
     const videoRatio = parseFormatRatio(briefFormat);
 
     updateStage("life", { status: "running", expanded: true });
     runTool("life", "skill", "first-frame-to-video · Seedance", 1200, 0);
+    if (clamped) {
+      appendSummary(
+        "life",
+        `Seedance i2v 仅支持 5s/10s，请求 ${requestedDuration}s 已自动调整为 ${videoDuration}s`,
+      );
+    }
     streamLines("life", [`提交 V01 first-frame-to-video · ${videoDuration}s · ${videoRatio}`], 0, 100);
     set((s) => ({
       assets: [
@@ -897,7 +939,7 @@ export const useSC = create<SCState>((set, get) => {
       schedule(() => {
         updateAsset("V01", { status: "Ready", url: SAMPLE_VIDEO, poster: SAMPLE_KEYFRAME });
         updateStage("life", { status: "ready" });
-        consume("life", "Video V01 · sample", VIDEO_COST);
+        consume("life", "Video V01 · sample", VIDEO_COST, get().taskId);
         appendSummary("life", "V01 Ready (sample)");
         collapseAfter("life", 1800);
         persistCurrent("running");
@@ -955,7 +997,7 @@ export const useSC = create<SCState>((set, get) => {
                   poster: firstKeyframeUrl,
                 });
                 updateStage("life", { status: "ready" });
-                consume("life", "Video V01 · seedance", VIDEO_COST);
+                consume("life", "Video V01 · seedance", VIDEO_COST, get().taskId);
                 appendSummary("life", "V01 Ready · seedance oss_url 已写入");
                 collapseAfter("life", 1800);
                 persistCurrent("running");
@@ -1025,7 +1067,7 @@ export const useSC = create<SCState>((set, get) => {
     ];
     streamLines("details", checks, 500, 200, () => {
       updateStage("details", { status: "ready" });
-      consume("details", "Final QC pass", 2);
+      consume("details", "Final QC pass", 2, get().taskId);
       set({ phase: "done" });
       collapseAfter("details", 1600);
       persistCurrent("done");
