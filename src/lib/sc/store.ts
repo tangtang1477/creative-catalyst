@@ -1260,46 +1260,23 @@ export const useSC = create<SCState>((set, get) => {
         ts: Date.now(),
       };
       const agentId = uid();
-      const toolId = uid();
-      const startedAt = Date.now();
       const agentMsg: ChatMsg = {
         id: agentId,
         role: "agent",
         text: "",
         ts: Date.now(),
         streaming: true,
-        toolCalls: [
-          {
-            id: toolId,
-            kind: "skill",
-            label: "chat-director · streaming reply",
-            status: "running",
-            startedAt,
-            input: t,
-          },
-        ],
+        thinking: "",
+        toolCalls: [],
       };
       set((s) => ({ chatLog: [...s.chatLog, userMsg, agentMsg] }));
 
-      const patchAgent = (patch: Partial<ChatMsg>) =>
-        set((s) => ({
-          chatLog: s.chatLog.map((m) =>
-            m.id === agentId ? { ...m, ...patch } : m,
-          ),
-        }));
-      const patchTool = (
-        patch: Partial<import("./types").ChatToolCall>,
+      const patchAgent = (
+        updater: (msg: ChatMsg) => Partial<ChatMsg>,
       ) =>
         set((s) => ({
           chatLog: s.chatLog.map((m) =>
-            m.id === agentId
-              ? {
-                  ...m,
-                  toolCalls: (m.toolCalls ?? []).map((tc) =>
-                    tc.id === toolId ? { ...tc, ...patch } : tc,
-                  ),
-                }
-              : m,
+            m.id === agentId ? { ...m, ...updater(m) } : m,
           ),
         }));
 
@@ -1336,6 +1313,24 @@ export const useSC = create<SCState>((set, get) => {
           },
         };
 
+        const failWith = (reason: string) => {
+          patchAgent((m) => ({
+            streaming: false,
+            text: "AI 暂不可用：" + reason,
+            toolCalls: (m.toolCalls ?? []).map((tc) =>
+              tc.status === "done" || tc.status === "failed"
+                ? tc
+                : {
+                    ...tc,
+                    status: "failed",
+                    durationMs:
+                      tc.durationMs ?? Date.now() - tc.startedAt,
+                    output: tc.output ?? reason,
+                  },
+            ),
+          }));
+        };
+
         try {
           const res = await fetch("/api/chat-stream", {
             method: "POST",
@@ -1352,53 +1347,144 @@ export const useSC = create<SCState>((set, get) => {
                   : errText || `HTTP ${res.status}`,
             );
           }
+
           const reader = res.body.getReader();
           const decoder = new TextDecoder();
           let buf = "";
-          let acc = "";
+          let pendingEvent = "message";
+
+          const handleEvent = (ev: string, dataStr: string) => {
+            let data: unknown;
+            try {
+              data = JSON.parse(dataStr);
+            } catch {
+              return;
+            }
+            const d = data as {
+              id?: string;
+              label?: string;
+              text?: string;
+              summary?: string;
+              message?: string;
+            };
+
+            if (ev === "phase") {
+              if (!d.id || !d.label) return;
+              patchAgent((m) => ({
+                toolCalls: [
+                  ...(m.toolCalls ?? []),
+                  {
+                    id: d.id!,
+                    label: d.label!,
+                    kind: "skill",
+                    status: "pending",
+                    startedAt: Date.now(),
+                  },
+                ],
+              }));
+            } else if (ev === "phase-start") {
+              patchAgent((m) => ({
+                toolCalls: (m.toolCalls ?? []).map((tc) =>
+                  tc.id === d.id
+                    ? { ...tc, status: "running", startedAt: Date.now() }
+                    : tc,
+                ),
+              }));
+            } else if (ev === "thinking") {
+              if (!d.text) return;
+              patchAgent((m) => {
+                const next = (m.thinking ?? "") + d.text!;
+                const tcs = (m.toolCalls ?? []).map((tc) =>
+                  tc.status === "running"
+                    ? { ...tc, input: (tc.input ?? "") + d.text! }
+                    : tc,
+                );
+                return { thinking: next, toolCalls: tcs };
+              });
+            } else if (ev === "phase-done") {
+              patchAgent((m) => ({
+                toolCalls: (m.toolCalls ?? []).map((tc) =>
+                  tc.id === d.id
+                    ? {
+                        ...tc,
+                        status: "done",
+                        durationMs: Date.now() - tc.startedAt,
+                        output: d.summary ?? tc.output,
+                      }
+                    : tc,
+                ),
+              }));
+            } else if (ev === "token") {
+              if (!d.text) return;
+              patchAgent((m) => ({ text: m.text + d.text! }));
+            } else if (ev === "done") {
+              patchAgent((m) => ({
+                streaming: false,
+                toolCalls: (m.toolCalls ?? []).map((tc) =>
+                  tc.status === "done" || tc.status === "failed"
+                    ? tc
+                    : {
+                        ...tc,
+                        status: "done",
+                        durationMs:
+                          tc.durationMs ?? Date.now() - tc.startedAt,
+                      },
+                ),
+                text: m.text || d.text || "AI 没有返回内容，请换种说法再试一次。",
+              }));
+            } else if (ev === "error") {
+              failWith(d.message ?? "stream_failed");
+            }
+          };
+
           while (true) {
             const { value, done } = await reader.read();
             if (done) break;
             buf += decoder.decode(value, { stream: true });
-            const lines = buf.split(/\r?\n/);
-            buf = lines.pop() ?? "";
-            for (const raw of lines) {
-              const line = raw.trim();
-              if (!line.startsWith("data:")) continue;
-              const data = line.slice(5).trim();
-              if (!data || data === "[DONE]") continue;
-              try {
-                const j = JSON.parse(data) as {
-                  choices?: Array<{ delta?: { content?: string } }>;
-                };
-                const delta = j.choices?.[0]?.delta?.content;
-                if (delta) {
-                  acc += delta;
-                  patchAgent({ text: acc });
-                }
-              } catch {
-                /* keep streaming on malformed lines */
+            // SSE：以空行分隔消息块
+            const blocks = buf.split(/\r?\n\r?\n/);
+            buf = blocks.pop() ?? "";
+            for (const block of blocks) {
+              const lines = block.split(/\r?\n/);
+              let ev = "message";
+              const dataLines: string[] = [];
+              for (const raw of lines) {
+                const line = raw;
+                if (line.startsWith("event:")) ev = line.slice(6).trim();
+                else if (line.startsWith("data:"))
+                  dataLines.push(line.slice(5).replace(/^\s/, ""));
+              }
+              if (dataLines.length) {
+                handleEvent(ev, dataLines.join("\n"));
               }
             }
           }
-          const durationMs = Date.now() - startedAt;
-          patchTool({ status: "done", durationMs, output: acc || "(空回复)" });
-          patchAgent({
+
+          // 流自然结束兜底
+          patchAgent((m) => ({
             streaming: false,
-            text: acc || "AI 没有返回内容，请换种说法再试一次。",
-          });
+            toolCalls: (m.toolCalls ?? []).map((tc) =>
+              tc.status === "done" || tc.status === "failed"
+                ? tc
+                : {
+                    ...tc,
+                    status: "done",
+                    durationMs: tc.durationMs ?? Date.now() - tc.startedAt,
+                  },
+            ),
+            text:
+              m.text || "AI 没有返回内容，请换种说法再试一次。",
+          }));
+          // 抑制未使用变量警告
+          void pendingEvent;
         } catch (err) {
-          const reason =
-            err instanceof Error ? err.message : "未知错误";
-          const durationMs = Date.now() - startedAt;
-          patchTool({ status: "failed", durationMs, output: reason });
-          patchAgent({
-            streaming: false,
-            text: "AI 暂不可用：" + reason,
-          });
+          const reason = err instanceof Error ? err.message : "未知错误";
+          failWith(reason);
         }
       })();
     },
+
+
 
 
     addAttachment: (a) => set((s) => ({ attachments: [...s.attachments, a] })),
