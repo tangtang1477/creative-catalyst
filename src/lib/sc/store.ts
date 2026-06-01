@@ -1620,6 +1620,9 @@ export const useSC = create<SCState>((set, get) => {
       }));
     },
 
+    openVersionDrawer: (assetId) => set({ versionDrawerAssetId: assetId }),
+    closeVersionDrawer: () => set({ versionDrawerAssetId: null }),
+
 
 
 
