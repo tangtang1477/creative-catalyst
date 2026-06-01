@@ -347,3 +347,19 @@ export function Workspace() {
     </div>
   );
 }
+
+function WorkspaceVersionDrawer() {
+  const assetId = useSC((s) => s.versionDrawerAssetId);
+  const close = useSC((s) => s.closeVersionDrawer);
+  const asset = useSC((s) => s.assets.find((a) => a.id === assetId) ?? null);
+  return (
+    <VersionDrawer
+      asset={asset}
+      open={!!assetId}
+      onOpenChange={(o) => {
+        if (!o) close();
+      }}
+    />
+  );
+}
+
