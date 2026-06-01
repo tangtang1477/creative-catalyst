@@ -57,6 +57,9 @@ interface ChatMsg {
   streaming?: boolean;
   toolCalls?: import("./types").ChatToolCall[];
   thinking?: string;
+  optionCards?: import("./types").ChatOptionCard[];
+  /** ai turn 顶部一行 skill 标题 */
+  skill?: { name: string; sub?: string };
 }
 
 
