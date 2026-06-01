@@ -977,7 +977,7 @@ export const useSC = create<SCState>((set, get) => {
           userId = data.user?.id ?? null;
           if (userId) set({ currentUserId: userId });
         } catch {
-          // ignore
+          /* ignore */
         }
       }
       if (!userId || !firstKeyframeUrl) {
@@ -991,12 +991,6 @@ export const useSC = create<SCState>((set, get) => {
         persistCurrent("failed");
         return;
       }
-
-
-    updateAsset("V01", { status: "Processing" });
-    appendSummary("life", "Seedance 提交中（first-frame-to-video）…");
-
-    void (async () => {
       try {
         const { taskId: seedanceTaskId } = await submitVideoTask({
           data: {
