@@ -962,22 +962,35 @@ export const useSC = create<SCState>((set, get) => {
       const httpFirst = paintAssets.find((x) => /^https?:\/\//.test(x.url!));
       return (httpFirst ?? paintAssets[0])?.url;
     })();
-    const userId = get().currentUserId;
     const briefPrompt = get().brief?.prompt ?? "";
     const startedRunId = get().runId;
 
-    if (!userId || !firstKeyframeUrl) {
-      // 没有真实生成路径：直接 Failed（不扣分、不塞示例视频）
-      const reason = !userId
-        ? "未登录，无法生成真实视频。请先登录后重试。"
-        : "缺少首帧关键帧。请先重跑 Keyframes 阶段，再生成视频。";
-      updateAsset("V01", { status: "Failed", errorMessage: reason });
-      updateStage("life", { status: "failed" });
-      appendSummary("life", `生成失败：${reason}（未扣积分）`);
-      set({ phase: "failed" });
-      persistCurrent("failed");
-      return;
-    }
+    updateAsset("V01", { status: "Processing" });
+    appendSummary("life", "Seedance 提交中（first-frame-to-video）…");
+
+    void (async () => {
+      // 进入异步前再核一次最新登录态，避免 store 订阅尚未刷新导致误报「未登录」
+      let userId = get().currentUserId;
+      if (!userId) {
+        try {
+          const { data } = await supabase.auth.getUser();
+          userId = data.user?.id ?? null;
+          if (userId) set({ currentUserId: userId });
+        } catch {
+          // ignore
+        }
+      }
+      if (!userId || !firstKeyframeUrl) {
+        const reason = !userId
+          ? "未登录，无法生成真实视频。请先登录后重试。"
+          : "缺少首帧关键帧。请先重跑 Keyframes 阶段，再生成视频。";
+        updateAsset("V01", { status: "Failed", errorMessage: reason });
+        updateStage("life", { status: "failed" });
+        appendSummary("life", `生成失败：${reason}（未扣积分）`);
+        set({ phase: "failed" });
+        persistCurrent("failed");
+        return;
+      }
 
 
     updateAsset("V01", { status: "Processing" });
