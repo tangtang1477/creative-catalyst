@@ -962,28 +962,35 @@ export const useSC = create<SCState>((set, get) => {
       const httpFirst = paintAssets.find((x) => /^https?:\/\//.test(x.url!));
       return (httpFirst ?? paintAssets[0])?.url;
     })();
-    const userId = get().currentUserId;
     const briefPrompt = get().brief?.prompt ?? "";
     const startedRunId = get().runId;
-
-    if (!userId || !firstKeyframeUrl) {
-      // 没有真实生成路径：直接 Failed（不扣分、不塞示例视频）
-      const reason = !userId
-        ? "未登录，无法生成真实视频。请先登录后重试。"
-        : "缺少首帧关键帧。请先重跑 Keyframes 阶段，再生成视频。";
-      updateAsset("V01", { status: "Failed", errorMessage: reason });
-      updateStage("life", { status: "failed" });
-      appendSummary("life", `生成失败：${reason}（未扣积分）`);
-      set({ phase: "failed" });
-      persistCurrent("failed");
-      return;
-    }
-
 
     updateAsset("V01", { status: "Processing" });
     appendSummary("life", "Seedance 提交中（first-frame-to-video）…");
 
     void (async () => {
+      // 进入异步前再核一次最新登录态，避免 store 订阅尚未刷新导致误报「未登录」
+      let userId = get().currentUserId;
+      if (!userId) {
+        try {
+          const { data } = await supabase.auth.getUser();
+          userId = data.user?.id ?? null;
+          if (userId) set({ currentUserId: userId });
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!userId || !firstKeyframeUrl) {
+        const reason = !userId
+          ? "未登录，无法生成真实视频。请先登录后重试。"
+          : "缺少首帧关键帧。请先重跑 Keyframes 阶段，再生成视频。";
+        updateAsset("V01", { status: "Failed", errorMessage: reason });
+        updateStage("life", { status: "failed" });
+        appendSummary("life", `生成失败：${reason}（未扣积分）`);
+        set({ phase: "failed" });
+        persistCurrent("failed");
+        return;
+      }
       try {
         const { taskId: seedanceTaskId } = await submitVideoTask({
           data: {
@@ -1276,10 +1283,10 @@ export const useSC = create<SCState>((set, get) => {
         intakeSel: {},
         intakeCustoms: {},
         intakeOthers: null,
-        currentUserId: null,
+        // 不重置 currentUserId：由模块底部的全局订阅维护
         script: null,
       }));
-      // 异步抓 user id；没登录也允许走假数据 stage（paint/life 会自检并 fallback）
+      // submit 时兜底再拉一次，确保是最新登录态
       supabase.auth.getUser().then(({ data }) => {
         set({ currentUserId: data.user?.id ?? null });
       });
@@ -1547,6 +1554,10 @@ export const useSC = create<SCState>((set, get) => {
     },
 
     retryStage: (id) => {
+      // 重做前同步刷新一次最新登录态，避免点了重试还报「未登录」
+      void supabase.auth.getUser().then(({ data }) => {
+        set({ currentUserId: data.user?.id ?? null });
+      });
       clearTimers();
       set((s) => ({
         runId: s.runId + 1,
@@ -1773,3 +1784,13 @@ export const useSC = create<SCState>((set, get) => {
     },
   };
 });
+
+// 全局订阅 auth 状态：登录/登出/token 刷新都同步进 store，保证 retry / 新任务读到最新 userId
+if (typeof window !== "undefined") {
+  supabase.auth.getUser().then(({ data }) => {
+    useSC.setState({ currentUserId: data.user?.id ?? null });
+  });
+  supabase.auth.onAuthStateChange((_event, session) => {
+    useSC.setState({ currentUserId: session?.user?.id ?? null });
+  });
+}
