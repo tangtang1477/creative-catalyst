@@ -1276,10 +1276,10 @@ export const useSC = create<SCState>((set, get) => {
         intakeSel: {},
         intakeCustoms: {},
         intakeOthers: null,
-        currentUserId: null,
+        // 不重置 currentUserId：由模块底部的全局订阅维护
         script: null,
       }));
-      // 异步抓 user id；没登录也允许走假数据 stage（paint/life 会自检并 fallback）
+      // submit 时兜底再拉一次，确保是最新登录态
       supabase.auth.getUser().then(({ data }) => {
         set({ currentUserId: data.user?.id ?? null });
       });
