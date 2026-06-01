@@ -56,7 +56,9 @@ interface ChatMsg {
   actions?: ChatAction[];
   streaming?: boolean;
   toolCalls?: import("./types").ChatToolCall[];
+  thinking?: string;
 }
+
 
 interface SCState {
   phase: Phase;
