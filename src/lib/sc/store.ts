@@ -399,7 +399,7 @@ export const useSC = create<SCState>((set, get) => {
       1300,
       () => {
         updateStage("scene", { status: "ready" });
-        consume("scene", "Scene · brief analysis", 1);
+        consume("scene", "Scene · brief analysis", 1, get().taskId);
         collapseAfter("scene", 1400);
         schedule(() => runStructure(), 1600);
       },
@@ -447,7 +447,7 @@ export const useSC = create<SCState>((set, get) => {
       }
 
       updateStage("structure", { status: "ready" });
-      consume("structure", "Script + storyboard", 3);
+      consume("structure", "Script + storyboard", 3, get().taskId);
       openGate("script", () => runWardrobe());
     })();
   };
@@ -528,7 +528,7 @@ export const useSC = create<SCState>((set, get) => {
             const url = await uploadBase64Image({ base64: b64, userId, taskId });
             if (get().runId !== startedRunId) return;
             updateAsset(w.id, { status: "Ready", url, errorMessage: undefined });
-            consume("wardrobe", `Wardrobe · ${w.id}`, 2);
+            consume("wardrobe", `Wardrobe · ${w.id}`, 2, get().taskId);
           } catch (e) {
             console.error("[wardrobe] failed", w.id, e);
             updateAsset(w.id, {
@@ -652,7 +652,7 @@ export const useSC = create<SCState>((set, get) => {
             const url = await uploadBase64Image({ base64: b64, userId, taskId });
             if (get().runId !== startedRunId) return;
             updateAsset(r.shot, { status: "Ready", url });
-            consume("paint", `Keyframe ${r.shot} · stream-gen`, 5);
+            consume("paint", `Keyframe ${r.shot} · stream-gen`, 5, get().taskId);
             appendSummary("paint", `${r.shot} Ready · ${r.motion}`);
           } catch (e) {
             console.error("[paint] failed", r.shot, e);
@@ -926,7 +926,7 @@ export const useSC = create<SCState>((set, get) => {
       schedule(() => {
         updateAsset("V01", { status: "Ready", url: SAMPLE_VIDEO, poster: SAMPLE_KEYFRAME });
         updateStage("life", { status: "ready" });
-        consume("life", "Video V01 · sample", VIDEO_COST);
+        consume("life", "Video V01 · sample", VIDEO_COST, get().taskId);
         appendSummary("life", "V01 Ready (sample)");
         collapseAfter("life", 1800);
         persistCurrent("running");
@@ -984,7 +984,7 @@ export const useSC = create<SCState>((set, get) => {
                   poster: firstKeyframeUrl,
                 });
                 updateStage("life", { status: "ready" });
-                consume("life", "Video V01 · seedance", VIDEO_COST);
+                consume("life", "Video V01 · seedance", VIDEO_COST, get().taskId);
                 appendSummary("life", "V01 Ready · seedance oss_url 已写入");
                 collapseAfter("life", 1800);
                 persistCurrent("running");
@@ -1054,7 +1054,7 @@ export const useSC = create<SCState>((set, get) => {
     ];
     streamLines("details", checks, 500, 200, () => {
       updateStage("details", { status: "ready" });
-      consume("details", "Final QC pass", 2);
+      consume("details", "Final QC pass", 2, get().taskId);
       set({ phase: "done" });
       collapseAfter("details", 1600);
       persistCurrent("done");
