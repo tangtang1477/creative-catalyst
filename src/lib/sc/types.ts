@@ -115,12 +115,13 @@ export interface ChatToolCall {
   id: string;
   label: string;
   kind: "skill" | "tool";
-  status: "running" | "done" | "failed";
+  status: "pending" | "running" | "done" | "failed";
   startedAt: number;
   durationMs?: number;
   input?: string;
   output?: string;
 }
+
 
 export interface Brief {
   prompt: string;

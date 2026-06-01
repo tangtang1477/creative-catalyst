@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { Loader2, Check, Sparkles, Wrench, ChevronDown, AlertCircle } from "lucide-react";
+import {
+  Loader2,
+  Check,
+  Sparkles,
+  Wrench,
+  ChevronDown,
+  AlertCircle,
+  Circle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "./Logo";
 import { Collapse } from "./Collapse";
@@ -28,6 +36,12 @@ export function ChatAgentMessage({
   const submit = useSC((s) => s.submit);
   const briefPrompt = useSC((s) => s.brief?.prompt);
 
+  const showLoading =
+    !!streaming &&
+    !text &&
+    (!toolCalls ||
+      toolCalls.every((tc) => tc.status === "pending" || tc.status === "running"));
+
   return (
     <div className="mr-auto flex w-fit max-w-[80%] items-start gap-2.5 px-1 py-1 text-[13px] text-foreground/90 [animation:stream-fade_280ms_ease-out_both]">
       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full ring-1 ring-border bg-surface">
@@ -41,13 +55,22 @@ export function ChatAgentMessage({
             ))}
           </div>
         )}
-        <div className="leading-relaxed whitespace-pre-wrap">
-          {text}
-          {streaming && (
-            <span className="ml-0.5 inline-block h-3 w-[2px] translate-y-[2px] animate-pulse bg-accent align-middle" />
-          )}
-        </div>
-        {actions && actions.length > 0 && (
+        {showLoading ? (
+          <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+            <span className="thinking-dots text-accent" />
+            <span>正在思考…</span>
+          </div>
+        ) : (
+          (text || streaming) && (
+            <div className="leading-relaxed whitespace-pre-wrap">
+              {text}
+              {streaming && text && (
+                <span className="ml-0.5 inline-block h-3 w-[2px] translate-y-[2px] animate-pulse bg-accent align-middle" />
+              )}
+            </div>
+          )
+        )}
+        {actions && actions.length > 0 && !streaming && (
           <div className="flex flex-wrap gap-1.5">
             {actions.map((a, i) => (
               <SCButton
@@ -74,6 +97,7 @@ function ChatToolRow({ call }: { call: ChatToolCall }) {
   const [open, setOpen] = useState(false);
   const [, force] = useState(0);
   const running = call.status === "running";
+  const pending = call.status === "pending";
   useEffect(() => {
     if (!running) return;
     const t = window.setInterval(() => force((n) => n + 1), 100);
@@ -81,13 +105,16 @@ function ChatToolRow({ call }: { call: ChatToolCall }) {
   }, [running]);
 
   const elapsed =
-    call.status !== "running"
+    call.status === "done" || call.status === "failed"
       ? (call.durationMs ?? 0) / 1000
-      : (Date.now() - call.startedAt) / 1000;
+      : running
+        ? (Date.now() - call.startedAt) / 1000
+        : 0;
 
   const Icon = call.kind === "skill" ? Sparkles : Wrench;
-  const verb =
-    call.kind === "skill"
+  const verb = pending
+    ? "Queued"
+    : call.kind === "skill"
       ? running
         ? "Using skill"
         : "Used skill"
@@ -95,7 +122,7 @@ function ChatToolRow({ call }: { call: ChatToolCall }) {
         ? "Calling tool"
         : "Called tool";
 
-  const canExpand = !!(call.input || call.output);
+  const canExpand = !pending && !!(call.input || call.output);
 
   return (
     <div>
@@ -106,9 +133,12 @@ function ChatToolRow({ call }: { call: ChatToolCall }) {
         className={cn(
           "group flex w-full items-center gap-1.5 py-0.5 text-left text-[12px] leading-relaxed",
           canExpand ? "cursor-pointer" : "cursor-default",
+          pending && "opacity-55",
         )}
       >
-        {running ? (
+        {pending ? (
+          <Circle className="h-3 w-3 shrink-0 text-muted-foreground/50" />
+        ) : running ? (
           <Loader2 className="h-3 w-3 shrink-0 animate-spin text-accent" />
         ) : call.status === "failed" ? (
           <AlertCircle className="h-3 w-3 shrink-0 text-status-failed" />
@@ -138,9 +168,11 @@ function ChatToolRow({ call }: { call: ChatToolCall }) {
           {call.label}
           {running && <span className="thinking-dots ml-0.5 text-accent" />}
         </span>
-        <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground/70">
-          {elapsed.toFixed(1)}s
-        </span>
+        {!pending && (
+          <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-muted-foreground/70">
+            {elapsed.toFixed(1)}s
+          </span>
+        )}
         {canExpand && (
           <ChevronDown
             className={cn(
@@ -156,7 +188,7 @@ function ChatToolRow({ call }: { call: ChatToolCall }) {
             {call.input && (
               <div>
                 <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                  Input
+                  Thinking
                 </div>
                 <pre className="whitespace-pre-wrap font-mono text-[11px] text-foreground/80">
                   {call.input}
@@ -166,7 +198,7 @@ function ChatToolRow({ call }: { call: ChatToolCall }) {
             {call.output && (
               <div>
                 <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                  Output
+                  Summary
                 </div>
                 <pre className="whitespace-pre-wrap font-mono text-[11px] text-foreground/80">
                   {call.output}
