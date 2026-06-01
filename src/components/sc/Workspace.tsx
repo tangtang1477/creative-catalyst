@@ -342,6 +342,7 @@ export function Workspace() {
 
       <PricingDialog />
       <LowCreditToast />
+      <WorkspaceVersionDrawer />
     </div>
   );
 }
