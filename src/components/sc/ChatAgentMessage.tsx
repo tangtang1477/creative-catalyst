@@ -3,7 +3,7 @@ import { Loader2, Check, Sparkles, Wrench, ChevronDown, AlertCircle } from "luci
 import { cn } from "@/lib/utils";
 import { Logo } from "./Logo";
 import { Collapse } from "./Collapse";
-import { Button as SCButton } from "./Button";
+import { SCButton } from "./Button";
 import { useSC } from "@/lib/sc/store";
 import type { ChatToolCall } from "@/lib/sc/types";
 
