@@ -451,7 +451,7 @@ export const useSC = create<SCState>((set, get) => {
       caption: w.caption,
       status: "Queued",
       stageId: "wardrobe",
-      width: w.id === "P01" ? 768 : 768,
+      width: 768,
       height: w.id === "P01" ? 768 : 1024,
     }));
     set((s) => ({
@@ -459,24 +459,69 @@ export const useSC = create<SCState>((set, get) => {
       rail: { ...s.rail, open: true, flashId: wardrobeSpec[0]?.id },
     }));
 
-    wardrobeAssets.forEach((a, i) => {
-      schedule(() => updateAsset(a.id, { status: "Generating" }), 1200 + i * 400);
-      schedule(
-        () => {
-          updateAsset(a.id, { status: "Ready", url: SAMPLE_KEYFRAME });
-          consume("wardrobe", `Wardrobe · ${a.id}`, 2);
-        },
-        3200 + i * 400,
-      );
-    });
+    const startedRunId = get().runId;
+    const userId = get().currentUserId;
+    const taskId = get().taskId ?? undefined;
+    const briefPrompt = get().brief?.prompt ?? "";
 
-    schedule(() => {
+    void (async () => {
+      if (!userId) {
+        appendSummary("wardrobe", "未登录 · 跳过真实生图，使用示例图");
+        for (const w of wardrobeAssets) {
+          if (get().runId !== startedRunId) return;
+          updateAsset(w.id, { status: "Ready", url: SAMPLE_KEYFRAME });
+        }
+      } else {
+        for (const w of wardrobeAssets) {
+          if (get().runId !== startedRunId) return;
+          updateAsset(w.id, { status: "Generating", errorMessage: undefined });
+          const role =
+            w.id === "P01"
+              ? "key prop / object hero shot, centered, studio lighting, neutral background"
+              : w.id === "W01"
+                ? "main character / hero subject portrait, full body, neutral background, reference sheet style"
+                : "secondary character / supporting subject portrait, full body, neutral background, reference sheet style";
+          const fullPrompt = [
+            `Reference asset ${w.id} for the short film. Subject: ${w.caption}.`,
+            `Style: ${role}.`,
+            `User brief (must reflect the actual subject, do NOT invent unrelated brands or scenes): ${briefPrompt}`,
+          ].join("\n\n");
+          try {
+            const b64 = await streamGenerateImage({
+              prompt: fullPrompt,
+              quality: "low",
+              onPartial: (dataUrl) => {
+                if (get().runId !== startedRunId) return;
+                updateAsset(w.id, { url: dataUrl });
+              },
+            });
+            if (get().runId !== startedRunId) return;
+            const url = await uploadBase64Image({ base64: b64, userId, taskId });
+            if (get().runId !== startedRunId) return;
+            updateAsset(w.id, { status: "Ready", url, errorMessage: undefined });
+            consume("wardrobe", `Wardrobe · ${w.id}`, 2);
+          } catch (e) {
+            console.error("[wardrobe] failed", w.id, e);
+            updateAsset(w.id, {
+              status: "Failed",
+              errorMessage: (e as Error).message,
+              errorCode: "gen_failed",
+            });
+            appendSummary(
+              "wardrobe",
+              `${w.id} 生成失败：${(e as Error).message}（未扣积分）`,
+            );
+          }
+        }
+      }
+
+      if (get().runId !== startedRunId) return;
       appendSummary("wardrobe", "服装/道具准备完毕 · 风格统一");
       updateStage("wardrobe", { status: "ready" });
       collapseAfter("wardrobe", 1600);
       persistCurrent("running");
       openGate("wardrobe", () => runPaint());
-    }, 4800);
+    })();
   };
 
 
