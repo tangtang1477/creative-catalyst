@@ -141,6 +141,13 @@ export interface Attachment {
   ref?: string;
 }
 
+export interface StageSnapshot {
+  status: StageStatus;
+  summary: string[];
+  toolCalls: ToolCall[];
+  thoughts: Thought[];
+}
+
 export interface TaskRecord {
   id: string;
   title: string;
@@ -150,8 +157,14 @@ export interface TaskRecord {
   status: "running" | "done" | "failed" | "interrupted";
   kind: TaskKind;
   assets: Asset[];
-  /** Lightweight per-stage snapshot so restored tasks can show meaningful summary. */
+  /** Legacy lightweight per-stage summary (read-only fallback for old records). */
   stageSummaries?: Partial<Record<StageId, string[]>>;
+  /** Full per-stage snapshot for playback (summary + toolCalls + thoughts). */
+  stageSnapshots?: Partial<Record<StageId, StageSnapshot>>;
+  /** LLM script captured at run time so playback can re-render tables. */
+  script?: unknown;
+  /** Final failure reason (life stage error, if any). */
+  failureReason?: string;
   brief?: Brief | null;
 }
 
