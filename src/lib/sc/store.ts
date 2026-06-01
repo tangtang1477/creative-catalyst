@@ -1186,6 +1186,98 @@ export const useSC = create<SCState>((set, get) => {
     runScene();
   };
 
+  const requestPreflightOptions = (brief: Brief) => {
+    // 进入 running 状态，让聊天面板可见
+    set({ phase: "running" });
+    persistCurrent("running");
+    const agentId = uid();
+    const agentMsg: ChatMsg = {
+      id: agentId,
+      role: "agent",
+      text: "",
+      ts: Date.now(),
+      streaming: true,
+      thinking: "",
+      toolCalls: [],
+      optionCards: [],
+      skill: { name: "chat-director", sub: "refining brief" },
+    };
+    set((s) => ({ chatLog: [...s.chatLog, agentMsg] }));
+
+    const patchAgent = (updater: (m: ChatMsg) => Partial<ChatMsg>) =>
+      set((s) => ({
+        chatLog: s.chatLog.map((m) => (m.id === agentId ? { ...m, ...updater(m) } : m)),
+      }));
+
+    void (async () => {
+      try {
+        const res = await fetch("/api/chat-stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "preflight-options",
+            messages: [{ role: "user", content: brief.prompt }],
+            context: { phase: "preflight", brief },
+          }),
+        });
+        if (!res.ok || !res.body) {
+          // 失败：直接 startRunning，不阻塞用户
+          patchAgent(() => ({ streaming: false, text: "（跳过偏好确认，直接开拍）" }));
+          startRunning();
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        const handle = (ev: string, dataStr: string) => {
+          let d: unknown;
+          try { d = JSON.parse(dataStr); } catch { return; }
+          const data = d as { text?: string; questions?: unknown; id?: string; intent?: "preflight" | "refine" };
+          if (ev === "token" && data.text) {
+            patchAgent((m) => ({ text: m.text + data.text! }));
+          } else if (ev === "option-card") {
+            const qs = Array.isArray(data.questions) ? (data.questions as import("./types").ChatOptionQuestion[]) : [];
+            patchAgent((m) => ({
+              optionCards: [
+                ...(m.optionCards ?? []),
+                {
+                  id: data.id ?? `oc_${uid()}`,
+                  questions: qs,
+                  status: "awaiting",
+                  intent: data.intent ?? "preflight",
+                  primaryLabel: "Continue",
+                },
+              ],
+            }));
+          } else if (ev === "done") {
+            patchAgent(() => ({ streaming: false }));
+          }
+        };
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const blocks = buf.split(/\r?\n\r?\n/);
+          buf = blocks.pop() ?? "";
+          for (const block of blocks) {
+            const lines = block.split(/\r?\n/);
+            let ev = "message";
+            const dataLines: string[] = [];
+            for (const raw of lines) {
+              if (raw.startsWith("event:")) ev = raw.slice(6).trim();
+              else if (raw.startsWith("data:")) dataLines.push(raw.slice(5).replace(/^\s/, ""));
+            }
+            if (dataLines.length) handle(ev, dataLines.join("\n"));
+          }
+        }
+        patchAgent(() => ({ streaming: false }));
+      } catch {
+        patchAgent(() => ({ streaming: false, text: "（跳过偏好确认，直接开拍）" }));
+        startRunning();
+      }
+    })();
+  };
+
   return {
     phase: "empty",
     prompt: "",
