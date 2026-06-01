@@ -30,15 +30,13 @@ import { cn } from "@/lib/utils";
 export function Workspace() {
   const { phase, taskTitle, brief, stages, assets, gate, rail, setRailOpen, viewMode, chatLog } = useSC();
   const script = useSC((s) => s.script);
+  const retryStage = useSC((s) => s.retryStage);
+  const submit = useSC((s) => s.submit);
   const openPricing = useCredits((s) => s.openPricing);
   const remaining = useCredits(creditsSelectors.remaining);
   const paintAssets = assets.filter((a) => a.stageId === "paint");
   const v01 = assets.find((a) => a.id === "V01");
   const inFlow = phase === "running" || phase === "done" || phase === "failed";
-  // Restored tasks don't have full runtime data (segments, qc thoughts, etc.).
-  // Render a simplified summary instead of the interactive stage children to
-  // avoid render-time crashes against undefined fields.
-  const isRestored = phase !== "running" && stages.scene.toolCalls.length === 0 && stages.scene.thoughts.length === 0 && (phase === "done" || phase === "failed");
 
   // ChatGPT-like auto-scroll to bottom when new content streams in.
   const endRef = useRef<HTMLDivElement | null>(null);
