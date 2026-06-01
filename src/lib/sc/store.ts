@@ -8,12 +8,14 @@ import {
   type Phase,
   type StageId,
   type StageState,
+  type StageSnapshot,
   type TaskKind,
   type TaskRecord,
   type ToolCall,
   type Thought,
   type ViewMode,
   STAGE_ORDER,
+  STAGE_LABEL,
 } from "./types";
 import { SAMPLE_KEYFRAME, SAMPLE_VIDEO, SERIES_DEMO, STORYBOARD_ROWS, KEYFRAME_PROMPT_DETAIL } from "./samples";
 import { inferTaskTitle } from "./intake-engine";
