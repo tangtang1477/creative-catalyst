@@ -23,6 +23,7 @@ export const Route = createFileRoute("/api/chat-stream")({
 
         let body: {
           messages?: Array<{ role: "user" | "assistant"; content: string }>;
+          mode?: "chat" | "preflight-options";
           context?: {
             phase?: string;
             brief?: {
@@ -44,7 +45,8 @@ export const Route = createFileRoute("/api/chat-stream")({
         }
 
         const messages = Array.isArray(body.messages) ? body.messages : [];
-        if (!messages.length) {
+        const mode = body.mode ?? "chat";
+        if (!messages.length && mode === "chat") {
           return new Response("messages required", { status: 400 });
         }
 
