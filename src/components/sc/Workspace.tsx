@@ -24,21 +24,20 @@ import { LowCreditToast } from "./credits/LowCreditToast";
 import { InlineLowCredit } from "./credits/InlineLowCredit";
 import { useCredits, creditsSelectors } from "@/lib/sc/credits-store";
 import { StageBoundary } from "./StageBoundary";
+import { VersionDrawer } from "./VersionDrawer";
 
 import { cn } from "@/lib/utils";
 
 export function Workspace() {
   const { phase, taskTitle, brief, stages, assets, gate, rail, setRailOpen, viewMode, chatLog } = useSC();
   const script = useSC((s) => s.script);
+  const retryStage = useSC((s) => s.retryStage);
+  const submit = useSC((s) => s.submit);
   const openPricing = useCredits((s) => s.openPricing);
   const remaining = useCredits(creditsSelectors.remaining);
   const paintAssets = assets.filter((a) => a.stageId === "paint");
   const v01 = assets.find((a) => a.id === "V01");
   const inFlow = phase === "running" || phase === "done" || phase === "failed";
-  // Restored tasks don't have full runtime data (segments, qc thoughts, etc.).
-  // Render a simplified summary instead of the interactive stage children to
-  // avoid render-time crashes against undefined fields.
-  const isRestored = phase !== "running" && stages.scene.toolCalls.length === 0 && stages.scene.thoughts.length === 0 && (phase === "done" || phase === "failed");
 
   // ChatGPT-like auto-scroll to bottom when new content streams in.
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -177,19 +176,10 @@ export function Workspace() {
                     const st = stages[id];
                     if (st.status === "pending") return null;
 
-                    // For restored tasks, skip interactive children to prevent
-                    // crashes against missing runtime data.
-                    if (isRestored) {
-                      return (
-                        <StageBoundary key={id}>
-                          <StageRow id={id} state={st} />
-                        </StageBoundary>
-                      );
-                    }
 
                     if (id === "structure") {
                       return (
-                        <StageBoundary key={id}>
+                        <StageBoundary key={id} stageId={id}>
                           <StageRow
                             id={id}
                             state={st}
@@ -211,7 +201,7 @@ export function Workspace() {
 
                     if (id === "wardrobe") {
                       return (
-                        <StageBoundary key={id}>
+                        <StageBoundary key={id} stageId={id}>
                           <StageRow id={id} state={st} keepChildrenWhenCollapsed>
                             <WardrobePanel />
                           </StageRow>
@@ -221,7 +211,7 @@ export function Workspace() {
 
                     if (id === "paint") {
                       return (
-                        <StageBoundary key={id}>
+                        <StageBoundary key={id} stageId={id}>
                           <StageRow
                             id={id}
                             state={st}
@@ -243,7 +233,7 @@ export function Workspace() {
 
                     if (id === "qc") {
                       return (
-                        <StageBoundary key={id}>
+                        <StageBoundary key={id} stageId={id}>
                           <StageRow id={id} state={st} keepChildrenWhenCollapsed>
                             <QCPanel />
                           </StageRow>
@@ -254,7 +244,7 @@ export function Workspace() {
                     if (id === "life") {
                       const lowCredit = st.status === "recovering" && remaining < 30;
                       return (
-                        <StageBoundary key={id}>
+                        <StageBoundary key={id} stageId={id}>
                           <StageRow
                             id={id}
                             state={st}
@@ -274,7 +264,7 @@ export function Workspace() {
 
                     if (id === "details" && st.status === "ready") {
                       return (
-                        <StageBoundary key={id}>
+                        <StageBoundary key={id} stageId={id}>
                           <StageRow id={id} state={st} keepChildrenWhenCollapsed>
                             <QualityCheck />
                           </StageRow>
@@ -283,7 +273,7 @@ export function Workspace() {
                     }
 
                     return (
-                      <StageBoundary key={id}>
+                      <StageBoundary key={id} stageId={id}>
                         <StageRow id={id} state={st} />
                       </StageBoundary>
                     );
@@ -308,10 +298,31 @@ export function Workspace() {
                         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full ring-1 ring-border bg-surface">
                           <Logo size={12} />
                         </span>
-                        <span className="leading-relaxed">{m.text}</span>
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div className="leading-relaxed">{m.text}</div>
+                          {m.actions && m.actions.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {m.actions.map((a, i) => (
+                                <SCButton
+                                  key={i}
+                                  variant="chip"
+                                  size="sm"
+                                  className="h-7 px-2.5 text-[11.5px]"
+                                  onClick={() => {
+                                    if (a.kind === "retry-stage") retryStage(a.stageId);
+                                    else if (a.kind === "rerun-all" && brief?.prompt) submit(brief.prompt);
+                                  }}
+                                >
+                                  {a.label}
+                                </SCButton>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ),
                   )}
+
 
                   <div ref={endRef} className="h-px" />
                 </div>
@@ -332,6 +343,23 @@ export function Workspace() {
 
       <PricingDialog />
       <LowCreditToast />
+      <WorkspaceVersionDrawer />
     </div>
   );
 }
+
+function WorkspaceVersionDrawer() {
+  const assetId = useSC((s) => s.versionDrawerAssetId);
+  const close = useSC((s) => s.closeVersionDrawer);
+  const asset = useSC((s) => s.assets.find((a) => a.id === assetId) ?? null);
+  return (
+    <VersionDrawer
+      asset={asset}
+      open={!!assetId}
+      onOpenChange={(o) => {
+        if (!o) close();
+      }}
+    />
+  );
+}
+

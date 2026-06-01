@@ -8,12 +8,14 @@ import {
   type Phase,
   type StageId,
   type StageState,
+  type StageSnapshot,
   type TaskKind,
   type TaskRecord,
   type ToolCall,
   type Thought,
   type ViewMode,
   STAGE_ORDER,
+  STAGE_LABEL,
 } from "./types";
 import { SAMPLE_KEYFRAME, SAMPLE_VIDEO, SERIES_DEMO, STORYBOARD_ROWS, KEYFRAME_PROMPT_DETAIL } from "./samples";
 import { inferTaskTitle } from "./intake-engine";
@@ -42,11 +44,16 @@ interface SoftGate {
   fireAt: number;
 }
 
+export type ChatAction =
+  | { label: string; kind: "retry-stage"; stageId: StageId }
+  | { label: string; kind: "rerun-all" };
+
 interface ChatMsg {
   id: string;
   role: "user" | "agent";
   text: string;
   ts: number;
+  actions?: ChatAction[];
 }
 
 interface SCState {
@@ -71,6 +78,10 @@ interface SCState {
   selection: string[];
   /** in-task chat messages (user ↔ agent), reset on new task */
   chatLog: ChatMsg[];
+  /** Asset id currently shown in the VersionDrawer (null = closed). */
+  versionDrawerAssetId: string | null;
+
+
 
   /** cached supabase user id for the current run; populated on submit() */
   currentUserId: string | null;
@@ -111,6 +122,13 @@ interface SCState {
   deleteTask: (id: string) => void;
   retryStage: (id: StageId) => void;
   retryAsset: (assetId: string) => void;
+  setActiveVersion: (assetId: string, versionIndex: number) => void;
+  openVersionDrawer: (assetId: string) => void;
+  closeVersionDrawer: () => void;
+
+
+
+
 
 
   toggleSelect: (id: string) => void;
@@ -352,14 +370,27 @@ export const useSC = create<SCState>((set, get) => {
 
   /** Persist current task snapshot into taskHistory */
   const persistCurrent = (status: TaskRecord["status"]) => {
-    const { taskId, taskTitle, brief, assets, taskHistory, taskKind, stages } = get();
+    const { taskId, taskTitle, brief, assets, taskHistory, taskKind, stages, script } = get();
     if (!taskId) return;
     const now = Date.now();
     const existing = taskHistory.find((t) => t.id === taskId);
     const stageSummaries: Partial<Record<StageId, string[]>> = {};
+    const stageSnapshots: Partial<Record<StageId, StageSnapshot>> = {};
+    let failureReason: string | undefined;
     for (const sid of STAGE_ORDER) {
-      const sum = stages[sid].summary;
-      if (sum.length) stageSummaries[sid] = sum.slice(-6);
+      const st = stages[sid];
+      if (st.summary.length) stageSummaries[sid] = st.summary.slice();
+      if (st.summary.length || st.toolCalls.length || st.thoughts.length) {
+        stageSnapshots[sid] = {
+          status: st.status,
+          summary: st.summary.slice(),
+          toolCalls: st.toolCalls.slice(),
+          thoughts: st.thoughts.slice(),
+        };
+      }
+      if (status === "failed" && st.status === "failed" && !failureReason) {
+        failureReason = st.summary[st.summary.length - 1] ?? `${STAGE_LABEL[sid]} 失败`;
+      }
     }
     const record: TaskRecord = {
       id: taskId,
@@ -371,12 +402,16 @@ export const useSC = create<SCState>((set, get) => {
       kind: taskKind,
       assets,
       stageSummaries,
+      stageSnapshots,
+      script: script ?? existing?.script,
+      failureReason: failureReason ?? existing?.failureReason,
       brief,
     };
     const next = [record, ...taskHistory.filter((t) => t.id !== taskId)];
     set({ taskHistory: next });
     saveHistory(next);
   };
+
 
 
   // -------- Stage runners --------
@@ -1100,6 +1135,7 @@ export const useSC = create<SCState>((set, get) => {
     runId: 0,
     selection: [],
     chatLog: [],
+    versionDrawerAssetId: null,
     currentUserId: null,
     script: null,
 
@@ -1437,20 +1473,31 @@ export const useSC = create<SCState>((set, get) => {
       if (!rec) return;
       clearTimers();
       const stages = initialStages();
-      // Restore stages strictly from the persisted summaries. Mark them ready
-      // (or failed for the failed task) but DO NOT mark stages without snapshot
-      // data as ready, so Workspace knows to skip rendering interactive children
-      // that would otherwise crash on missing runtime data.
-      const snap = rec.stageSummaries ?? {};
+      // Prefer full snapshots (toolCalls + thoughts). Fall back to legacy
+      // summaries-only records.
+      const snaps = rec.stageSnapshots ?? {};
+      const sums = rec.stageSummaries ?? {};
+      let failedStageId: StageId | undefined;
       for (const sid of STAGE_ORDER) {
-        const sum = snap[sid];
-        if (sum && sum.length) {
+        const snap = snaps[sid];
+        const sum = sums[sid];
+        if (snap) {
+          stages[sid] = {
+            status: snap.status,
+            summary: snap.summary.slice(),
+            toolCalls: snap.toolCalls.slice(),
+            thoughts: snap.thoughts.slice(),
+            expanded: true,
+          };
+          if (snap.status === "failed" && !failedStageId) failedStageId = sid;
+        } else if (sum && sum.length) {
           stages[sid] = {
             ...emptyStage(),
             status: rec.status === "failed" && sid === "life" ? "failed" : "ready",
             summary: sum,
-            expanded: false,
+            expanded: true,
           };
+          if (rec.status === "failed" && sid === "life" && !failedStageId) failedStageId = sid;
         }
       }
       const restoredBrief: Brief = rec.brief ?? {
@@ -1460,6 +1507,23 @@ export const useSC = create<SCState>((set, get) => {
         visualSource: "—",
         mode: "—",
       };
+      const chatLog: ChatMsg[] = [];
+      if (rec.status === "failed") {
+        const stageLabel = failedStageId ? STAGE_LABEL[failedStageId] : "运行";
+        const reason = rec.failureReason ?? "未知错误";
+        chatLog.push({
+          id: `restore-${rec.id}`,
+          role: "agent",
+          ts: Date.now(),
+          text: `该任务在「${stageLabel}」阶段失败：${reason}。要我重做这一步，还是从头再跑一遍？`,
+          actions: [
+            ...(failedStageId
+              ? [{ label: "重做此步", kind: "retry-stage" as const, stageId: failedStageId }]
+              : []),
+            { label: "整任务重跑", kind: "rerun-all" as const },
+          ],
+        });
+      }
       set((s) => ({
         runId: s.runId + 1,
         phase: rec.status === "done" ? "done" : "failed",
@@ -1467,15 +1531,17 @@ export const useSC = create<SCState>((set, get) => {
         taskTitle: rec.title,
         taskKind: rec.kind,
         brief: restoredBrief,
+        script: (rec.script as GeneratedScript | undefined) ?? null,
         stages,
         assets: rec.assets,
         gate: null,
         softGate: null,
         selection: [],
-        chatLog: [],
+        chatLog,
         rail: { open: rec.assets.length > 0 },
       }));
     },
+
 
     deleteTask: (id) => {
       const next = get().taskHistory.filter((t) => t.id !== id);
@@ -1537,6 +1603,27 @@ export const useSC = create<SCState>((set, get) => {
         return;
       }
     },
+
+    setActiveVersion: (assetId, versionIndex) => {
+      set((s) => ({
+        assets: s.assets.map((a) => {
+          if (a.id !== assetId) return a;
+          const versions = a.versions ?? [];
+          const target = versions[versionIndex];
+          if (!target || !a.url) return a;
+          // push current url as a "manual-revert" record so we never lose it
+          const nextVersions: typeof versions = versions.map((v, i) =>
+            i === versionIndex ? { ...v, url: a.url!, createdAt: Date.now(), source: "manual-revert", note: "切回此版本" } : v,
+          );
+          return { ...a, url: target.url, versions: nextVersions };
+        }),
+      }));
+    },
+
+    openVersionDrawer: (assetId) => set({ versionDrawerAssetId: assetId }),
+    closeVersionDrawer: () => set({ versionDrawerAssetId: null }),
+
+
 
 
 

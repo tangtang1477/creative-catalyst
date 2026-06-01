@@ -36,6 +36,9 @@ export function AssetCard({
   const Icon = asset.kind === "image" ? ImageIcon : Film;
   const focusAsset = useSC((s) => s.focusAsset);
   const retryAsset = useSC((s) => s.retryAsset);
+  const openVersionDrawer = useSC((s) => s.openVersionDrawer);
+  const versionCount = (asset.versions?.length ?? 0) + (asset.url ? 1 : 0);
+  const hasVersions = versionCount >= 2;
   const [loaded, setLoaded] = useState(false);
 
 
@@ -221,6 +224,18 @@ export function AssetCard({
             <RotateCw className="h-3 w-3" />
             Replace
           </SCButton>
+          {hasVersions && (
+            <SCButton
+              variant="chip"
+              size="sm"
+              className="h-6 gap-1 px-2 text-[11px]"
+              onClick={() => openVersionDrawer(asset.id)}
+              title="查看版本历史"
+            >
+              <RefreshCw className="h-3 w-3" />
+              v{versionCount}
+            </SCButton>
+          )}
           <SCButton
             variant="icon"
             size="icon"
@@ -234,4 +249,5 @@ export function AssetCard({
     </div>
   );
 }
+
 

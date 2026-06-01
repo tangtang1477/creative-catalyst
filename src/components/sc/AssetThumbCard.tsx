@@ -20,8 +20,11 @@ export function AssetThumbCard({
   highlighted = false,
 }: Props) {
   const focusAsset = useSC((s) => s.focusAsset);
+  const openVersionDrawer = useSC((s) => s.openVersionDrawer);
   const Icon = asset.kind === "image" ? ImageIcon : Film;
   const thumb = asset.kind === "image" ? asset.url : asset.poster;
+  const versionCount = (asset.versions?.length ?? 0) + (asset.url ? 1 : 0);
+  const hasVersions = versionCount >= 2;
 
   const handleClick = () => {
     if (selectable) return;
@@ -87,6 +90,20 @@ export function AssetThumbCard({
         )}
       </div>
 
+      {hasVersions && (
+        <button
+          type="button"
+          aria-label="版本历史"
+          onClick={(e) => {
+            e.stopPropagation();
+            openVersionDrawer(asset.id);
+          }}
+          className="absolute bottom-1 left-1 z-20 rounded-md bg-black/65 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold text-white/95 backdrop-blur hover:bg-accent hover:text-accent-foreground"
+        >
+          v{versionCount}
+        </button>
+      )}
+
       <AssetActions
         asset={asset}
         selectable={selectable}
@@ -96,4 +113,5 @@ export function AssetThumbCard({
     </div>
   );
 }
+
 

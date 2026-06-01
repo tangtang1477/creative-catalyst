@@ -19,7 +19,15 @@ import { Collapse } from "./Collapse";
 import { BatchEditDialog } from "./BatchEditDialog";
 
 type ViewMode = "grid" | "list";
-type Filter = "all" | "image" | "video";
+type Filter = "all" | "wardrobe" | "keyframe" | "video" | "fixed";
+
+const FILTER_LABEL: Record<Filter, string> = {
+  all: "All",
+  wardrobe: "Wardrobe & Props",
+  keyframe: "Keyframes",
+  video: "Videos",
+  fixed: "Fix history",
+};
 
 const WIDTH_KEY = "sc.rail.width";
 const VIEW_KEY = "sc.rail.view";
@@ -40,7 +48,7 @@ const loadView = (): ViewMode => {
 export function MediaRail() {
   const { assets, phase, rail, setRailOpen, taskKind, selection, toggleSelect, clearSelection, addAttachment } = useSC();
   const [imgOpen, setImgOpen] = useState(true);
-  const [vidOpen, setVidOpen] = useState(true);
+  // (Single-group list view; vidOpen retained as no-op for backwards compat)
   const [filter, setFilter] = useState<Filter>("all");
   const [batchOpen, setBatchOpen] = useState(false);
   const [view, setView] = useState<ViewMode>(loadView);
@@ -86,11 +94,27 @@ export function MediaRail() {
 
   const images = useMemo(() => assets.filter((a) => a.kind === "image"), [assets]);
   const videos = useMemo(() => assets.filter((a) => a.kind === "video"), [assets]);
-
-  const visible = useMemo(
-    () => assets.filter((a) => (filter === "all" ? true : a.kind === filter)),
-    [assets, filter],
+  const wardrobeAssets = useMemo(() => assets.filter((a) => a.stageId === "wardrobe"), [assets]);
+  const keyframeAssets = useMemo(() => assets.filter((a) => a.stageId === "paint"), [assets]);
+  const fixedAssets = useMemo(
+    () => assets.filter((a) => (a.versions?.length ?? 0) >= 1),
+    [assets],
   );
+
+  const visible = useMemo(() => {
+    switch (filter) {
+      case "wardrobe":
+        return wardrobeAssets;
+      case "keyframe":
+        return keyframeAssets;
+      case "video":
+        return videos;
+      case "fixed":
+        return fixedAssets;
+      default:
+        return assets;
+    }
+  }, [assets, filter, wardrobeAssets, keyframeAssets, videos, fixedAssets]);
 
   const episodes = useMemo(() => {
     if (taskKind !== "series") return [];
@@ -199,21 +223,30 @@ export function MediaRail() {
 
         {/* Filter chips */}
         {assets.length > 0 && (
-          <div className="flex shrink-0 items-center gap-1 border-b border-border px-3 py-1.5">
-            {(["all", "image", "video"] as const).map((f) => {
-              const count = f === "all" ? assets.length : f === "image" ? images.length : videos.length;
+          <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-3 py-1.5">
+            {(["all", "wardrobe", "keyframe", "video", "fixed"] as const).map((f) => {
+              const count =
+                f === "all"
+                  ? assets.length
+                  : f === "wardrobe"
+                    ? wardrobeAssets.length
+                    : f === "keyframe"
+                      ? keyframeAssets.length
+                      : f === "video"
+                        ? videos.length
+                        : fixedAssets.length;
               return (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
                   className={cn(
-                    "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] capitalize transition-colors",
+                    "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] transition-colors",
                     filter === f
                       ? "bg-accent text-accent-foreground"
                       : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
                   )}
                 >
-                  {f}
+                  {FILTER_LABEL[f]}
                   <span
                     className={cn(
                       "rounded-full px-1.5 text-[10px] font-mono",
@@ -227,6 +260,7 @@ export function MediaRail() {
             })}
           </div>
         )}
+
 
         {/* (Inline toolbar removed — floating bar below replaces it) */}
 
@@ -287,54 +321,30 @@ export function MediaRail() {
             </div>
           ) : (
             <div className="space-y-4">
-              {filter !== "video" && images.length > 0 && (
-                <Group
-                  title="Images"
-                  count={images.length}
-                  Icon={ImageIcon}
-                  open={imgOpen}
-                  onToggle={() => setImgOpen((v) => !v)}
-                >
-                  <div className="space-y-2">
-                    {images.map((a) => (
-                      <AssetCard
-                        key={a.id}
-                        asset={a}
-                        compact
-                        highlighted={rail.flashId === a.id}
-                        selectable={multi}
-                        selected={selection.includes(a.id)}
-                        onToggle={toggleSelect}
-                      />
-                    ))}
-                  </div>
-                </Group>
-              )}
-              {filter !== "image" && videos.length > 0 && (
-                <Group
-                  title="Videos"
-                  count={videos.length}
-                  Icon={Film}
-                  open={vidOpen}
-                  onToggle={() => setVidOpen((v) => !v)}
-                >
-                  <div className="space-y-2">
-                    {videos.map((a) => (
-                      <AssetCard
-                        key={a.id}
-                        asset={a}
-                        compact
-                        highlighted={rail.flashId === a.id}
-                        selectable={multi}
-                        selected={selection.includes(a.id)}
-                        onToggle={toggleSelect}
-                      />
-                    ))}
-                  </div>
-                </Group>
-              )}
+              <Group
+                title={FILTER_LABEL[filter]}
+                count={visible.length}
+                Icon={filter === "video" ? Film : ImageIcon}
+                open={imgOpen}
+                onToggle={() => setImgOpen((v) => !v)}
+              >
+                <div className="space-y-2">
+                  {visible.map((a) => (
+                    <AssetCard
+                      key={a.id}
+                      asset={a}
+                      compact
+                      highlighted={rail.flashId === a.id}
+                      selectable={multi}
+                      selected={selection.includes(a.id)}
+                      onToggle={toggleSelect}
+                    />
+                  ))}
+                </div>
+              </Group>
             </div>
           )}
+
         </div>
 
         <div className="shrink-0 border-t border-border px-3 py-2 text-[10.5px] text-muted-foreground">
