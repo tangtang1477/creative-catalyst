@@ -118,6 +118,9 @@ interface SCState {
   deleteTask: (id: string) => void;
   retryStage: (id: StageId) => void;
   retryAsset: (assetId: string) => void;
+  setActiveVersion: (assetId: string, versionIndex: number) => void;
+
+
 
 
   toggleSelect: (id: string) => void;
