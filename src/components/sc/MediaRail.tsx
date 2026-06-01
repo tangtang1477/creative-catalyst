@@ -94,11 +94,27 @@ export function MediaRail() {
 
   const images = useMemo(() => assets.filter((a) => a.kind === "image"), [assets]);
   const videos = useMemo(() => assets.filter((a) => a.kind === "video"), [assets]);
-
-  const visible = useMemo(
-    () => assets.filter((a) => (filter === "all" ? true : a.kind === filter)),
-    [assets, filter],
+  const wardrobeAssets = useMemo(() => assets.filter((a) => a.stageId === "wardrobe"), [assets]);
+  const keyframeAssets = useMemo(() => assets.filter((a) => a.stageId === "paint"), [assets]);
+  const fixedAssets = useMemo(
+    () => assets.filter((a) => (a.versions?.length ?? 0) >= 1),
+    [assets],
   );
+
+  const visible = useMemo(() => {
+    switch (filter) {
+      case "wardrobe":
+        return wardrobeAssets;
+      case "keyframe":
+        return keyframeAssets;
+      case "video":
+        return videos;
+      case "fixed":
+        return fixedAssets;
+      default:
+        return assets;
+    }
+  }, [assets, filter, wardrobeAssets, keyframeAssets, videos, fixedAssets]);
 
   const episodes = useMemo(() => {
     if (taskKind !== "series") return [];
