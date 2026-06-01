@@ -965,13 +965,13 @@ export const useSC = create<SCState>((set, get) => {
             }
             if (r.status === "failed") {
               stop();
-              const reason = r.error || "Seedance 渲染失败";
+              const reason = "Seedance 渲染失败";
               updateAsset("V01", {
                 status: "Failed",
                 errorMessage: reason,
                 errorCode: "seedance_failed",
               });
-              appendSummary("life", `Seedance 渲染失败：${reason}（未扣积分）`);
+              appendSummary("life", `${reason}（未扣积分）`);
               updateStage("life", { status: "failed" });
               set({ phase: "failed" });
               persistCurrent("failed");
