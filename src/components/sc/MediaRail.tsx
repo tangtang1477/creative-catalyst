@@ -19,7 +19,15 @@ import { Collapse } from "./Collapse";
 import { BatchEditDialog } from "./BatchEditDialog";
 
 type ViewMode = "grid" | "list";
-type Filter = "all" | "image" | "video";
+type Filter = "all" | "wardrobe" | "keyframe" | "video" | "fixed";
+
+const FILTER_LABEL: Record<Filter, string> = {
+  all: "All",
+  wardrobe: "Wardrobe & Props",
+  keyframe: "Keyframes",
+  video: "Videos",
+  fixed: "Fix history",
+};
 
 const WIDTH_KEY = "sc.rail.width";
 const VIEW_KEY = "sc.rail.view";
