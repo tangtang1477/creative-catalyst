@@ -891,11 +891,18 @@ export const useSC = create<SCState>((set, get) => {
       return;
     }
     const briefFormat = get().brief?.format ?? "";
-    const videoDuration = parseFormatDuration(briefFormat);
+    const requestedDuration = parseFormatDuration(briefFormat);
+    const { duration: videoDuration, clamped } = clampSeedanceDuration(requestedDuration);
     const videoRatio = parseFormatRatio(briefFormat);
 
     updateStage("life", { status: "running", expanded: true });
     runTool("life", "skill", "first-frame-to-video · Seedance", 1200, 0);
+    if (clamped) {
+      appendSummary(
+        "life",
+        `Seedance i2v 仅支持 5s/10s，请求 ${requestedDuration}s 已自动调整为 ${videoDuration}s`,
+      );
+    }
     streamLines("life", [`提交 V01 first-frame-to-video · ${videoDuration}s · ${videoRatio}`], 0, 100);
     set((s) => ({
       assets: [
