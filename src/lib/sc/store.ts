@@ -965,8 +965,13 @@ export const useSC = create<SCState>((set, get) => {
             }
             if (r.status === "failed") {
               stop();
-              updateAsset("V01", { status: "Failed" });
-              appendSummary("life", "Seedance 渲染失败");
+              const reason = r.error || "Seedance 渲染失败";
+              updateAsset("V01", {
+                status: "Failed",
+                errorMessage: reason,
+                errorCode: "seedance_failed",
+              });
+              appendSummary("life", `Seedance 渲染失败：${reason}（未扣积分）`);
               updateStage("life", { status: "failed" });
               set({ phase: "failed" });
               persistCurrent("failed");
@@ -974,8 +979,12 @@ export const useSC = create<SCState>((set, get) => {
             }
             if (Date.now() - started > 5 * 60_000) {
               stop();
-              updateAsset("V01", { status: "Failed" });
-              appendSummary("life", "Seedance 轮询超时（5min）");
+              updateAsset("V01", {
+                status: "Failed",
+                errorMessage: "Seedance 轮询超时（5min 未返回结果）",
+                errorCode: "timeout",
+              });
+              appendSummary("life", "Seedance 轮询超时（5min）· 未扣积分");
               updateStage("life", { status: "failed" });
               set({ phase: "failed" });
               persistCurrent("failed");
@@ -993,8 +1002,12 @@ export const useSC = create<SCState>((set, get) => {
         }
       } catch (e) {
         console.error("[life] submit failed", e);
-        updateAsset("V01", { status: "Failed" });
-        appendSummary("life", `提交失败：${(e as Error).message}`);
+        updateAsset("V01", {
+          status: "Failed",
+          errorMessage: (e as Error).message,
+          errorCode: "submit_failed",
+        });
+        appendSummary("life", `提交失败：${(e as Error).message}（未扣积分）`);
         updateStage("life", { status: "failed" });
         set({ phase: "failed" });
         persistCurrent("failed");
