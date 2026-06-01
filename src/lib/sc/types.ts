@@ -78,6 +78,13 @@ export interface StageState {
   thoughts: Thought[];
 }
 
+export interface AssetVersion {
+  url: string;
+  createdAt: number;
+  source: "init" | "qc-fix" | "manual-retry" | "batch-edit" | "manual-edit";
+  note?: string;
+}
+
 export interface Asset {
   id: string;
   kind: "image" | "video";
@@ -96,6 +103,8 @@ export interface Asset {
   errorMessage?: string;
   /** Optional machine code, e.g. "timeout", "gateway_500". */
   errorCode?: string;
+  /** Previous versions (oldest first); current `url` is always the active. */
+  versions?: AssetVersion[];
 }
 
 export interface Brief {
