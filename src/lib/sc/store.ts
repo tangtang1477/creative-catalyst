@@ -54,6 +54,8 @@ interface ChatMsg {
   text: string;
   ts: number;
   actions?: ChatAction[];
+  streaming?: boolean;
+  toolCalls?: import("./types").ChatToolCall[];
 }
 
 interface SCState {
