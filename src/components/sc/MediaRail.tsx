@@ -223,21 +223,30 @@ export function MediaRail() {
 
         {/* Filter chips */}
         {assets.length > 0 && (
-          <div className="flex shrink-0 items-center gap-1 border-b border-border px-3 py-1.5">
-            {(["all", "image", "video"] as const).map((f) => {
-              const count = f === "all" ? assets.length : f === "image" ? images.length : videos.length;
+          <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-3 py-1.5">
+            {(["all", "wardrobe", "keyframe", "video", "fixed"] as const).map((f) => {
+              const count =
+                f === "all"
+                  ? assets.length
+                  : f === "wardrobe"
+                    ? wardrobeAssets.length
+                    : f === "keyframe"
+                      ? keyframeAssets.length
+                      : f === "video"
+                        ? videos.length
+                        : fixedAssets.length;
               return (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
                   className={cn(
-                    "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] capitalize transition-colors",
+                    "inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] transition-colors",
                     filter === f
                       ? "bg-accent text-accent-foreground"
                       : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
                   )}
                 >
-                  {f}
+                  {FILTER_LABEL[f]}
                   <span
                     className={cn(
                       "rounded-full px-1.5 text-[10px] font-mono",
@@ -251,6 +260,7 @@ export function MediaRail() {
             })}
           </div>
         )}
+
 
         {/* (Inline toolbar removed — floating bar below replaces it) */}
 
