@@ -1351,7 +1351,7 @@ export const useSC = create<SCState>((set, get) => {
           const reader = res.body.getReader();
           const decoder = new TextDecoder();
           let buf = "";
-          let pendingEvent = "message";
+          
 
           const handleEvent = (ev: string, dataStr: string) => {
             let data: unknown;
