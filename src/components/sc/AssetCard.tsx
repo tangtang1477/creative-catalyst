@@ -165,7 +165,7 @@ export function AssetCard({
           </div>
         )}
 
-        {asset.kind === "video" && !asset.url && !isLoadingState && (
+        {asset.kind === "video" && !asset.url && isLoadingState && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="rounded-full bg-black/40 p-2 backdrop-blur-sm">
               <Play className="h-4 w-4 text-white/80" />
