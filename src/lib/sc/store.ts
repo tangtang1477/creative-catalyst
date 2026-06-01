@@ -22,11 +22,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { streamGenerateImage, uploadBase64Image } from "@/lib/upload-image";
 import { submitVideoTask, pollVideoTask } from "@/lib/seedance.functions";
 import { generateScript, type GeneratedScript } from "@/lib/script.functions";
-import { parseFormatDuration, parseFormatRatio, formatDurationLabel } from "@/lib/sc/format-utils";
+import { parseFormatDuration, parseFormatRatio, formatDurationLabel, clampSeedanceDuration } from "@/lib/sc/format-utils";
 
 
-const consume = (stage: string, label: string, cost: number) =>
-  useCredits.getState().consume(stage, label, cost);
+const consume = (stage: string, label: string, cost: number, taskId?: string | null) =>
+  useCredits.getState().consume(stage, label, cost, taskId);
 const canAfford = (cost: number) => useCredits.getState().canAfford(cost);
 
 interface RailState {
