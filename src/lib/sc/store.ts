@@ -627,8 +627,15 @@ export const useSC = create<SCState>((set, get) => {
             appendSummary("paint", `${r.shot} Ready · ${r.motion}`);
           } catch (e) {
             console.error("[paint] failed", r.shot, e);
-            updateAsset(r.shot, { status: "Failed" });
-            appendSummary("paint", `${r.shot} 生成失败：${(e as Error).message}`);
+            updateAsset(r.shot, {
+              status: "Failed",
+              errorMessage: (e as Error).message,
+              errorCode: "gen_failed",
+            });
+            appendSummary(
+              "paint",
+              `${r.shot} 生成失败：${(e as Error).message}（未扣积分）`,
+            );
           }
         }
       }
@@ -757,34 +764,69 @@ export const useSC = create<SCState>((set, get) => {
     const briefPrompt = get().brief?.prompt ?? "";
 
     void (async () => {
+      // Collect wardrobe reference URLs (W01/W02/P01) for character/prop locking.
+      const wardrobeRefs = get()
+        .assets.filter(
+          (a) =>
+            a.stageId === "wardrobe" &&
+            a.url &&
+            /^https?:\/\//.test(a.url),
+        )
+        .map((a) => a.url as string);
+
       for (const issue of issues) {
         if (get().runId !== startedRunId) return;
         const tcId = startToolCall("qc", "tool", `re-paint · ${issue.shotId}`);
-        updateAsset(issue.shotId, { status: "Generating" });
+        updateAsset(issue.shotId, { status: "Generating", errorMessage: undefined });
         try {
           if (!userId) {
-            // No backend image-gen available → mark Ready with current url
             updateAsset(issue.shotId, { status: "Ready" });
           } else {
-            const fixPrompt = `${issue.fixPrompt}\n\nUser brief: ${briefPrompt}`;
-            const b64 = await streamGenerateImage({
-              prompt: fixPrompt,
-              quality: "low",
-              onPartial: (dataUrl) => {
-                if (get().runId !== startedRunId) return;
-                updateAsset(issue.shotId, { url: dataUrl });
-              },
+            const originalShot = get().assets.find(
+              (a) => a.id === issue.shotId,
+            );
+            const originalUrl =
+              originalShot?.url && /^https?:\/\//.test(originalShot.url)
+                ? originalShot.url
+                : undefined;
+            const refs = [...wardrobeRefs];
+            if (originalUrl) refs.push(originalUrl);
+
+            const editPrompt = [
+              `Re-render keyframe ${issue.shotId} for a short film while strictly preserving character identity and key prop appearance from the reference images (W01 hero, W02 supporting, P01 key prop).`,
+              `Consistency dimension to fix: ${issue.dimension}. Required correction: ${issue.suggestion}`,
+              `Detailed instruction: ${issue.fixPrompt}`,
+              `User brief (stay on-topic, do NOT introduce unrelated brands or scenes): ${briefPrompt}`,
+              `Keep the same composition and framing as the last reference image (the previous version of this shot). Output a single final keyframe image.`,
+            ].join("\n\n");
+
+            const { editImageWithRefs } = await import(
+              "@/lib/image-edit.functions"
+            );
+            const { b64 } = await editImageWithRefs({
+              data: { prompt: editPrompt, imageUrls: refs.slice(0, 6) },
             });
             if (get().runId !== startedRunId) return;
             const url = await uploadBase64Image({ base64: b64, userId, taskId });
             if (get().runId !== startedRunId) return;
-            updateAsset(issue.shotId, { status: "Ready", url });
+            updateAsset(issue.shotId, {
+              status: "Ready",
+              url,
+              errorMessage: undefined,
+            });
           }
           appendSummary("qc", `${issue.shotId} 已修正 (${issue.dimension})`);
         } catch (e) {
           console.error("[qc] re-paint failed", issue.shotId, e);
-          updateAsset(issue.shotId, { status: "Failed" });
-          appendSummary("qc", `${issue.shotId} 修正失败：${(e as Error).message}`);
+          updateAsset(issue.shotId, {
+            status: "Failed",
+            errorMessage: (e as Error).message,
+            errorCode: "edit_failed",
+          });
+          appendSummary(
+            "qc",
+            `${issue.shotId} 修正失败：${(e as Error).message}（未扣积分）`,
+          );
         } finally {
           finishToolCall("qc", tcId);
         }
