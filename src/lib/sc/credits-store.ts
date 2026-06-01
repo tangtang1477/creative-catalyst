@@ -5,6 +5,7 @@ export interface CreditEvent {
   stage: string;
   label: string;
   cost: number;
+  taskId?: string | null;
 }
 
 interface CreditsState {
@@ -15,7 +16,9 @@ interface CreditsState {
   lowOpen: boolean;
   lowDismissedFor: string | null; // taskId user dismissed for
   pulseId: number; // bump on each consume for UI animation triggers
-  consume: (stage: string, label: string, cost: number) => void;
+  /** Whether we have synced with the backend ledger for the current user. */
+  synced: boolean;
+  consume: (stage: string, label: string, cost: number, taskId?: string | null) => void;
   topUp: (n: number) => void;
   resetUsed: () => void;
   canAfford: (cost: number) => boolean;
@@ -23,6 +26,8 @@ interface CreditsState {
   closePricing: () => void;
   openLow: (taskId?: string) => void;
   closeLow: (taskId?: string) => void;
+  /** Pull balance from backend ledger and replace local cache. */
+  syncFromBackend: () => Promise<void>;
 }
 
 const KEY = "sc.credits.v1";
