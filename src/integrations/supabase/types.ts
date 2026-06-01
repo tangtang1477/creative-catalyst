@@ -64,6 +64,39 @@ export type Database = {
           },
         ]
       }
+      credit_ledger: {
+        Row: {
+          cost: number
+          created_at: string
+          id: string
+          kind: string
+          label: string
+          stage: string | null
+          task_id: string | null
+          user_id: string
+        }
+        Insert: {
+          cost: number
+          created_at?: string
+          id?: string
+          kind?: string
+          label: string
+          stage?: string | null
+          task_id?: string | null
+          user_id: string
+        }
+        Update: {
+          cost?: number
+          created_at?: string
+          id?: string
+          kind?: string
+          label?: string
+          stage?: string | null
+          task_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       seedance_jobs: {
         Row: {
           asset_id: string | null
