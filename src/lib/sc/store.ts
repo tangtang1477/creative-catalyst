@@ -1135,6 +1135,7 @@ export const useSC = create<SCState>((set, get) => {
     runId: 0,
     selection: [],
     chatLog: [],
+    versionDrawerAssetId: null,
     currentUserId: null,
     script: null,
 
