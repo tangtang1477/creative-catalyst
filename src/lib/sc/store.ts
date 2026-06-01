@@ -42,11 +42,16 @@ interface SoftGate {
   fireAt: number;
 }
 
+export type ChatAction =
+  | { label: string; kind: "retry-stage"; stageId: StageId }
+  | { label: string; kind: "rerun-all" };
+
 interface ChatMsg {
   id: string;
   role: "user" | "agent";
   text: string;
   ts: number;
+  actions?: ChatAction[];
 }
 
 interface SCState {
