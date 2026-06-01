@@ -178,7 +178,7 @@ export function Workspace() {
 
                     if (id === "structure") {
                       return (
-                        <StageBoundary key={id}>
+                        <StageBoundary key={id} stageId={id}>
                           <StageRow
                             id={id}
                             state={st}
@@ -200,7 +200,7 @@ export function Workspace() {
 
                     if (id === "wardrobe") {
                       return (
-                        <StageBoundary key={id}>
+                        <StageBoundary key={id} stageId={id}>
                           <StageRow id={id} state={st} keepChildrenWhenCollapsed>
                             <WardrobePanel />
                           </StageRow>
@@ -210,7 +210,7 @@ export function Workspace() {
 
                     if (id === "paint") {
                       return (
-                        <StageBoundary key={id}>
+                        <StageBoundary key={id} stageId={id}>
                           <StageRow
                             id={id}
                             state={st}
@@ -232,7 +232,7 @@ export function Workspace() {
 
                     if (id === "qc") {
                       return (
-                        <StageBoundary key={id}>
+                        <StageBoundary key={id} stageId={id}>
                           <StageRow id={id} state={st} keepChildrenWhenCollapsed>
                             <QCPanel />
                           </StageRow>
@@ -243,7 +243,7 @@ export function Workspace() {
                     if (id === "life") {
                       const lowCredit = st.status === "recovering" && remaining < 30;
                       return (
-                        <StageBoundary key={id}>
+                        <StageBoundary key={id} stageId={id}>
                           <StageRow
                             id={id}
                             state={st}
@@ -263,7 +263,7 @@ export function Workspace() {
 
                     if (id === "details" && st.status === "ready") {
                       return (
-                        <StageBoundary key={id}>
+                        <StageBoundary key={id} stageId={id}>
                           <StageRow id={id} state={st} keepChildrenWhenCollapsed>
                             <QualityCheck />
                           </StageRow>
@@ -272,7 +272,7 @@ export function Workspace() {
                     }
 
                     return (
-                      <StageBoundary key={id}>
+                      <StageBoundary key={id} stageId={id}>
                         <StageRow id={id} state={st} />
                       </StageBoundary>
                     );
