@@ -298,6 +298,8 @@ export function Workspace() {
                         text={m.text}
                         streaming={m.streaming}
                         toolCalls={m.toolCalls}
+                        optionCards={m.optionCards}
+                        skill={m.skill}
                         actions={m.actions}
                       />
                     ),
