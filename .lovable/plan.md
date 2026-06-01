@@ -1,35 +1,71 @@
-## 修复目标
+## 根因
 
-针对截图反馈的两个问题做最小改动：
+`src/lib/sc/store.ts` 里 `currentUserId` 只在 **submit 那一刻** 通过 `supabase.auth.getUser()` 异步写入一次（line 1283）：
 
-### 1. 失败卡红框宽度 + Play 图标错位
+```ts
+supabase.auth.getUser().then(({ data }) => {
+  set({ currentUserId: data.user?.id ?? null });
+});
+```
 
-**问题定位**（`src/components/sc/AssetCard.tsx`）：
-- 失败容器（line 132-138）缺少 `w-full`，且外层 `<div className="relative">` 没显式宽度，在某些布局下红色框未撑满父容器。
-- line 168-172 的「Play 图标 overlay」条件是 `kind === "video" && !asset.url && !isLoadingState`，**失败状态也会命中**，所以红框中间额外叠了一个 ▶ 按钮，与「生成失败」文字重叠错位。
+问题链：
 
-**改法**：
-- 给失败容器加 `w-full`，外层 `<div className="relative">` 也补 `w-full`，确保 16/9 宽度铺满。
-- 给 Play overlay 增加排除条件：失败态（无 url 且非 loading）不再渲染 Play 图标。
+1. 用户从 `/login` 登录后回到 `/`，store 里的 `currentUserId` 仍然是 submit 时拿到的旧值（多半是 `null`，因为 submit 那一刻 session 还没恢复 / 用户当时还没登录）。
+2. `runLife` 用 `get().currentUserId`（line 965）做判断 → `null` → 走「未登录」失败分支（line 971-979），标记 V01 Failed，不调用 Seedance。
+3. 用户点「重试」→ `retryAsset("V01")` → `retryStage("life")` → 重新执行 `runLife`，**还是读同一个旧的 `currentUserId`** → 立刻又失败，UI 上看起来"点了没反应"（实际上是瞬间又失败成同样的文案）。
+4. 同样问题影响 `runWardrobe`(line 527)、`runPaint`(line 661)，登录后重做也会卡在「未登录·使用示例图」。
 
-### 2. 重做视频出现假图（没真正重做 Seedance）
+另外没有任何地方订阅 `supabase.auth.onAuthStateChange`，所以登录/登出后 store 永远不会自更新。
 
-**问题定位**（`src/lib/sc/store.ts` `runLife`，line 959-984）：
-- `runLife` 取「paint 阶段第一个 http(s) URL」作为首帧。`SAMPLE_KEYFRAME` 是本地静态资源（非 http URL），所以当 paint 用的是 sample 时该判断为空，直接走 fallback：3 秒后塞入 `SAMPLE_VIDEO`（截图里那段 Chanel 香水视频），并标记 V01 Ready。
-- 这就是用户看到的「重做后出来一段假视频，根本没调 Seedance」。
+## 改动
 
-**改法**（只动 `runLife` 的 fallback 分支，不动其它阶段）：
-- 把 keyframe 判定放宽：接受任何非空 `url`（包含 `data:` 和静态资源），只要登录态有 userId 即提交 Seedance。
-- 当真的无法发起真实生成（无 userId 或确实没任何 keyframe），不再静默塞 `SAMPLE_VIDEO`+Ready，而是把 V01 标为 `Failed`，写 `errorMessage`（如「未登录，无法生成真实视频」/「缺少关键帧，请先重跑 Keyframes 阶段」），并 `phase: "failed"`、**不扣积分**。这样重试入口和失败 UI 行为统一，不再出现假图。
-- 保留 `clampSeedanceDuration` 逻辑（5s/10s 自动调整），避免再次踩 `InvalidParameter`。
+只动 `src/lib/sc/store.ts`，最小范围：
 
-### 改动文件
+### 1. 全局订阅 auth 状态，写回 `currentUserId`
 
-- `src/components/sc/AssetCard.tsx`：失败容器加 `w-full`，外层 wrapper 加 `w-full`，Play overlay 排除失败态。
-- `src/lib/sc/store.ts` · `runLife`：放宽 keyframe URL 判定；无真实生成路径时直接 Failed（不扣分、不塞 sample）。
+在 store 文件底部（创建 store 之后、模块加载时）执行一次：
 
-### 验收
+```ts
+if (typeof window !== "undefined") {
+  // 初始恢复 session
+  supabase.auth.getUser().then(({ data }) => {
+    useSC.setState({ currentUserId: data.user?.id ?? null });
+  });
+  // 登录 / 登出 / token 刷新都同步进 store
+  supabase.auth.onAuthStateChange((_e, session) => {
+    useSC.setState({ currentUserId: session?.user?.id ?? null });
+  });
+}
+```
 
-1. 失败卡红框与外层卡片等宽，中央不再出现错位的 ▶ 图标。
-2. 在没有真实 keyframe / 未登录场景下重做视频不会再出现 Chanel 假视频，而是显示明确的失败原因和「重试」按钮，不扣积分。
-3. 有真实 keyframe 时重做会真正再调一次 Seedance（duration 已 clamp 到 5/10s）。
+这样登录后无需任何其它操作，store 立即拿到 userId。
+
+### 2. 重做时**先刷新一次** userId，避免依赖旧快照
+
+在 `retryStage`（line 1549）开头补一次拉取：
+
+```ts
+retryStage: (id) => {
+  // 重做前同步一次最新登录态，避免点了重试还报「未登录」
+  void supabase.auth.getUser().then(({ data }) => {
+    set({ currentUserId: data.user?.id ?? null });
+  });
+  // ...原逻辑
+}
+```
+
+并把 `runLife` / `runWardrobe` / `runPaint` 里读 `currentUserId` 的位置改成异步获取最新值（如果当前为 null，先 `await supabase.auth.getUser()` 再判断），确保即使订阅还没就绪也能在生成前再 double-check 一次。
+
+### 3.（可选清理）submit 时不要强制把 `currentUserId` 重置为 `null`
+
+`startNewTask`（line 1279）里 `currentUserId: null` 这一行删掉，避免每次 submit 都先把已知的 userId 清空再异步拉回来，造成第一次 `runLife` 还是看到 `null`。
+
+## 验收
+
+1. 在 `/login` 登录后回到 `/`，无需刷新页面，新建任务能正常生成。
+2. 任意失败态点「重试」/「重做此步」：
+   - 已登录 → 真实调用 Seedance（duration clamp 到 5/10s），不会再立刻报"未登录"。
+   - 未登录 → 弹出失败原因 + 引导去登录，不扣积分。
+3. 登出后正在进行的任务，新一步会按"未登录"逻辑友好失败而不是塞假数据。
+
+只动 `src/lib/sc/store.ts` 一个文件。
