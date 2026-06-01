@@ -90,7 +90,7 @@ export function AssetCard({
         selected && "ring-2 ring-accent",
       )}
     >
-      <div className="relative">
+      <div className="relative w-full">
         {asset.kind === "image" && asset.url ? (
           <img
             src={asset.url}
