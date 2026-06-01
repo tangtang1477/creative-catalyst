@@ -123,6 +123,10 @@ interface SCState {
   retryStage: (id: StageId) => void;
   retryAsset: (assetId: string) => void;
   setActiveVersion: (assetId: string, versionIndex: number) => void;
+  openVersionDrawer: (assetId: string) => void;
+  closeVersionDrawer: () => void;
+
+
 
 
 
