@@ -1155,7 +1155,6 @@ export const useSC = create<SCState>((set, get) => {
     })();
   };
 
-  };
 
   const runDetails = () => {
     updateStage("details", { status: "running", expanded: true });
