@@ -297,10 +297,31 @@ export function Workspace() {
                         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full ring-1 ring-border bg-surface">
                           <Logo size={12} />
                         </span>
-                        <span className="leading-relaxed">{m.text}</span>
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div className="leading-relaxed">{m.text}</div>
+                          {m.actions && m.actions.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {m.actions.map((a, i) => (
+                                <SCButton
+                                  key={i}
+                                  variant="chip"
+                                  size="sm"
+                                  className="h-7 px-2.5 text-[11.5px]"
+                                  onClick={() => {
+                                    if (a.kind === "retry-stage") retryStage(a.stageId);
+                                    else if (a.kind === "rerun-all" && brief?.prompt) submit(brief.prompt);
+                                  }}
+                                >
+                                  {a.label}
+                                </SCButton>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ),
                   )}
+
 
                   <div ref={endRef} className="h-px" />
                 </div>
