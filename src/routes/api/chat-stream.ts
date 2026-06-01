@@ -66,6 +66,114 @@ export const Route = createFileRoute("/api/chat-stream")({
           );
         }
 
+        // ===== Preflight options 分支：让模型直接产出 JSON 问题卡 =====
+        if (mode === "preflight-options") {
+          const preflightSys = [
+            "你是 Vibe Aideo 的 AI 广告导演。用户刚确认了一个视频 brief，",
+            "现在请你**主动**提出 3 个关键创意选择题，让用户点选而不是自己输入。",
+            "严格输出 JSON（不要 markdown 代码块），形如：",
+            '{"intro":"…一句话开场，呼应用户的需求…","questions":[',
+            '  {"id":"duration","label":"…","options":[{"id":"60s","label":"~60秒（4个场景）"},…],"allowOther":true},',
+            '  {"id":"tone","label":"…","options":[…],"allowOther":true},',
+            '  {"id":"style","label":"…","options":[…],"allowOther":true}',
+            '],"outro":"…一句话告诉用户点 Continue 即可开始制作…"}',
+            "要求：",
+            "- 每题 3–4 个选项，选项 label 控制在 14 字以内，可在括号里补充细节；",
+            "- 问题必须紧扣用户的 prompt（古风短剧就别问 \"是否需要英文配音\"）；",
+            "- 第 1 题=时长/集数；第 2 题=情绪/调性；第 3 题=视觉风格或主角方向；",
+            "- intro/outro 用中文，自然口语，不要 markdown；",
+            "- 全文只输出 JSON，不要任何额外文字。",
+            ctxLines.length ? "\n—— 当前任务上下文 ——\n" + ctxLines.join("\n") : "",
+          ].filter(Boolean).join("\n");
+
+          const userMsg = messages.length
+            ? messages[messages.length - 1].content
+            : ctx?.brief?.prompt ?? "";
+
+          const json = await fetch(
+            "https://ai.gateway.lovable.dev/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${key}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "google/gemini-2.5-flash",
+                response_format: { type: "json_object" },
+                messages: [
+                  { role: "system", content: preflightSys },
+                  { role: "user", content: userMsg || "请基于上下文给出选项" },
+                ],
+              }),
+              signal: request.signal,
+            },
+          );
+
+          if (!json.ok) {
+            const detail = await json.text().catch(() => "");
+            return new Response(
+              JSON.stringify({ error: `http_${json.status}`, detail: detail.slice(0, 300) }),
+              { status: json.status, headers: { "Content-Type": "application/json" } },
+            );
+          }
+
+          const data = (await json.json().catch(() => null)) as {
+            choices?: Array<{ message?: { content?: string } }>;
+          } | null;
+          const raw = data?.choices?.[0]?.message?.content ?? "";
+          let parsed: { intro?: string; outro?: string; questions?: unknown[] } = {};
+          try {
+            parsed = JSON.parse(raw);
+          } catch {
+            parsed = {};
+          }
+          const intro = typeof parsed.intro === "string" ? parsed.intro : "好的，先确认几个关键方向：";
+          const outro = typeof parsed.outro === "string" ? parsed.outro : "选完点 Continue，我就开始制作。";
+          const questions = Array.isArray(parsed.questions) ? parsed.questions : [];
+
+          const encoder = new TextEncoder();
+          const stream = new ReadableStream<Uint8Array>({
+            async start(controller) {
+              const emit = (event: string, payload: unknown) => {
+                controller.enqueue(
+                  encoder.encode(
+                    `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`,
+                  ),
+                );
+              };
+              // 流式吐 intro
+              for (const ch of intro) {
+                emit("token", { text: ch });
+                await new Promise((r) => setTimeout(r, 12));
+              }
+              emit("token", { text: "\n\n" });
+              emit("option-card", {
+                id: `oc_${Date.now().toString(36)}`,
+                questions,
+                intent: "preflight",
+              });
+              emit("token", { text: "\n" });
+              for (const ch of outro) {
+                emit("token", { text: ch });
+                await new Promise((r) => setTimeout(r, 12));
+              }
+              emit("done", {});
+              controller.close();
+            },
+          });
+
+          return new Response(stream, {
+            headers: {
+              "Content-Type": "text/event-stream; charset=utf-8",
+              "Cache-Control": "no-cache, no-transform",
+              "X-Accel-Buffering": "no",
+              Connection: "keep-alive",
+            },
+          });
+        }
+        // ===== 常规 chat 分支继续往下走 =====
+
         const PHASES = [
           { id: "intent", label: "理解用户需求" },
           { id: "context", label: "匹配当前镜头与品牌" },
