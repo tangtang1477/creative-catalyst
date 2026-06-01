@@ -92,6 +92,10 @@ export interface Asset {
   stageId?: StageId;
   episode?: number;
   scene?: number;
+  /** Human-readable failure reason (shown on the failed card). */
+  errorMessage?: string;
+  /** Optional machine code, e.g. "timeout", "gateway_500". */
+  errorCode?: string;
 }
 
 export interface Brief {
