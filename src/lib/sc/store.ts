@@ -1777,3 +1777,13 @@ export const useSC = create<SCState>((set, get) => {
     },
   };
 });
+
+// 全局订阅 auth 状态：登录/登出/token 刷新都同步进 store，保证 retry / 新任务读到最新 userId
+if (typeof window !== "undefined") {
+  supabase.auth.getUser().then(({ data }) => {
+    useSC.setState({ currentUserId: data.user?.id ?? null });
+  });
+  supabase.auth.onAuthStateChange((_event, session) => {
+    useSC.setState({ currentUserId: session?.user?.id ?? null });
+  });
+}
