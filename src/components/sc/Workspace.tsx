@@ -25,6 +25,7 @@ import { InlineLowCredit } from "./credits/InlineLowCredit";
 import { useCredits, creditsSelectors } from "@/lib/sc/credits-store";
 import { StageBoundary } from "./StageBoundary";
 import { VersionDrawer } from "./VersionDrawer";
+import { ChatAgentMessage } from "./ChatAgentMessage";
 
 import { cn } from "@/lib/utils";
 
