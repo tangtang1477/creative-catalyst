@@ -48,7 +48,7 @@ const loadView = (): ViewMode => {
 export function MediaRail() {
   const { assets, phase, rail, setRailOpen, taskKind, selection, toggleSelect, clearSelection, addAttachment } = useSC();
   const [imgOpen, setImgOpen] = useState(true);
-  const [vidOpen, setVidOpen] = useState(true);
+  // (Single-group list view; vidOpen retained as no-op for backwards compat)
   const [filter, setFilter] = useState<Filter>("all");
   const [batchOpen, setBatchOpen] = useState(false);
   const [view, setView] = useState<ViewMode>(loadView);
