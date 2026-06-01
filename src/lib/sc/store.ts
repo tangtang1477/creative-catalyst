@@ -1595,6 +1595,24 @@ export const useSC = create<SCState>((set, get) => {
       }
     },
 
+    setActiveVersion: (assetId, versionIndex) => {
+      set((s) => ({
+        assets: s.assets.map((a) => {
+          if (a.id !== assetId) return a;
+          const versions = a.versions ?? [];
+          const target = versions[versionIndex];
+          if (!target || !a.url) return a;
+          // push current url as a "manual-revert" record so we never lose it
+          const nextVersions: typeof versions = versions.map((v, i) =>
+            i === versionIndex ? { ...v, url: a.url!, createdAt: Date.now(), source: "manual-revert", note: "切回此版本" } : v,
+          );
+          return { ...a, url: target.url, versions: nextVersions };
+        }),
+      }));
+    },
+
+
+
 
 
     forceState: (s) => {
