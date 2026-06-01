@@ -224,6 +224,18 @@ export function AssetCard({
             <RotateCw className="h-3 w-3" />
             Replace
           </SCButton>
+          {hasVersions && (
+            <SCButton
+              variant="chip"
+              size="sm"
+              className="h-6 gap-1 px-2 text-[11px]"
+              onClick={() => openVersionDrawer(asset.id)}
+              title="查看版本历史"
+            >
+              <RefreshCw className="h-3 w-3" />
+              v{versionCount}
+            </SCButton>
+          )}
           <SCButton
             variant="icon"
             size="icon"
@@ -237,4 +249,5 @@ export function AssetCard({
     </div>
   );
 }
+
 
