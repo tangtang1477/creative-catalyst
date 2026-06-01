@@ -321,54 +321,30 @@ export function MediaRail() {
             </div>
           ) : (
             <div className="space-y-4">
-              {filter !== "video" && images.length > 0 && (
-                <Group
-                  title="Images"
-                  count={images.length}
-                  Icon={ImageIcon}
-                  open={imgOpen}
-                  onToggle={() => setImgOpen((v) => !v)}
-                >
-                  <div className="space-y-2">
-                    {images.map((a) => (
-                      <AssetCard
-                        key={a.id}
-                        asset={a}
-                        compact
-                        highlighted={rail.flashId === a.id}
-                        selectable={multi}
-                        selected={selection.includes(a.id)}
-                        onToggle={toggleSelect}
-                      />
-                    ))}
-                  </div>
-                </Group>
-              )}
-              {filter !== "image" && videos.length > 0 && (
-                <Group
-                  title="Videos"
-                  count={videos.length}
-                  Icon={Film}
-                  open={vidOpen}
-                  onToggle={() => setVidOpen((v) => !v)}
-                >
-                  <div className="space-y-2">
-                    {videos.map((a) => (
-                      <AssetCard
-                        key={a.id}
-                        asset={a}
-                        compact
-                        highlighted={rail.flashId === a.id}
-                        selectable={multi}
-                        selected={selection.includes(a.id)}
-                        onToggle={toggleSelect}
-                      />
-                    ))}
-                  </div>
-                </Group>
-              )}
+              <Group
+                title={FILTER_LABEL[filter]}
+                count={visible.length}
+                Icon={filter === "video" ? Film : ImageIcon}
+                open={imgOpen}
+                onToggle={() => setImgOpen((v) => !v)}
+              >
+                <div className="space-y-2">
+                  {visible.map((a) => (
+                    <AssetCard
+                      key={a.id}
+                      asset={a}
+                      compact
+                      highlighted={rail.flashId === a.id}
+                      selectable={multi}
+                      selected={selection.includes(a.id)}
+                      onToggle={toggleSelect}
+                    />
+                  ))}
+                </div>
+              </Group>
             </div>
           )}
+
         </div>
 
         <div className="shrink-0 border-t border-border px-3 py-2 text-[10.5px] text-muted-foreground">
