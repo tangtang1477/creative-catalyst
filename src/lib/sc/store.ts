@@ -504,12 +504,13 @@ export const useSC = create<SCState>((set, get) => {
         for (const w of wardrobeAssets) {
           if (get().runId !== startedRunId) return;
           updateAsset(w.id, { status: "Generating", errorMessage: undefined });
-          const role =
-            w.id === "P01"
-              ? "key prop / object hero shot, centered, studio lighting, neutral background"
-              : w.id === "W01"
-                ? "main character / hero subject portrait, full body, neutral background, reference sheet style"
-                : "secondary character / supporting subject portrait, full body, neutral background, reference sheet style";
+          const isProp = /^P/i.test(w.id);
+          const isHero = /^W0*1$/i.test(w.id);
+          const role = isProp
+            ? "key prop / object hero shot, centered, studio lighting, neutral background"
+            : isHero
+              ? "main character / hero subject portrait, full body, neutral background, reference sheet style"
+              : "secondary character / supporting subject portrait, full body, neutral background, reference sheet style";
           const fullPrompt = [
             `Reference asset ${w.id} for the short film. Subject: ${w.caption}.`,
             `Style: ${role}.`,
