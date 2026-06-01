@@ -57,6 +57,9 @@ interface ChatMsg {
   streaming?: boolean;
   toolCalls?: import("./types").ChatToolCall[];
   thinking?: string;
+  optionCards?: import("./types").ChatOptionCard[];
+  /** ai turn 顶部一行 skill 标题 */
+  skill?: { name: string; sub?: string };
 }
 
 
@@ -105,6 +108,8 @@ interface SCState {
   submit: (prompt: string) => void;
   chatMessage: (text: string) => void;
   confirmBrief: (brief: Brief) => void;
+  submitOptionCard: (msgId: string, cardId: string, answers: Record<string, { selected: string[]; otherText?: string }>) => void;
+  skipOptionCard: (msgId: string, cardId: string) => void;
   skipIntake: () => void;
   approveScript: () => void;
   tweakScript: () => void;
@@ -1181,6 +1186,98 @@ export const useSC = create<SCState>((set, get) => {
     runScene();
   };
 
+  const requestPreflightOptions = (brief: Brief) => {
+    // 进入 running 状态，让聊天面板可见
+    set({ phase: "running" });
+    persistCurrent("running");
+    const agentId = uid();
+    const agentMsg: ChatMsg = {
+      id: agentId,
+      role: "agent",
+      text: "",
+      ts: Date.now(),
+      streaming: true,
+      thinking: "",
+      toolCalls: [],
+      optionCards: [],
+      skill: { name: "chat-director", sub: "refining brief" },
+    };
+    set((s) => ({ chatLog: [...s.chatLog, agentMsg] }));
+
+    const patchAgent = (updater: (m: ChatMsg) => Partial<ChatMsg>) =>
+      set((s) => ({
+        chatLog: s.chatLog.map((m) => (m.id === agentId ? { ...m, ...updater(m) } : m)),
+      }));
+
+    void (async () => {
+      try {
+        const res = await fetch("/api/chat-stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "preflight-options",
+            messages: [{ role: "user", content: brief.prompt }],
+            context: { phase: "preflight", brief },
+          }),
+        });
+        if (!res.ok || !res.body) {
+          // 失败：直接 startRunning，不阻塞用户
+          patchAgent(() => ({ streaming: false, text: "（跳过偏好确认，直接开拍）" }));
+          startRunning();
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        const handle = (ev: string, dataStr: string) => {
+          let d: unknown;
+          try { d = JSON.parse(dataStr); } catch { return; }
+          const data = d as { text?: string; questions?: unknown; id?: string; intent?: "preflight" | "refine" };
+          if (ev === "token" && data.text) {
+            patchAgent((m) => ({ text: m.text + data.text! }));
+          } else if (ev === "option-card") {
+            const qs = Array.isArray(data.questions) ? (data.questions as import("./types").ChatOptionQuestion[]) : [];
+            patchAgent((m) => ({
+              optionCards: [
+                ...(m.optionCards ?? []),
+                {
+                  id: data.id ?? `oc_${uid()}`,
+                  questions: qs,
+                  status: "awaiting",
+                  intent: data.intent ?? "preflight",
+                  primaryLabel: "Continue",
+                },
+              ],
+            }));
+          } else if (ev === "done") {
+            patchAgent(() => ({ streaming: false }));
+          }
+        };
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const blocks = buf.split(/\r?\n\r?\n/);
+          buf = blocks.pop() ?? "";
+          for (const block of blocks) {
+            const lines = block.split(/\r?\n/);
+            let ev = "message";
+            const dataLines: string[] = [];
+            for (const raw of lines) {
+              if (raw.startsWith("event:")) ev = raw.slice(6).trim();
+              else if (raw.startsWith("data:")) dataLines.push(raw.slice(5).replace(/^\s/, ""));
+            }
+            if (dataLines.length) handle(ev, dataLines.join("\n"));
+          }
+        }
+        patchAgent(() => ({ streaming: false }));
+      } catch {
+        patchAgent(() => ({ streaming: false, text: "（跳过偏好确认，直接开拍）" }));
+        startRunning();
+      }
+    })();
+  };
+
   return {
     phase: "empty",
     prompt: "",
@@ -1528,7 +1625,68 @@ export const useSC = create<SCState>((set, get) => {
 
     confirmBrief: (brief) => {
       set({ brief });
-      startRunning();
+      // 不再立刻 startRunning：先让 AI 抛一张多问题选项卡
+      requestPreflightOptions(brief);
+    },
+
+    submitOptionCard: (msgId, cardId, answers) => {
+      const summaryParts: string[] = [];
+      set((s) => ({
+        chatLog: s.chatLog.map((m) => {
+          if (m.id !== msgId || !m.optionCards) return m;
+          return {
+            ...m,
+            optionCards: m.optionCards.map((c) => {
+              if (c.id !== cardId) return c;
+              const nextQs = c.questions.map((q) => {
+                const a = answers[q.id];
+                if (!a) return q;
+                const labels = a.selected
+                  .map((sid) => q.options.find((o) => o.id === sid)?.label ?? sid)
+                  .filter(Boolean);
+                if (a.otherText) labels.push(a.otherText);
+                if (labels.length) summaryParts.push(`${q.label} → ${labels.join(" / ")}`);
+                return { ...q, selected: a.selected, otherText: a.otherText };
+              });
+              return { ...c, questions: nextQs, status: "submitted" as const };
+            }),
+          };
+        }),
+      }));
+      // 把答案落到 brief 上，方便下游脚本生成参考
+      const cur = get().brief;
+      if (cur) {
+        const extra = summaryParts.join("\n");
+        set({
+          brief: {
+            ...cur,
+            prompt: extra ? `${cur.prompt}\n\n[偏好]\n${extra}` : cur.prompt,
+          },
+        });
+      }
+      // 触发后续流程
+      const card = get().chatLog
+        .find((m) => m.id === msgId)?.optionCards
+        ?.find((c) => c.id === cardId);
+      if (card?.intent === "preflight") startRunning();
+    },
+
+    skipOptionCard: (msgId, cardId) => {
+      set((s) => ({
+        chatLog: s.chatLog.map((m) => {
+          if (m.id !== msgId || !m.optionCards) return m;
+          return {
+            ...m,
+            optionCards: m.optionCards.map((c) =>
+              c.id === cardId ? { ...c, status: "skipped" as const } : c,
+            ),
+          };
+        }),
+      }));
+      const card = get().chatLog
+        .find((m) => m.id === msgId)?.optionCards
+        ?.find((c) => c.id === cardId);
+      if (card?.intent === "preflight") startRunning();
     },
 
     skipIntake: () => {
