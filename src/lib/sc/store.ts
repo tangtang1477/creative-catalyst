@@ -1547,6 +1547,10 @@ export const useSC = create<SCState>((set, get) => {
     },
 
     retryStage: (id) => {
+      // 重做前同步刷新一次最新登录态，避免点了重试还报「未登录」
+      void supabase.auth.getUser().then(({ data }) => {
+        set({ currentUserId: data.user?.id ?? null });
+      });
       clearTimers();
       set((s) => ({
         runId: s.runId + 1,
