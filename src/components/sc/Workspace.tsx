@@ -25,6 +25,7 @@ import { InlineLowCredit } from "./credits/InlineLowCredit";
 import { useCredits, creditsSelectors } from "@/lib/sc/credits-store";
 import { StageBoundary } from "./StageBoundary";
 import { VersionDrawer } from "./VersionDrawer";
+import { ChatAgentMessage } from "./ChatAgentMessage";
 
 import { cn } from "@/lib/utils";
 
@@ -291,35 +292,14 @@ export function Workspace() {
                         {m.text}
                       </div>
                     ) : (
-                      <div
+                      <ChatAgentMessage
                         key={m.id}
-                        className="mr-auto flex w-fit max-w-[80%] items-start gap-2.5 px-1 py-1 text-[13px] text-foreground/90 [animation:stream-fade_280ms_ease-out_both]"
-                      >
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full ring-1 ring-border bg-surface">
-                          <Logo size={12} />
-                        </span>
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <div className="leading-relaxed">{m.text}</div>
-                          {m.actions && m.actions.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5">
-                              {m.actions.map((a, i) => (
-                                <SCButton
-                                  key={i}
-                                  variant="chip"
-                                  size="sm"
-                                  className="h-7 px-2.5 text-[11.5px]"
-                                  onClick={() => {
-                                    if (a.kind === "retry-stage") retryStage(a.stageId);
-                                    else if (a.kind === "rerun-all" && brief?.prompt) submit(brief.prompt);
-                                  }}
-                                >
-                                  {a.label}
-                                </SCButton>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                        id={m.id}
+                        text={m.text}
+                        streaming={m.streaming}
+                        toolCalls={m.toolCalls}
+                        actions={m.actions}
+                      />
                     ),
                   )}
 

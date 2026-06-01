@@ -105,6 +105,21 @@ export interface Asset {
   errorCode?: string;
   /** Previous versions (oldest first); current `url` is always the active. */
   versions?: AssetVersion[];
+  /** For multi-segment video output (V01, V02, …): zero-based index. */
+  segmentIndex?: number;
+  /** Linked source keyframe shot id (e.g. "A01") for video segments. */
+  sourceShotId?: string;
+}
+
+export interface ChatToolCall {
+  id: string;
+  label: string;
+  kind: "skill" | "tool";
+  status: "running" | "done" | "failed";
+  startedAt: number;
+  durationMs?: number;
+  input?: string;
+  output?: string;
 }
 
 export interface Brief {

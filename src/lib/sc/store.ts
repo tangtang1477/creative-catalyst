@@ -54,6 +54,8 @@ interface ChatMsg {
   text: string;
   ts: number;
   actions?: ChatAction[];
+  streaming?: boolean;
+  toolCalls?: import("./types").ChatToolCall[];
 }
 
 interface SCState {
@@ -912,64 +914,103 @@ export const useSC = create<SCState>((set, get) => {
 
   const runLife = () => {
     closeGate();
-    const VIDEO_COST = 30;
-    if (!canAfford(VIDEO_COST)) {
-      updateStage("life", {
-        status: "recovering",
-        expanded: true,
-        summary: [],
-      });
+    const VIDEO_COST_PER_SEG = 30;
+    const briefFormat = get().brief?.format ?? "";
+    const requestedDuration = parseFormatDuration(briefFormat);
+    const videoRatio = parseFormatRatio(briefFormat);
+
+    // Build segment plan: prefer 10s chunks, top up with a 5s tail.
+    const script = get().script;
+    const shotsRef = script?.shots ?? [];
+    const paintAssetsAll = get().assets.filter((a) => a.stageId === "paint" && a.url);
+    const pickKeyframe = (shotId: string | undefined): string | undefined => {
+      if (shotId) {
+        const exact = paintAssetsAll.find((p) => p.id === shotId);
+        if (exact?.url) return exact.url;
+      }
+      const httpFirst = paintAssetsAll.find((p) => /^https?:\/\//.test(p.url!));
+      return (httpFirst ?? paintAssetsAll[0])?.url;
+    };
+
+    const planDurations: Array<5 | 10> = [];
+    if (requestedDuration <= 5) {
+      planDurations.push(5);
+    } else if (requestedDuration <= 10) {
+      planDurations.push(10);
+    } else {
+      const tens = Math.floor(requestedDuration / 10);
+      const rem = requestedDuration - tens * 10;
+      for (let i = 0; i < tens; i++) planDurations.push(10);
+      if (rem >= 3) planDurations.push(5);
+    }
+    // Cap segment count to available shots (or at least 1 segment).
+    const maxSegs = Math.max(1, Math.min(planDurations.length, Math.max(shotsRef.length, 1)));
+    const segments = planDurations.slice(0, maxSegs);
+    if (segments.length === 0) segments.push(10);
+    const totalCost = VIDEO_COST_PER_SEG * segments.length;
+
+    if (!canAfford(totalCost)) {
+      updateStage("life", { status: "recovering", expanded: true, summary: [] });
       const tid = get().taskId ?? undefined;
       useCredits.getState().openLow(tid);
       set({ phase: "failed" });
       persistCurrent("failed");
       return;
     }
-    const briefFormat = get().brief?.format ?? "";
-    const requestedDuration = parseFormatDuration(briefFormat);
-    const { duration: videoDuration, clamped } = clampSeedanceDuration(requestedDuration);
-    const videoRatio = parseFormatRatio(briefFormat);
 
     updateStage("life", { status: "running", expanded: true });
-    runTool("life", "skill", "first-frame-to-video · Seedance", 1200, 0);
-    if (clamped) {
-      appendSummary(
-        "life",
-        `Seedance i2v 仅支持 5s/10s，请求 ${requestedDuration}s 已自动调整为 ${videoDuration}s`,
-      );
-    }
-    streamLines("life", [`提交 V01 first-frame-to-video · ${videoDuration}s · ${videoRatio}`], 0, 100);
+    runTool("life", "skill", "reference-image-to-video · Seedance", 1200, 0);
+
+    const totalSeconds = segments.reduce((s, n) => s + n, 0);
+    appendSummary(
+      "life",
+      `计划：${segments.length} 段 · ${segments.join("+")}s ≈ ${totalSeconds}s ${
+        totalSeconds === requestedDuration
+          ? ""
+          : `（用户期望 ${requestedDuration}s，按 Seedance 5s/10s 颗粒拼接）`
+      }`.trim(),
+    );
+
+    // Collect wardrobe refs once
+    const wardrobeRefs = get()
+      .assets.filter(
+        (a) =>
+          a.stageId === "wardrobe" && a.url && /^https?:\/\//.test(a.url),
+      )
+      .map((a) => a.url as string)
+      .slice(0, 4);
+
+    // Pre-insert all V0N assets (Queued)
+    const segAssets: Asset[] = segments.map((dur, i) => {
+      const idx = i + 1;
+      const segId = `V${idx.toString().padStart(2, "0")}`;
+      const shot = shotsRef[i] ?? shotsRef[shotsRef.length - 1];
+      const keyUrl = pickKeyframe(shot?.shot);
+      return {
+        id: segId,
+        kind: "video" as const,
+        label: segId,
+        caption: shot?.scene
+          ? `${shot.shot ?? segId} · ${shot.scene} · ${dur}s`
+          : `Segment ${idx} · ${dur}s`,
+        status: "Queued" as const,
+        stageId: "life" as const,
+        duration: formatDurationLabel(dur),
+        segmentIndex: i,
+        sourceShotId: shot?.shot,
+        poster: keyUrl,
+      };
+    });
     set((s) => ({
-      assets: [
-        ...s.assets,
-        {
-          id: "V01",
-          kind: "video",
-          label: "V01",
-          caption: `Hero film · ${videoDuration}s`,
-          status: "Queued",
-          stageId: "life",
-          duration: formatDurationLabel(videoDuration),
-        },
-      ],
+      assets: [...s.assets, ...segAssets],
+      rail: { ...s.rail, open: true, flashId: segAssets[0]?.id },
     }));
 
-
-
-    // 取 paint 阶段第一个有 url 的关键帧（http URL 优先；data:/静态资源也可作为占位首帧）
-    const firstKeyframeUrl = (() => {
-      const paintAssets = get().assets.filter((x) => x.stageId === "paint" && x.url);
-      const httpFirst = paintAssets.find((x) => /^https?:\/\//.test(x.url!));
-      return (httpFirst ?? paintAssets[0])?.url;
-    })();
     const briefPrompt = get().brief?.prompt ?? "";
     const startedRunId = get().runId;
 
-    updateAsset("V01", { status: "Processing" });
-    appendSummary("life", "Seedance 提交中（first-frame-to-video）…");
-
     void (async () => {
-      // 进入异步前再核一次最新登录态，避免 store 订阅尚未刷新导致误报「未登录」
+      // Refresh auth before deciding fail-fast
       let userId = get().currentUserId;
       if (!userId) {
         try {
@@ -980,121 +1021,140 @@ export const useSC = create<SCState>((set, get) => {
           /* ignore */
         }
       }
-      if (!userId || !firstKeyframeUrl) {
-        const reason = !userId
-          ? "未登录，无法生成真实视频。请先登录后重试。"
-          : "缺少首帧关键帧。请先重跑 Keyframes 阶段，再生成视频。";
-        updateAsset("V01", { status: "Failed", errorMessage: reason });
+      if (!userId) {
+        const reason = "未登录，无法生成真实视频。请先登录后重试。";
+        for (const sa of segAssets) {
+          updateAsset(sa.id, { status: "Failed", errorMessage: reason });
+        }
         updateStage("life", { status: "failed" });
         appendSummary("life", `生成失败：${reason}（未扣积分）`);
         set({ phase: "failed" });
         persistCurrent("failed");
         return;
       }
-      try {
-        const { taskId: seedanceTaskId } = await submitVideoTask({
-          data: {
-            route: "first-frame-to-video",
-            payload: {
-              prompt: briefPrompt,
-              image_url: firstKeyframeUrl,
-              ratio: videoRatio,
-              duration: videoDuration,
+
+      // Run each segment in parallel
+      const tasks = segAssets.map(async (sa, i) => {
+        const dur = segments[i];
+        const shot = shotsRef[i] ?? shotsRef[shotsRef.length - 1];
+        const keyUrl = pickKeyframe(shot?.shot);
+        if (!keyUrl) {
+          updateAsset(sa.id, {
+            status: "Failed",
+            errorMessage: "缺少首帧关键帧，请重跑 Keyframes 阶段。",
+            errorCode: "missing_keyframe",
+          });
+          appendSummary("life", `${sa.id} 失败：缺少关键帧（未扣积分）`);
+          return false;
+        }
+        const segPrompt = [
+          shot?.prompt || briefPrompt,
+          shot?.scene ? `Scene: ${shot.scene}` : "",
+          shot?.motion ? `Camera/motion: ${shot.motion}` : "",
+          shot?.elements ? `Key elements: ${shot.elements}` : "",
+          `Stay strictly on the user's brief: ${briefPrompt}`,
+          `Preserve character/prop identity from reference images.`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+        updateAsset(sa.id, { status: "Processing" });
+        appendSummary("life", `提交 ${sa.id} · ${shot?.shot ?? "—"} · ${dur}s`);
+
+        try {
+          const refs = [...wardrobeRefs, keyUrl].slice(0, 6);
+          const { taskId: seedanceTaskId } = await submitVideoTask({
+            data: {
+              route: "reference-image-to-video",
+              payload: {
+                prompt: segPrompt,
+                image_url: keyUrl,
+                reference_image_urls: refs,
+                ratio: videoRatio,
+                duration: dur,
+              } as unknown as { prompt: string },
             },
-          },
-        });
+          });
+          if (get().runId !== startedRunId) return false;
+          appendSummary("life", `${sa.id} Seedance task: ${seedanceTaskId}`);
 
-        if (get().runId !== startedRunId) return;
-        appendSummary("life", `Seedance task: ${seedanceTaskId}`);
-
-        const started = Date.now();
-        let stopped = false;
-        let timer: number | null = null;
-        const stop = () => {
-          stopped = true;
-          if (timer !== null) {
-            window.clearInterval(timer);
-            timer = null;
-          }
-        };
-
-        const tick = async () => {
-          if (stopped || get().runId !== startedRunId) {
-            stop();
-            return;
-          }
-          try {
-            const r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
-            if (stopped || get().runId !== startedRunId) return;
+          // Poll
+          const started = Date.now();
+          while (true) {
+            if (get().runId !== startedRunId) return false;
+            await new Promise((r) => setTimeout(r, 3000));
+            let r;
+            try {
+              r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
+            } catch (e) {
+              console.error(`[life] ${sa.id} poll error`, e);
+              continue;
+            }
+            if (get().runId !== startedRunId) return false;
             if (r.status === "success" && r.ossUrl) {
-              stop();
-              const cur = get().assets.find((a) => a.id === "V01");
-              if (cur?.status !== "Ready") {
-                updateAsset("V01", {
-                  status: "Ready",
-                  url: r.ossUrl,
-                  poster: firstKeyframeUrl,
-                });
-                updateStage("life", { status: "ready" });
-                consume("life", "Video V01 · seedance", VIDEO_COST, get().taskId);
-                appendSummary("life", "V01 Ready · seedance oss_url 已写入");
-                collapseAfter("life", 1800);
-                persistCurrent("running");
-                schedule(() => runDetails(), 1600);
-              }
-              return;
+              updateAsset(sa.id, {
+                status: "Ready",
+                url: r.ossUrl,
+                poster: keyUrl,
+              });
+              consume("life", `Video ${sa.id} · seedance`, VIDEO_COST_PER_SEG, get().taskId);
+              appendSummary("life", `${sa.id} Ready`);
+              return true;
             }
             if (r.status === "failed") {
-              stop();
-              const reason = "Seedance 渲染失败";
-              updateAsset("V01", {
+              updateAsset(sa.id, {
                 status: "Failed",
-                errorMessage: reason,
+                errorMessage: "Seedance 渲染失败",
                 errorCode: "seedance_failed",
               });
-              appendSummary("life", `${reason}（未扣积分）`);
-              updateStage("life", { status: "failed" });
-              set({ phase: "failed" });
-              persistCurrent("failed");
-              return;
+              appendSummary("life", `${sa.id} 渲染失败（未扣积分）`);
+              return false;
             }
             if (Date.now() - started > 5 * 60_000) {
-              stop();
-              updateAsset("V01", {
+              updateAsset(sa.id, {
                 status: "Failed",
-                errorMessage: "Seedance 轮询超时（5min 未返回结果）",
+                errorMessage: "Seedance 轮询超时（5min）",
                 errorCode: "timeout",
               });
-              appendSummary("life", "Seedance 轮询超时（5min）· 未扣积分");
-              updateStage("life", { status: "failed" });
-              set({ phase: "failed" });
-              persistCurrent("failed");
-              return;
+              appendSummary("life", `${sa.id} 轮询超时（未扣积分）`);
+              return false;
             }
-            updateAsset("V01", { status: "Processing" });
-          } catch (e) {
-            console.error("[life] poll error", e);
-            appendSummary("life", `轮询出错：${(e as Error).message}`);
+            updateAsset(sa.id, { status: "Processing" });
           }
-        };
-        await tick();
-        if (!stopped) {
-          timer = window.setInterval(tick, 3000) as unknown as number;
+        } catch (e) {
+          console.error(`[life] ${sa.id} submit failed`, e);
+          updateAsset(sa.id, {
+            status: "Failed",
+            errorMessage: (e as Error).message,
+            errorCode: "submit_failed",
+          });
+          appendSummary("life", `${sa.id} 提交失败：${(e as Error).message}（未扣积分）`);
+          return false;
         }
-      } catch (e) {
-        console.error("[life] submit failed", e);
-        updateAsset("V01", {
-          status: "Failed",
-          errorMessage: (e as Error).message,
-          errorCode: "submit_failed",
-        });
-        appendSummary("life", `提交失败：${(e as Error).message}（未扣积分）`);
+      });
+
+      const results = await Promise.all(tasks);
+      if (get().runId !== startedRunId) return;
+      const okCount = results.filter(Boolean).length;
+      if (okCount === segAssets.length) {
+        updateStage("life", { status: "ready" });
+        appendSummary("life", `全部 ${okCount} 段 Ready · 合计 ≈ ${totalSeconds}s`);
+        collapseAfter("life", 1800);
+        persistCurrent("running");
+        schedule(() => runDetails(), 1600);
+      } else if (okCount === 0) {
         updateStage("life", { status: "failed" });
+        set({ phase: "failed" });
+        persistCurrent("failed");
+      } else {
+        updateStage("life", { status: "failed" });
+        appendSummary("life", `${okCount}/${segAssets.length} 段成功，其余失败 · 可点击单段重试`);
         set({ phase: "failed" });
         persistCurrent("failed");
       }
     })();
   };
+
 
   const runDetails = () => {
     updateStage("details", { status: "running", expanded: true });
@@ -1197,59 +1257,143 @@ export const useSC = create<SCState>((set, get) => {
         text: t,
         ts: Date.now(),
       };
-      set((s) => ({ chatLog: [...s.chatLog, userMsg] }));
+      const agentId = uid();
+      const toolId = uid();
+      const startedAt = Date.now();
+      const agentMsg: ChatMsg = {
+        id: agentId,
+        role: "agent",
+        text: "",
+        ts: Date.now(),
+        streaming: true,
+        toolCalls: [
+          {
+            id: toolId,
+            kind: "skill",
+            label: "chat-director · streaming reply",
+            status: "running",
+            startedAt,
+            input: t,
+          },
+        ],
+      };
+      set((s) => ({ chatLog: [...s.chatLog, userMsg, agentMsg] }));
+
+      const patchAgent = (patch: Partial<ChatMsg>) =>
+        set((s) => ({
+          chatLog: s.chatLog.map((m) =>
+            m.id === agentId ? { ...m, ...patch } : m,
+          ),
+        }));
+      const patchTool = (
+        patch: Partial<import("./types").ChatToolCall>,
+      ) =>
+        set((s) => ({
+          chatLog: s.chatLog.map((m) =>
+            m.id === agentId
+              ? {
+                  ...m,
+                  toolCalls: (m.toolCalls ?? []).map((tc) =>
+                    tc.id === toolId ? { ...tc, ...patch } : tc,
+                  ),
+                }
+              : m,
+          ),
+        }));
 
       void (async () => {
-        try {
-          const { chatReply } = await import("@/lib/chat.functions");
-          const s = get();
-          const history = s.chatLog.slice(-10).map((m) => ({
+        const s = get();
+        const history = s.chatLog
+          .slice(-12)
+          .filter((m) => m.id !== agentId && m.text)
+          .map((m) => ({
             role: (m.role === "agent" ? "assistant" : "user") as
               | "assistant"
               | "user",
             content: m.text,
           }));
-          const messages = [
-            ...history,
-            { role: "user" as const, content: t },
-          ];
-          const ctxScript = s.script
-            ? {
-                mood: s.script.mood,
-                shots: s.script.shots?.map((sh) => ({
-                  shot: sh.shot,
-                  duration: sh.duration,
-                  scene: sh.scene,
-                })),
-              }
-            : undefined;
-          const result = await chatReply({
-            data: {
-              messages,
-              context: {
-                phase: s.phase,
-                brief: s.brief ?? undefined,
-                script: ctxScript,
-              },
-            },
+        if (!history.length || history[history.length - 1]?.content !== t) {
+          history.push({ role: "user", content: t });
+        }
+        const ctxScript = s.script
+          ? {
+              mood: s.script.mood,
+              shots: s.script.shots?.map((sh) => ({
+                shot: sh.shot,
+                duration: sh.duration,
+                scene: sh.scene,
+              })),
+            }
+          : undefined;
+        const payload = {
+          messages: history,
+          context: {
+            phase: s.phase,
+            brief: s.brief ?? undefined,
+            script: ctxScript,
+          },
+        };
+
+        try {
+          const res = await fetch("/api/chat-stream", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
           });
-          const agentMsg: ChatMsg = {
-            id: uid(),
-            role: "agent",
-            text: result.reply,
-            ts: Date.now(),
-          };
-          set((st) => ({ chatLog: [...st.chatLog, agentMsg] }));
+          if (!res.ok || !res.body) {
+            const errText = await res.text().catch(() => "");
+            throw new Error(
+              res.status === 429
+                ? "请求过于频繁，请稍后再试"
+                : res.status === 402
+                  ? "AI 额度已用尽，请到 Settings · Usage 充值后再试"
+                  : errText || `HTTP ${res.status}`,
+            );
+          }
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buf = "";
+          let acc = "";
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split(/\r?\n/);
+            buf = lines.pop() ?? "";
+            for (const raw of lines) {
+              const line = raw.trim();
+              if (!line.startsWith("data:")) continue;
+              const data = line.slice(5).trim();
+              if (!data || data === "[DONE]") continue;
+              try {
+                const j = JSON.parse(data) as {
+                  choices?: Array<{ delta?: { content?: string } }>;
+                };
+                const delta = j.choices?.[0]?.delta?.content;
+                if (delta) {
+                  acc += delta;
+                  patchAgent({ text: acc });
+                }
+              } catch {
+                /* keep streaming on malformed lines */
+              }
+            }
+          }
+          const durationMs = Date.now() - startedAt;
+          patchTool({ status: "done", durationMs, output: acc || "(空回复)" });
+          patchAgent({
+            streaming: false,
+            text: acc || "AI 没有返回内容，请换种说法再试一次。",
+          });
         } catch (err) {
-          const agentMsg: ChatMsg = {
-            id: uid(),
-            role: "agent",
-            text:
-              "AI 暂不可用：" +
-              (err instanceof Error ? err.message : "未知错误"),
-            ts: Date.now(),
-          };
-          set((st) => ({ chatLog: [...st.chatLog, agentMsg] }));
+          const reason =
+            err instanceof Error ? err.message : "未知错误";
+          const durationMs = Date.now() - startedAt;
+          patchTool({ status: "failed", durationMs, output: reason });
+          patchAgent({
+            streaming: false,
+            text: "AI 暂不可用：" + reason,
+          });
         }
       })();
     },
