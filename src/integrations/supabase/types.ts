@@ -21,12 +21,15 @@ export type Database = {
           id: string
           kind: string
           label: string | null
+          media_kind: string | null
           meta: Json | null
+          parent_asset_id: string | null
           source: string
           stage: string | null
           task_id: string | null
           url: string
           user_id: string
+          version: number
         }
         Insert: {
           caption?: string | null
@@ -34,12 +37,15 @@ export type Database = {
           id?: string
           kind: string
           label?: string | null
+          media_kind?: string | null
           meta?: Json | null
+          parent_asset_id?: string | null
           source: string
           stage?: string | null
           task_id?: string | null
           url: string
           user_id: string
+          version?: number
         }
         Update: {
           caption?: string | null
@@ -47,19 +53,74 @@ export type Database = {
           id?: string
           kind?: string
           label?: string | null
+          media_kind?: string | null
           meta?: Json | null
+          parent_asset_id?: string | null
           source?: string
           stage?: string | null
           task_id?: string | null
           url?: string
           user_id?: string
+          version?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "assets_parent_asset_id_fkey"
+            columns: ["parent_asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "assets_task_id_fkey"
             columns: ["task_id"]
             isOneToOne: false
             referencedRelation: "video_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      character_voices: {
+        Row: {
+          character_name: string
+          created_at: string
+          id: string
+          project_id: string | null
+          task_id: string | null
+          user_id: string
+          voice_id: string
+        }
+        Insert: {
+          character_name: string
+          created_at?: string
+          id?: string
+          project_id?: string | null
+          task_id?: string | null
+          user_id: string
+          voice_id: string
+        }
+        Update: {
+          character_name?: string
+          created_at?: string
+          id?: string
+          project_id?: string | null
+          task_id?: string | null
+          user_id?: string
+          voice_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "character_voices_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "character_voices_voice_id_fkey"
+            columns: ["voice_id"]
+            isOneToOne: false
+            referencedRelation: "voices"
             referencedColumns: ["id"]
           },
         ]
@@ -93,6 +154,81 @@ export type Database = {
           label?: string
           stage?: string | null
           task_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      project_episodes: {
+        Row: {
+          created_at: string
+          episode_no: number
+          id: string
+          project_id: string
+          task_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          episode_no?: number
+          id?: string
+          project_id: string
+          task_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          episode_no?: number
+          id?: string
+          project_id?: string
+          task_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_episodes_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_episodes_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "video_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          brief: Json | null
+          created_at: string
+          icon: string | null
+          id: string
+          kind: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          brief?: Json | null
+          created_at?: string
+          icon?: string | null
+          id?: string
+          kind?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          brief?: Json | null
+          created_at?: string
+          icon?: string | null
+          id?: string
+          kind?: string
+          name?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
@@ -193,6 +329,54 @@ export type Database = {
           title?: string
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      voices: {
+        Row: {
+          created_at: string
+          description: string | null
+          error: string | null
+          external_id: string | null
+          id: string
+          lang: string | null
+          name: string
+          origin_audio_url: string | null
+          sample_url: string | null
+          source: string
+          status: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          error?: string | null
+          external_id?: string | null
+          id?: string
+          lang?: string | null
+          name: string
+          origin_audio_url?: string | null
+          sample_url?: string | null
+          source?: string
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          error?: string | null
+          external_id?: string | null
+          id?: string
+          lang?: string | null
+          name?: string
+          origin_audio_url?: string | null
+          sample_url?: string | null
+          source?: string
+          status?: string
+          updated_at?: string
+          user_id?: string | null
         }
         Relationships: []
       }
