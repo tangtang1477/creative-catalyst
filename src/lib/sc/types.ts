@@ -156,6 +156,8 @@ export interface Brief {
   format: string;
   visualSource: string;
   mode: string;
+  /** Visual style direction (e.g. 2D 动画 / 毛毡风 / 像素风 / 真人实拍 / 3D CG). */
+  visualStyle?: string;
 }
 
 export type Phase =
