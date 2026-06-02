@@ -101,6 +101,21 @@ export function AssetThumbCard({
         </button>
       )}
 
+      {(asset.url || asset.poster) && (
+        <button
+          type="button"
+          aria-label="放大预览"
+          title="放大预览"
+          onClick={(e) => {
+            e.stopPropagation();
+            openPreview(asset.id);
+          }}
+          className="absolute right-1 top-1 z-20 inline-flex h-5 w-5 items-center justify-center rounded-md bg-black/55 text-white opacity-0 backdrop-blur transition-opacity hover:bg-accent hover:text-accent-foreground group-hover:opacity-100"
+        >
+          <ZoomIn className="h-3 w-3" />
+        </button>
+      )}
+
       <AssetActions
         asset={asset}
         selectable={selectable}
