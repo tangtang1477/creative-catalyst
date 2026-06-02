@@ -95,7 +95,10 @@ export function inferVisualStyle(prompt: string): string | undefined {
   return undefined;
 }
 
-export function inferIntake(prompt: string): IntakeOptions {
+export function inferIntake(
+  prompt: string,
+  opts: { hasAttachments?: boolean } = {},
+): IntakeOptions {
   const lower = prompt.toLowerCase();
   let defaultType = VIDEO_TYPES[0];
   if (/(剧集|系列|连续剧|短剧|episode|series)/i.test(lower)) defaultType = "Series · Episodes";
