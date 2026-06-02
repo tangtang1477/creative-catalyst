@@ -1673,7 +1673,7 @@ export const useSC = create<SCState>((set, get) => {
         if (data.user && taskKind === "series") {
           try {
             const { useProjects } = await import("@/lib/sc/projects-store");
-            const { createProject, attachEpisode } = await import("@/lib/projects.functions");
+            const { createProject } = await import("@/lib/projects.functions");
             const projectsState = useProjects.getState();
             if (!projectsState.loaded) await projectsState.fetchProjects();
             const fresh = useProjects.getState().projects;
@@ -1687,11 +1687,10 @@ export const useSC = create<SCState>((set, get) => {
               useProjects.setState((s) => ({ projects: [existing!, ...s.projects] }));
             }
             useProjects.getState().setCurrentProject(existing.id);
-            const epNoMatch = text.match(/第\s*(\d+)\s*集|episode\s*(\d+)|EP\s*(\d+)/i);
-            const epNo = Number(epNoMatch?.[1] ?? epNoMatch?.[2] ?? epNoMatch?.[3] ?? 1) || 1;
-            await attachEpisode({
-              data: { project_id: existing.id, task_id: newTaskId, episode_no: epNo },
-            }).catch((e) => console.warn("[attachEpisode] failed", e));
+            // task_id column is uuid; the in-memory `t_xxx` ids aren't UUIDs,
+            // so skip the row-level attach. The currentProjectId in store is enough
+            // for the UI to highlight the project, and persistence is recorded in
+            // `projects.brief` on subsequent saves.
           } catch (e) {
             console.warn("[auto-create project] failed", e);
           }
