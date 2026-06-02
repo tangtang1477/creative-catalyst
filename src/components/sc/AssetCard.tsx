@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   Image as ImageIcon,
   Film,
-  ExternalLink,
   Download,
   RefreshCw,
   ZoomIn,
