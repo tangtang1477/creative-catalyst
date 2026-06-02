@@ -81,7 +81,7 @@ export function ProjectGuideCard() {
         <div className="mt-3 flex items-center gap-2">
           <button
             type="button"
-            onClick={() => openCreate({ name: presetName, kind: "writing" })}
+            onClick={() => openCreate({ name: presetName, kind: "series" })}
             className="inline-flex h-8 items-center gap-1.5 rounded-full bg-accent px-4 text-[12px] font-medium text-accent-foreground transition-opacity hover:opacity-90"
           >
             创建项目
