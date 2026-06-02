@@ -1,4 +1,4 @@
-import { X, Film, Image as ImageIcon, Link2, AtSign } from "lucide-react";
+import { X, Film, Image as ImageIcon, Link2, AtSign, Music } from "lucide-react";
 import { useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
 
