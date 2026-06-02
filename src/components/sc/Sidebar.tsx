@@ -89,7 +89,15 @@ export function Sidebar() {
   const projectsLoaded = useProjects((s) => s.loaded);
   const fetchProjects = useProjects((s) => s.fetchProjects);
   const openCreateProject = useProjects((s) => s.openCreate);
+  const setCurrentProject = useProjects((s) => s.setCurrentProject);
   const currentProjectId = useProjects((s) => s.currentProjectId);
+
+  const handleSelectProject = (id: string) => {
+    setCurrentProject(id);
+    if (phase !== "running" && phase !== "thinking") {
+      reset({ fromUserAction: true });
+    }
+  };
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
