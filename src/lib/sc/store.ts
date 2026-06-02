@@ -464,12 +464,19 @@ export const useSC = create<SCState>((set, get) => {
     void (async () => {
       let script: GeneratedScript | null = null;
       try {
+        const attachments = get().attachments.map((a) => ({
+          kind: a.kind,
+          name: a.name,
+          caption: a.ref ?? undefined,
+          url: /^https?:\/\//.test(a.url) ? a.url : undefined,
+        }));
         script = await generateScript({
           data: {
             prompt: b?.prompt ?? "",
             adType: b?.adType ?? "",
             format: b?.format ?? "",
             visualSource: b?.visualSource ?? "",
+            attachments,
           },
         });
       } catch (e) {
