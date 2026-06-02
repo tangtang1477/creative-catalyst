@@ -89,6 +89,7 @@ export function Sidebar() {
   const projectsLoaded = useProjects((s) => s.loaded);
   const fetchProjects = useProjects((s) => s.fetchProjects);
   const openCreateProject = useProjects((s) => s.openCreate);
+  const currentProjectId = useProjects((s) => s.currentProjectId);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -245,7 +246,7 @@ export function Sidebar() {
                   projects.map((p) => {
                     const Icon = KIND_ICON[p.kind] ?? Folder;
                     const color = KIND_COLOR[p.kind] ?? "text-muted-foreground";
-                    const isCurrent = useProjects.getState().currentProjectId === p.id;
+                    const isCurrent = currentProjectId === p.id;
                     return (
                       <div
                         key={p.id}
