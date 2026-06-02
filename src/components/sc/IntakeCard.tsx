@@ -51,8 +51,8 @@ export function IntakeCard() {
   // Streaming reveal state
   const [phase, setPhase] = useState<"loading" | "stream" | "ready">("loading");
   const [revealedIdx, setRevealedIdx] = useState(-1); // index of last revealed question
-  const [titleChars, setTitleChars] = useState<number[]>([0, 0, 0, 0]);
-  const [chipCounts, setChipCounts] = useState<number[]>([0, 0, 0, 0]);
+  const [titleChars, setTitleChars] = useState<number[]>([0, 0, 0, 0, 0]);
+  const [chipCounts, setChipCounts] = useState<number[]>([0, 0, 0, 0, 0]);
 
   // initial loading
   useEffect(() => {
