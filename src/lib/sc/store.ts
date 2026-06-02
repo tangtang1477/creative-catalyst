@@ -87,6 +87,8 @@ interface SCState {
   chatLog: ChatMsg[];
   /** Asset id currently shown in the VersionDrawer (null = closed). */
   versionDrawerAssetId: string | null;
+  /** Asset id shown in the AssetPreviewDialog lightbox (null = closed). */
+  previewAssetId: string | null;
 
 
 
@@ -134,6 +136,8 @@ interface SCState {
   setActiveVersion: (assetId: string, versionIndex: number) => void;
   openVersionDrawer: (assetId: string) => void;
   closeVersionDrawer: () => void;
+  openPreview: (assetId: string) => void;
+  closePreview: () => void;
 
 
 
@@ -1299,6 +1303,7 @@ export const useSC = create<SCState>((set, get) => {
     selection: [],
     chatLog: [],
     versionDrawerAssetId: null,
+    previewAssetId: null,
     currentUserId: null,
     script: null,
 
@@ -2018,6 +2023,8 @@ export const useSC = create<SCState>((set, get) => {
 
     openVersionDrawer: (assetId) => set({ versionDrawerAssetId: assetId }),
     closeVersionDrawer: () => set({ versionDrawerAssetId: null }),
+    openPreview: (assetId) => set({ previewAssetId: assetId }),
+    closePreview: () => set({ previewAssetId: null }),
 
 
 
