@@ -41,7 +41,6 @@ export function Workspace() {
   const openPricing = useCredits((s) => s.openPricing);
   const remaining = useCredits(creditsSelectors.remaining);
   const paintAssets = assets.filter((a) => a.stageId === "paint");
-  const v01 = assets.find((a) => a.id === "V01");
   const inFlow = phase === "running" || phase === "done" || phase === "failed";
 
   // ChatGPT-like auto-scroll to bottom when new content streams in.
@@ -179,12 +178,10 @@ export function Workspace() {
 
                   <SeriesBible />
 
-                  {/* Refining brief option cards — surface ABOVE script planning */}
+                  {/* Refining brief / preflight option cards — always rendered ABOVE script planning, regardless of status (so users keep their answers in view) */}
                   {chatLog
                     .flatMap((m) =>
-                      (m.optionCards ?? [])
-                        .filter((c) => c.status === "awaiting")
-                        .map((c) => ({ msgId: m.id, card: c })),
+                      (m.optionCards ?? []).map((c) => ({ msgId: m.id, card: c })),
                     )
                     .map(({ msgId, card }) => (
                       <ChatOptionCard key={`${msgId}-${card.id}-top`} msgId={msgId} card={card} />
@@ -262,6 +259,7 @@ export function Workspace() {
 
                     if (id === "life") {
                       const lowCredit = st.status === "recovering" && remaining < 30;
+                      const lifeAssets = assets.filter((a) => a.stageId === "life");
                       return (
                         <StageBoundary key={id} stageId={id}>
                           <StageRow
@@ -273,9 +271,13 @@ export function Workspace() {
                           >
                             {lowCredit ? (
                               <InlineLowCredit />
-                            ) : (
-                              v01 && <AssetCard asset={v01} />
-                            )}
+                            ) : lifeAssets.length > 0 ? (
+                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                {lifeAssets.map((a) => (
+                                  <AssetCard key={a.id} asset={a} compact />
+                                ))}
+                              </div>
+                            ) : null}
                           </StageRow>
                         </StageBoundary>
                       );
@@ -316,8 +318,9 @@ export function Workspace() {
                         text={m.text}
                         streaming={m.streaming}
                         toolCalls={m.toolCalls}
-                        // Hide awaiting cards here — they're surfaced ABOVE the script
-                        optionCards={m.optionCards?.filter((c) => c.status !== "awaiting")}
+                        // Option cards are rendered ABOVE the script — hide them here
+                        // so they don't appear twice (once above, once in the chat log).
+                        optionCards={undefined}
                         skill={m.skill}
                         actions={m.actions}
                       />

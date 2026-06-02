@@ -476,12 +476,14 @@ export const useSC = create<SCState>((set, get) => {
             adType: b?.adType ?? "",
             format: b?.format ?? "",
             visualSource: b?.visualSource ?? "",
+            visualStyle: b?.visualStyle ?? "",
             attachments,
           },
         });
       } catch (e) {
         console.error("[structure] generateScript failed", e);
         appendSummary("structure", `脚本生成失败：${(e as Error).message}`);
+        updateStage("structure", { errorMessage: (e as Error).message });
       }
       if (get().runId !== startedRunId) return;
       finishToolCall("structure", tcId);
@@ -566,11 +568,14 @@ export const useSC = create<SCState>((set, get) => {
             : isHero
               ? "main character / hero subject portrait, full body, neutral background, reference sheet style"
               : "secondary character / supporting subject portrait, full body, neutral background, reference sheet style";
+          const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
+          const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
           const fullPrompt = [
+            styleFragment ? `Style: ${styleFragment}.` : "",
             `Reference asset ${w.id} for the short film. Subject: ${w.caption}.`,
-            `Style: ${role}.`,
+            `Style direction: ${role}.`,
             `User brief (must reflect the actual subject, do NOT invent unrelated brands or scenes): ${briefPrompt}`,
-          ].join("\n\n");
+          ].filter(Boolean).join("\n\n");
           try {
             const b64 = await streamGenerateImage({
               prompt: fullPrompt,
@@ -733,10 +738,13 @@ export const useSC = create<SCState>((set, get) => {
           updateAsset(r.shot, { status: "Generating" });
           appendSummary("paint", `${r.shot} 生成中 · ${r.motion}`);
           try {
+            const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
+            const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
+            const stylePrefix = styleFragment ? `Style: ${styleFragment}.\n\n` : "";
             const fullPrompt = r.prompt
-              ? `${r.prompt}\n\nReference brief: ${briefPrompt}`
+              ? `${stylePrefix}${r.prompt}\n\nReference brief: ${briefPrompt}`
               : [
-                  briefPrompt,
+                  stylePrefix + briefPrompt,
                   KEYFRAME_PROMPT_DETAIL,
                   `Shot ${r.shot} · ${r.scene} · ${r.motion} · ${r.elements}`,
                 ].filter(Boolean).join("\n\n");
@@ -1083,7 +1091,7 @@ export const useSC = create<SCState>((set, get) => {
         for (const sa of segAssets) {
           updateAsset(sa.id, { status: "Failed", errorMessage: reason });
         }
-        updateStage("life", { status: "failed" });
+        updateStage("life", { status: "failed", errorMessage: reason });
         appendSummary("life", `生成失败：${reason}（未扣积分）`);
         set({ phase: "failed" });
         persistCurrent("failed");
@@ -1200,14 +1208,160 @@ export const useSC = create<SCState>((set, get) => {
         persistCurrent("running");
         schedule(() => runDetails(), 1600);
       } else if (okCount === 0) {
-        updateStage("life", { status: "failed" });
+        updateStage("life", { status: "failed", errorMessage: "全部视频段渲染失败，可在下方单独重做某一段" });
         set({ phase: "failed" });
         persistCurrent("failed");
       } else {
-        updateStage("life", { status: "failed" });
-        appendSummary("life", `${okCount}/${segAssets.length} 段成功，其余失败 · 可点击单段重试`);
+        const partial = `${okCount}/${segAssets.length} 段成功，其余失败 · 可点击单段重试`;
+        updateStage("life", { status: "failed", errorMessage: partial });
+        appendSummary("life", partial);
         set({ phase: "failed" });
         persistCurrent("failed");
+      }
+    })();
+  };
+
+  /**
+   * Re-submit a single life segment (V0N) without restarting the whole stage.
+   * Reuses the existing keyframe + wardrobe references; consumes credit only
+   * on success (same as runLife).
+   */
+  const runLifeSegment = (assetId: string) => {
+    const asset = get().assets.find((a) => a.id === assetId);
+    if (!asset || asset.stageId !== "life") return;
+    const script = get().script;
+    const shotsRef = script?.shots ?? [];
+    const shot = shotsRef.find((s) => s.shot === asset.sourceShotId)
+      ?? shotsRef[asset.segmentIndex ?? 0]
+      ?? shotsRef[shotsRef.length - 1];
+
+    const paintAssetsAll = get().assets.filter((a) => a.stageId === "paint" && a.url);
+    const keyUrl =
+      (shot && paintAssetsAll.find((p) => p.id === shot.shot)?.url) ||
+      asset.poster ||
+      paintAssetsAll.find((p) => /^https?:\/\//.test(p.url!))?.url ||
+      paintAssetsAll[0]?.url;
+
+    const dur = parseInt(String(asset.duration ?? "0:10").replace(/[^0-9]/g, "")) || 10;
+    const segDur: 5 | 10 = dur >= 10 ? 10 : 5;
+    const briefFormat = get().brief?.format ?? "";
+    const videoRatio = parseFormatRatio(briefFormat);
+    const briefPrompt = get().brief?.prompt ?? "";
+    const VIDEO_COST_PER_SEG = 30;
+
+    if (!canAfford(VIDEO_COST_PER_SEG)) {
+      const tid = get().taskId ?? undefined;
+      useCredits.getState().openLow(tid);
+      return;
+    }
+
+    if (!keyUrl) {
+      updateAsset(asset.id, {
+        status: "Failed",
+        errorMessage: "缺少首帧关键帧，请重跑 Keyframes 阶段。",
+        errorCode: "missing_keyframe",
+      });
+      return;
+    }
+
+    // Reset stage to running so global UI reflects activity.
+    updateStage("life", { status: "running", expanded: true, errorMessage: undefined });
+    set({ phase: "running" });
+
+    const wardrobeRefs = get()
+      .assets.filter((a) => a.stageId === "wardrobe" && a.url && /^https?:\/\//.test(a.url))
+      .map((a) => a.url as string)
+      .slice(0, 4);
+
+    const segPrompt = [
+      shot?.prompt || briefPrompt,
+      shot?.scene ? `Scene: ${shot.scene}` : "",
+      shot?.motion ? `Camera/motion: ${shot.motion}` : "",
+      shot?.elements ? `Key elements: ${shot.elements}` : "",
+      `Stay strictly on the user's brief: ${briefPrompt}`,
+      `Preserve character/prop identity from reference images.`,
+    ].filter(Boolean).join("\n");
+
+    updateAsset(asset.id, { status: "Processing", errorMessage: undefined, errorCode: undefined });
+    appendSummary("life", `重做 ${asset.id} · ${shot?.shot ?? "—"} · ${segDur}s`);
+
+    const startedRunId = get().runId;
+    void (async () => {
+      try {
+        const refs = [...wardrobeRefs, keyUrl].slice(0, 6);
+        const { taskId: seedanceTaskId } = await submitVideoTask({
+          data: {
+            route: "reference-image-to-video",
+            payload: {
+              prompt: segPrompt,
+              image_url: keyUrl,
+              reference_image_urls: refs,
+              ratio: videoRatio,
+              duration: segDur,
+            } as unknown as { prompt: string },
+          },
+        });
+        if (get().runId !== startedRunId) return;
+        const started = Date.now();
+        while (true) {
+          if (get().runId !== startedRunId) return;
+          await new Promise((r) => setTimeout(r, 3000));
+          let r;
+          try {
+            r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
+          } catch (e) {
+            console.error(`[life] segment ${asset.id} poll error`, e);
+            continue;
+          }
+          if (get().runId !== startedRunId) return;
+          if (r.status === "success" && r.ossUrl) {
+            updateAssetWithVersion(asset.id, r.ossUrl, "manual-retry", "单段重做", {
+              status: "Ready",
+              poster: keyUrl,
+              errorMessage: undefined,
+              errorCode: undefined,
+            });
+            consume("life", `Video ${asset.id} · seedance retry`, VIDEO_COST_PER_SEG, get().taskId);
+            appendSummary("life", `${asset.id} Ready`);
+            // Re-evaluate stage status: if all life segments are Ready, mark stage ready.
+            const allLife = get().assets.filter((a) => a.stageId === "life");
+            if (allLife.every((a) => a.status === "Ready")) {
+              updateStage("life", { status: "ready", errorMessage: undefined });
+              persistCurrent("running");
+              schedule(() => runDetails(), 1200);
+            }
+            return;
+          }
+          if (r.status === "failed") {
+            updateAsset(asset.id, {
+              status: "Failed",
+              errorMessage: "Seedance 渲染失败",
+              errorCode: "seedance_failed",
+            });
+            updateStage("life", { status: "failed", errorMessage: "至少一段视频渲染失败" });
+            set({ phase: "failed" });
+            return;
+          }
+          if (Date.now() - started > 5 * 60_000) {
+            updateAsset(asset.id, {
+              status: "Failed",
+              errorMessage: "Seedance 轮询超时（5min）",
+              errorCode: "timeout",
+            });
+            updateStage("life", { status: "failed", errorMessage: "至少一段视频超时" });
+            set({ phase: "failed" });
+            return;
+          }
+        }
+      } catch (e) {
+        console.error(`[life] segment ${asset.id} submit failed`, e);
+        updateAsset(asset.id, {
+          status: "Failed",
+          errorMessage: (e as Error).message,
+          errorCode: "submit_failed",
+        });
+        updateStage("life", { status: "failed", errorMessage: (e as Error).message });
+        set({ phase: "failed" });
       }
     })();
   };
@@ -2063,9 +2217,9 @@ export const useSC = create<SCState>((set, get) => {
     retryAsset: (assetId) => {
       const asset = get().assets.find((a) => a.id === assetId);
       if (!asset || !asset.stageId) return;
-      // V01 / life：整段重跑 life
+      // life：仅重做该单段
       if (asset.stageId === "life") {
-        get().retryStage("life");
+        runLifeSegment(assetId);
         return;
       }
       // paint 阶段：整段重跑 paint（简化处理，单帧重试不容易复用 prompt 顺序）

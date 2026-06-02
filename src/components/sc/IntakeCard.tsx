@@ -9,19 +9,21 @@ import { cn } from "@/lib/utils";
 const titles = {
   adType: "1. 视频类型？",
   format: "2. 投放规格（时长 + 比例）？",
-  visualSource: "3. 画面来源？",
-  mode: "4. 创作模式？",
+  visualStyle: "3. 画风？",
+  visualSource: "4. 画面来源？",
+  mode: "5. 创作模式？",
 } as const;
 
 const shortLabels = {
   adType: "视频类型",
   format: "投放规格",
+  visualStyle: "画风",
   visualSource: "画面来源",
   mode: "创作模式",
 } as const;
 
 type Key = keyof typeof titles;
-const ORDER: Key[] = ["adType", "format", "visualSource", "mode"];
+const ORDER: Key[] = ["adType", "format", "visualStyle", "visualSource", "mode"];
 
 export function IntakeCard() {
   const {
@@ -49,8 +51,8 @@ export function IntakeCard() {
   // Streaming reveal state
   const [phase, setPhase] = useState<"loading" | "stream" | "ready">("loading");
   const [revealedIdx, setRevealedIdx] = useState(-1); // index of last revealed question
-  const [titleChars, setTitleChars] = useState<number[]>([0, 0, 0, 0]);
-  const [chipCounts, setChipCounts] = useState<number[]>([0, 0, 0, 0]);
+  const [titleChars, setTitleChars] = useState<number[]>([0, 0, 0, 0, 0]);
+  const [chipCounts, setChipCounts] = useState<number[]>([0, 0, 0, 0, 0]);
 
   // initial loading
   useEffect(() => {
@@ -70,9 +72,11 @@ export function IntakeCard() {
       ? intake.adType
       : key === "format"
         ? intake.format
-        : key === "visualSource"
-          ? intake.visualSource
-          : intake.mode
+        : key === "visualStyle"
+          ? intake.visualStyle
+          : key === "visualSource"
+            ? intake.visualSource
+            : intake.mode
     ).filter((o) => o !== OTHERS_LABEL);
     const totalChipCount = opts.length + 1; // +1 for Others chip
 
@@ -127,6 +131,7 @@ export function IntakeCard() {
       format: intakeSel.format,
       visualSource: intakeSel.visualSource,
       mode: intakeSel.mode,
+      visualStyle: intakeSel.visualStyle,
     });
   };
 
@@ -175,9 +180,11 @@ export function IntakeCard() {
               ? intake.adType
               : key === "format"
                 ? intake.format
-                : key === "visualSource"
-                  ? intake.visualSource
-                  : intake.mode
+                : key === "visualStyle"
+                  ? intake.visualStyle
+                  : key === "visualSource"
+                    ? intake.visualSource
+                    : intake.mode
             ).filter((o) => o !== OTHERS_LABEL);
             const allOpts = [...opts, ...(intakeCustoms[key] ?? [])];
             const titleSliced = titles[key].slice(0, titleChars[idx]);
