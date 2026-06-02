@@ -28,6 +28,8 @@ import { VersionDrawer } from "./VersionDrawer";
 import { ChatAgentMessage } from "./ChatAgentMessage";
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import { ProjectGuideCard } from "./ProjectGuideCard";
+import { AssetPreviewDialog } from "./AssetPreviewDialog";
+import { ChatOptionCard } from "./ChatOptionCard";
 
 import { cn } from "@/lib/utils";
 
@@ -176,6 +178,18 @@ export function Workspace() {
                   )}
 
                   <SeriesBible />
+
+                  {/* Refining brief option cards — surface ABOVE script planning */}
+                  {chatLog
+                    .flatMap((m) =>
+                      (m.optionCards ?? [])
+                        .filter((c) => c.status === "awaiting")
+                        .map((c) => ({ msgId: m.id, card: c })),
+                    )
+                    .map(({ msgId, card }) => (
+                      <ChatOptionCard key={`${msgId}-${card.id}-top`} msgId={msgId} card={card} />
+                    ))}
+
 
                   {STAGE_ORDER.map((id) => {
                     const st = stages[id];
@@ -331,6 +345,7 @@ export function Workspace() {
       <LowCreditToast />
       <WorkspaceVersionDrawer />
       <CreateProjectDialog />
+      <AssetPreviewDialog />
     </div>
   );
 }
