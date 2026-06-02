@@ -58,8 +58,7 @@ export function CreateProjectDialog() {
   return (
     <Dialog open={open} onOpenChange={(v) => !v && close()}>
       <DialogContent
-        className="max-w-[520px] gap-0 border border-border bg-surface p-0"
-        showCloseButton={false}
+        className="max-w-[520px] gap-0 border border-border bg-surface p-0 [&>button.absolute]:hidden"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4">
