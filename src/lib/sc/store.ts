@@ -2267,13 +2267,12 @@ export const useSC = create<SCState>((set, get) => {
         runLifeSegment(assetId);
         return;
       }
-      // paint 阶段：整段重跑 paint（简化处理，单帧重试不容易复用 prompt 顺序）
       if (asset.stageId === "paint") {
-        get().retryStage("paint");
+        runPaintShot(assetId);
         return;
       }
       if (asset.stageId === "wardrobe") {
-        get().retryStage("wardrobe");
+        runWardrobeAsset(assetId);
         return;
       }
     },
