@@ -180,9 +180,11 @@ export function IntakeCard() {
               ? intake.adType
               : key === "format"
                 ? intake.format
-                : key === "visualSource"
-                  ? intake.visualSource
-                  : intake.mode
+                : key === "visualStyle"
+                  ? intake.visualStyle
+                  : key === "visualSource"
+                    ? intake.visualSource
+                    : intake.mode
             ).filter((o) => o !== OTHERS_LABEL);
             const allOpts = [...opts, ...(intakeCustoms[key] ?? [])];
             const titleSliced = titles[key].slice(0, titleChars[idx]);
