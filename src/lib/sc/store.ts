@@ -476,12 +476,14 @@ export const useSC = create<SCState>((set, get) => {
             adType: b?.adType ?? "",
             format: b?.format ?? "",
             visualSource: b?.visualSource ?? "",
+            visualStyle: b?.visualStyle ?? "",
             attachments,
           },
         });
       } catch (e) {
         console.error("[structure] generateScript failed", e);
         appendSummary("structure", `脚本生成失败：${(e as Error).message}`);
+        updateStage("structure", { errorMessage: (e as Error).message });
       }
       if (get().runId !== startedRunId) return;
       finishToolCall("structure", tcId);
