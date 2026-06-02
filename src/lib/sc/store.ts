@@ -602,6 +602,45 @@ export const useSC = create<SCState>((set, get) => {
 
       if (get().runId !== startedRunId) return;
       appendSummary("wardrobe", "服装/道具准备完毕 · 风格统一");
+
+      // Auto-bind a preset voice to every character (W*) asset.
+      try {
+        if (userId) {
+          const [{ useVoices }, { bindCharacterVoice, listCharacterVoices }] = await Promise.all([
+            import("@/lib/sc/voices-store"),
+            import("@/lib/characters.functions"),
+          ]);
+          const vState = useVoices.getState();
+          if (!vState.loaded) await vState.fetchVoices();
+          const voices = useVoices.getState().voices.filter((v) => v.status === "ready");
+          if (voices.length) {
+            const existing = await listCharacterVoices({ data: {} }).catch(() => ({ bindings: [] }));
+            const taken = new Set((existing.bindings as Array<{ character_name: string }>).map((b) => b.character_name));
+            const characters = wardrobeAssets.filter((w) => /^W/i.test(w.id));
+            for (let i = 0; i < characters.length; i++) {
+              const c = characters[i];
+              const name = c.caption ?? c.id;
+              if (taken.has(name)) continue;
+              const isFemale = /女|her|she|sister|mother|girl/i.test(name);
+              const isMale = /男|him|he|brother|father|boy/i.test(name);
+              const pool = voices.filter((v) => {
+                if (isFemale) return /female|woman|girl|她|女/i.test(`${v.name} ${v.description ?? ""}`);
+                if (isMale) return /male|man|boy|他|男/i.test(`${v.name} ${v.description ?? ""}`);
+                return true;
+              });
+              const pick = (pool.length ? pool : voices)[i % (pool.length || voices.length)];
+              if (!pick) continue;
+              await bindCharacterVoice({
+                data: { character_name: name, voice_id: pick.id, task_id: get().taskId ?? undefined },
+              }).catch(() => void 0);
+            }
+            appendSummary("wardrobe", `已为 ${characters.length} 位角色自动绑定默认音色 · 可在「音色库」中调整`);
+          }
+        }
+      } catch (e) {
+        console.warn("[wardrobe] auto-bind voice failed", e);
+      }
+
       updateStage("wardrobe", { status: "ready" });
       collapseAfter("wardrobe", 1600);
       persistCurrent("running");
