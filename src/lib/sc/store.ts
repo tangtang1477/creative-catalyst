@@ -561,18 +561,27 @@ export const useSC = create<SCState>((set, get) => {
     }));
 
     const startedRunId = get().runId;
-    const userId = get().currentUserId;
     const taskId = get().taskId ?? undefined;
     const briefPrompt = get().brief?.prompt ?? "";
 
     void (async () => {
+      const userId = await ensureUserId();
       if (!userId) {
-        appendSummary("wardrobe", "未登录 · 跳过真实生图，使用示例图");
+        const reason = "请先登录后再生成服装/道具素材";
         for (const w of wardrobeAssets) {
           if (get().runId !== startedRunId) return;
-          updateAsset(w.id, { status: "Ready", url: SAMPLE_KEYFRAME });
+          updateAsset(w.id, {
+            status: "Failed",
+            errorMessage: reason,
+            errorCode: "auth_required",
+          });
         }
-      } else {
+        appendSummary("wardrobe", `未登录 · 已暂停生成（${reason}）`);
+        updateStage("wardrobe", { status: "failed", errorMessage: reason });
+        set({ phase: "failed" });
+        persistCurrent("failed");
+        return;
+      }
         for (const w of wardrobeAssets) {
           if (get().runId !== startedRunId) return;
           updateAsset(w.id, { status: "Generating", errorMessage: undefined });
