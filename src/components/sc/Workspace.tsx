@@ -123,6 +123,7 @@ export function Workspace() {
                   <div className="mt-4">
                     <SuggestionChips />
                   </div>
+                  <HomeProjectsRow />
                 </div>
               )}
 
