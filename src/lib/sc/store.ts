@@ -1091,7 +1091,7 @@ export const useSC = create<SCState>((set, get) => {
         for (const sa of segAssets) {
           updateAsset(sa.id, { status: "Failed", errorMessage: reason });
         }
-        updateStage("life", { status: "failed" });
+        updateStage("life", { status: "failed", errorMessage: reason });
         appendSummary("life", `生成失败：${reason}（未扣积分）`);
         set({ phase: "failed" });
         persistCurrent("failed");
