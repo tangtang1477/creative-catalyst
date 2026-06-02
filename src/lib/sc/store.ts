@@ -568,11 +568,14 @@ export const useSC = create<SCState>((set, get) => {
             : isHero
               ? "main character / hero subject portrait, full body, neutral background, reference sheet style"
               : "secondary character / supporting subject portrait, full body, neutral background, reference sheet style";
+          const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
+          const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
           const fullPrompt = [
+            styleFragment ? `Style: ${styleFragment}.` : "",
             `Reference asset ${w.id} for the short film. Subject: ${w.caption}.`,
-            `Style: ${role}.`,
+            `Style direction: ${role}.`,
             `User brief (must reflect the actual subject, do NOT invent unrelated brands or scenes): ${briefPrompt}`,
-          ].join("\n\n");
+          ].filter(Boolean).join("\n\n");
           try {
             const b64 = await streamGenerateImage({
               prompt: fullPrompt,
