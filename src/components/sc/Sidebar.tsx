@@ -29,20 +29,20 @@ import {
 import { useCredits } from "@/lib/sc/credits-store";
 import { useProjects } from "@/lib/sc/projects-store";
 import { supabase } from "@/integrations/supabase/client";
-import { FolderPlus, Folder, DollarSign, GraduationCap, PenTool, Plane } from "lucide-react";
+import { FolderPlus, Folder, Clapperboard, Megaphone, GraduationCap, Music2 } from "lucide-react";
 
 const KIND_ICON: Record<string, typeof Folder> = {
-  investment: DollarSign,
-  homework: GraduationCap,
-  writing: PenTool,
-  travel: Plane,
+  series: Clapperboard,
+  ad: Megaphone,
+  education: GraduationCap,
+  mv: Music2,
   custom: Folder,
 };
 const KIND_COLOR: Record<string, string> = {
-  investment: "text-emerald-400",
-  homework: "text-sky-400",
-  writing: "text-violet-400",
-  travel: "text-amber-400",
+  series: "text-accent",
+  ad: "text-amber-400",
+  education: "text-sky-400",
+  mv: "text-violet-400",
   custom: "text-muted-foreground",
 };
 
@@ -245,10 +245,16 @@ export function Sidebar() {
                   projects.map((p) => {
                     const Icon = KIND_ICON[p.kind] ?? Folder;
                     const color = KIND_COLOR[p.kind] ?? "text-muted-foreground";
+                    const isCurrent = useProjects.getState().currentProjectId === p.id;
                     return (
                       <div
                         key={p.id}
-                        className="group flex h-7 items-center gap-2 rounded-lg px-2 text-[12px] text-muted-foreground transition-colors hover:bg-surface-2/60 hover:text-foreground"
+                        className={cn(
+                          "group flex h-7 items-center gap-2 rounded-lg px-2 text-[12px] transition-colors",
+                          isCurrent
+                            ? "bg-accent/12 text-foreground ring-1 ring-accent/40"
+                            : "text-muted-foreground hover:bg-surface-2/60 hover:text-foreground",
+                        )}
                       >
                         <Icon className={cn("h-3.5 w-3.5 shrink-0", color)} />
                         <span className="truncate">{p.name}</span>
