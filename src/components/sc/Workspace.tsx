@@ -30,6 +30,16 @@ import { CreateProjectDialog } from "./CreateProjectDialog";
 import { ProjectGuideCard } from "./ProjectGuideCard";
 import { AssetPreviewDialog } from "./AssetPreviewDialog";
 import { ChatOptionCard } from "./ChatOptionCard";
+import { useProjects } from "@/lib/sc/projects-store";
+import { Folder as FolderIcon, FolderPlus as FolderPlusIcon, Clapperboard, Megaphone, GraduationCap, Music2 } from "lucide-react";
+
+const HOME_KIND_ICON: Record<string, typeof FolderIcon> = {
+  series: Clapperboard,
+  ad: Megaphone,
+  education: GraduationCap,
+  mv: Music2,
+  custom: FolderIcon,
+};
 
 import { cn } from "@/lib/utils";
 
@@ -123,6 +133,7 @@ export function Workspace() {
                   <div className="mt-4">
                     <SuggestionChips />
                   </div>
+                  <HomeProjectsRow />
                 </div>
               )}
 
@@ -368,4 +379,51 @@ function WorkspaceVersionDrawer() {
     />
   );
 }
+
+function HomeProjectsRow() {
+  const projects = useProjects((s) => s.projects);
+  const loaded = useProjects((s) => s.loaded);
+  const openCreate = useProjects((s) => s.openCreate);
+  const setCurrentProject = useProjects((s) => s.setCurrentProject);
+  const reset = useSC((s) => s.reset);
+
+  if (!loaded) return null;
+  const recent = projects.slice(0, 3);
+
+  const onPick = (id: string) => {
+    setCurrentProject(id);
+    reset({ fromUserAction: true });
+  };
+
+  return (
+    <div className="mt-6 flex flex-wrap items-center gap-2">
+      <span className="mr-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        我的项目
+      </span>
+      {recent.map((p) => {
+        const Icon = HOME_KIND_ICON[p.kind] ?? FolderIcon;
+        return (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => onPick(p.id)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] text-foreground/85 transition-colors hover:border-accent/60 hover:bg-accent/10"
+          >
+            <Icon className="h-3.5 w-3.5 text-accent" />
+            <span className="max-w-[140px] truncate">{p.name}</span>
+          </button>
+        );
+      })}
+      <button
+        type="button"
+        onClick={() => openCreate(null)}
+        className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-border bg-surface/40 px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-accent hover:text-accent"
+      >
+        <FolderPlusIcon className="h-3.5 w-3.5" />
+        {recent.length === 0 ? "创建第一个项目" : "新建项目"}
+      </button>
+    </div>
+  );
+}
+
 

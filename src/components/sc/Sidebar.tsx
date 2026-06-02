@@ -89,7 +89,15 @@ export function Sidebar() {
   const projectsLoaded = useProjects((s) => s.loaded);
   const fetchProjects = useProjects((s) => s.fetchProjects);
   const openCreateProject = useProjects((s) => s.openCreate);
+  const setCurrentProject = useProjects((s) => s.setCurrentProject);
   const currentProjectId = useProjects((s) => s.currentProjectId);
+
+  const handleSelectProject = (id: string) => {
+    setCurrentProject(id);
+    if (phase !== "running" && phase !== "thinking") {
+      reset({ fromUserAction: true });
+    }
+  };
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -248,10 +256,12 @@ export function Sidebar() {
                     const color = KIND_COLOR[p.kind] ?? "text-muted-foreground";
                     const isCurrent = currentProjectId === p.id;
                     return (
-                      <div
+                      <button
                         key={p.id}
+                        type="button"
+                        onClick={() => handleSelectProject(p.id)}
                         className={cn(
-                          "group flex h-7 items-center gap-2 rounded-lg px-2 text-[12px] transition-colors",
+                          "group flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-[12px] transition-colors",
                           isCurrent
                             ? "bg-accent/12 text-foreground ring-1 ring-accent/40"
                             : "text-muted-foreground hover:bg-surface-2/60 hover:text-foreground",
@@ -259,7 +269,7 @@ export function Sidebar() {
                       >
                         <Icon className={cn("h-3.5 w-3.5 shrink-0", color)} />
                         <span className="truncate">{p.name}</span>
-                      </div>
+                      </button>
                     );
                   })
                 )}
