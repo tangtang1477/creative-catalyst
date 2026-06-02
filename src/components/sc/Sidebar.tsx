@@ -84,6 +84,22 @@ export function Sidebar() {
   }, [open]);
 
   const [tasksOpen, setTasksOpen] = useState(true);
+  const [projectsOpen, setProjectsOpen] = useState(true);
+  const projects = useProjects((s) => s.projects);
+  const projectsLoaded = useProjects((s) => s.loaded);
+  const fetchProjects = useProjects((s) => s.fetchProjects);
+  const openCreateProject = useProjects((s) => s.openCreate);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user && !projectsLoaded) fetchProjects();
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      if (s) fetchProjects();
+    });
+    return () => subscription.unsubscribe();
+  }, [fetchProjects, projectsLoaded]);
+
 
   // current active task injected on top of history
   const tasks = useMemo(() => {
