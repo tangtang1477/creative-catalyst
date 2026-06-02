@@ -27,6 +27,24 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useCredits } from "@/lib/sc/credits-store";
+import { useProjects } from "@/lib/sc/projects-store";
+import { supabase } from "@/integrations/supabase/client";
+import { FolderPlus, Folder, DollarSign, GraduationCap, PenTool, Plane } from "lucide-react";
+
+const KIND_ICON: Record<string, typeof Folder> = {
+  investment: DollarSign,
+  homework: GraduationCap,
+  writing: PenTool,
+  travel: Plane,
+  custom: Folder,
+};
+const KIND_COLOR: Record<string, string> = {
+  investment: "text-emerald-400",
+  homework: "text-sky-400",
+  writing: "text-violet-400",
+  travel: "text-amber-400",
+  custom: "text-muted-foreground",
+};
 
 const navItems = [
   { id: "new", icon: Plus, label: "New task" },
@@ -66,6 +84,22 @@ export function Sidebar() {
   }, [open]);
 
   const [tasksOpen, setTasksOpen] = useState(true);
+  const [projectsOpen, setProjectsOpen] = useState(true);
+  const projects = useProjects((s) => s.projects);
+  const projectsLoaded = useProjects((s) => s.loaded);
+  const fetchProjects = useProjects((s) => s.fetchProjects);
+  const openCreateProject = useProjects((s) => s.openCreate);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user && !projectsLoaded) fetchProjects();
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      if (s) fetchProjects();
+    });
+    return () => subscription.unsubscribe();
+  }, [fetchProjects, projectsLoaded]);
+
 
   // current active task injected on top of history
   const tasks = useMemo(() => {

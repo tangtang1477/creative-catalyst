@@ -26,6 +26,8 @@ import { useCredits, creditsSelectors } from "@/lib/sc/credits-store";
 import { StageBoundary } from "./StageBoundary";
 import { VersionDrawer } from "./VersionDrawer";
 import { ChatAgentMessage } from "./ChatAgentMessage";
+import { CreateProjectDialog } from "./CreateProjectDialog";
+import { ProjectGuideCard } from "./ProjectGuideCard";
 
 import { cn } from "@/lib/utils";
 
@@ -147,6 +149,8 @@ export function Workspace() {
 
               {inFlow && (
                 <div className="flex-1 space-y-5">
+                  <ProjectGuideCard />
+
 
                   {brief?.prompt && (
                     <div className="ml-auto w-fit max-w-[80%] rounded-2xl bg-surface-2 px-3.5 py-2 text-[13px]">
@@ -326,6 +330,7 @@ export function Workspace() {
       <PricingDialog />
       <LowCreditToast />
       <WorkspaceVersionDrawer />
+      <CreateProjectDialog />
     </div>
   );
 }
