@@ -6,6 +6,17 @@ const GenerateScriptInput = z.object({
   adType: z.string().optional().default(""),
   format: z.string().optional().default(""),
   visualSource: z.string().optional().default(""),
+  attachments: z
+    .array(
+      z.object({
+        kind: z.enum(["image", "video", "audio"]),
+        name: z.string().max(200).optional(),
+        caption: z.string().max(400).optional(),
+        url: z.string().url().optional(),
+      }),
+    )
+    .max(20)
+    .optional(),
 });
 
 export interface ScriptShot {
@@ -114,6 +125,14 @@ export const generateScript = createServerFn({ method: "POST" })
     const key = process.env.LOVABLE_API_KEY;
     if (!key) throw new Error("Missing LOVABLE_API_KEY");
 
+    const attachmentLines = (data.attachments ?? []).map((a, i) => {
+      const tag = a.kind === "image" ? "图片" : a.kind === "video" ? "视频" : "音频";
+      return `${i + 1}. [${tag}] ${a.name ?? a.url ?? "asset"}${a.caption ? ` — ${a.caption}` : ""}${a.url ? ` (${a.url})` : ""}`;
+    });
+    const attachmentBlock = attachmentLines.length
+      ? `\n\n用户已上传的素材（必须作为剧情主线元素 / 主角形象 / 关键场景参考，禁止生成与之无关的品牌、角色或场景）：\n${attachmentLines.join("\n")}`
+      : "";
+
     const userMsg = [
       `用户需求：${data.prompt}`,
       data.adType ? `视频类型：${data.adType}` : "",
@@ -121,7 +140,7 @@ export const generateScript = createServerFn({ method: "POST" })
       data.visualSource ? `画面来源：${data.visualSource}` : "",
     ]
       .filter(Boolean)
-      .join("\n");
+      .join("\n") + attachmentBlock;
 
     const res = await fetch(
       "https://ai.gateway.lovable.dev/v1/chat/completions",
