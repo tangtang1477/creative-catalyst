@@ -330,6 +330,7 @@ export function Workspace() {
       <PricingDialog />
       <LowCreditToast />
       <WorkspaceVersionDrawer />
+      <CreateProjectDialog />
     </div>
   );
 }
