@@ -68,21 +68,28 @@ export const Route = createFileRoute("/api/chat-stream")({
 
         // ===== Preflight options 分支：让模型直接产出 JSON 问题卡 =====
         if (mode === "preflight-options") {
+          const adType = ctx?.brief?.adType ?? "";
+          const isSeries = /series|剧集|连续剧|剧\b/i.test(adType);
+          const q1Rule = isSeries
+            ? '- 第 1 题=时长 + 集数（例如 "1 集 × 15 秒"、"3 集 × 30 秒"）；'
+            : '- 第 1 题=单条视频时长（如 "15s / 30s / 60s"）；**严禁**出现"集数 / 多少集 / 系列 / EP"等词；';
           const preflightSys = [
             "你是 Vibe Aideo 的 AI 广告导演。用户刚确认了一个视频 brief，",
             "现在请你**主动**提出 3 个关键创意选择题，让用户点选而不是自己输入。",
             "严格输出 JSON（不要 markdown 代码块），形如：",
             '{"intro":"…一句话开场，呼应用户的需求…","questions":[',
-            '  {"id":"duration","label":"…","options":[{"id":"60s","label":"~60秒（4个场景）"},…],"allowOther":true},',
+            '  {"id":"duration","label":"…","options":[{"id":"opt1","label":"…"},…],"allowOther":true},',
             '  {"id":"tone","label":"…","options":[…],"allowOther":true},',
             '  {"id":"style","label":"…","options":[…],"allowOther":true}',
             '],"outro":"…一句话告诉用户点 Continue 即可开始制作…"}',
             "要求：",
             "- 每题 3–4 个选项，选项 label 控制在 14 字以内，可在括号里补充细节；",
             "- 问题必须紧扣用户的 prompt（古风短剧就别问 \"是否需要英文配音\"）；",
-            "- 第 1 题=时长/集数；第 2 题=情绪/调性；第 3 题=视觉风格或主角方向；",
+            q1Rule,
+            "- 第 2 题=情绪/调性；第 3 题=视觉风格或主角方向；",
             "- intro/outro 用中文，自然口语，不要 markdown；",
             "- 全文只输出 JSON，不要任何额外文字。",
+            `\n—— 当前内容类型 ——\n${isSeries ? "连续剧（可问集数）" : "非连续剧（禁止问集数）"}`,
             ctxLines.length ? "\n—— 当前任务上下文 ——\n" + ctxLines.join("\n") : "",
           ].filter(Boolean).join("\n");
 
