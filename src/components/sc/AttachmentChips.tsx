@@ -21,6 +21,8 @@ export function AttachmentChips() {
               <img src={a.thumb} alt="" className="h-full w-full object-cover" />
             ) : a.kind === "video" ? (
               <Film className="h-3 w-3" />
+            ) : a.kind === "audio" ? (
+              <Music className="h-3 w-3" />
             ) : a.source === "url" ? (
               <Link2 className="h-3 w-3" />
             ) : a.source === "asset" ? (
