@@ -31,6 +31,21 @@ const consume = (stage: string, label: string, cost: number, taskId?: string | n
   useCredits.getState().consume(stage, label, cost, taskId);
 const canAfford = (cost: number) => useCredits.getState().canAfford(cost);
 
+/**
+ * 同步刷新当前登录用户 id 到 store。在每个 run* 入口调用，避免
+ * fire-and-forget 写入造成的竞态导致命中未登录回退分支。
+ */
+async function ensureUserId(): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.getUser();
+    const id = data.user?.id ?? null;
+    useSC.setState({ currentUserId: id });
+    return id;
+  } catch {
+    return useSC.getState().currentUserId;
+  }
+}
+
 interface RailState {
   open: boolean;
   flashId?: string;
