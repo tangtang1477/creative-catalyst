@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { toast } from "sonner";
 
 export interface CreditEvent {
   ts: number;
@@ -15,18 +16,17 @@ interface CreditsState {
   pricingOpen: boolean;
   lowOpen: boolean;
   lowDismissedFor: string | null; // taskId user dismissed for
-  pulseId: number; // bump on each consume for UI animation triggers
-  /** Whether we have synced with the backend ledger for the current user. */
+  pulseId: number;
   synced: boolean;
+  toppingUp: boolean;
   consume: (stage: string, label: string, cost: number, taskId?: string | null) => void;
-  topUp: (n: number) => void;
+  topUp: (n: number, tier?: string) => Promise<void>;
   resetUsed: () => void;
   canAfford: (cost: number) => boolean;
   openPricing: () => void;
   closePricing: () => void;
   openLow: (taskId?: string) => void;
   closeLow: (taskId?: string) => void;
-  /** Pull balance from backend ledger and replace local cache. */
   syncFromBackend: () => Promise<void>;
 }
 
@@ -60,6 +60,27 @@ const persist = (s: { total: number; used: number; history: CreditEvent[] }) => 
   }
 };
 
+// Per-stage debounce so batch generators (8 keyframes in a row) don't
+// produce 8 stacked toasts. We aggregate the cost within 350ms.
+const toastBuffer = new Map<string, { cost: number; timer: ReturnType<typeof setTimeout> }>();
+function notifyConsume(stage: string, cost: number, remaining: number) {
+  if (typeof window === "undefined") return;
+  const existing = toastBuffer.get(stage);
+  if (existing) {
+    clearTimeout(existing.timer);
+    existing.cost += cost;
+  }
+  const entry = existing ?? { cost, timer: null as unknown as ReturnType<typeof setTimeout> };
+  if (!existing) toastBuffer.set(stage, entry);
+  entry.timer = setTimeout(() => {
+    toastBuffer.delete(stage);
+    toast(`本次消耗 ${entry.cost} 积分`, {
+      description: `阶段 · ${stage}（剩余 ${Math.max(0, remaining)}）`,
+      duration: 2500,
+    });
+  }, 350);
+}
+
 export const useCredits = create<CreditsState>((set, get) => {
   const init = load();
   return {
@@ -71,11 +92,14 @@ export const useCredits = create<CreditsState>((set, get) => {
     lowDismissedFor: null,
     pulseId: 0,
     synced: false,
+    toppingUp: false,
 
     consume: (stage, label, cost, taskId) => {
       if (cost <= 0) return;
+      let snapshotRemaining = 0;
       set((s) => {
         const used = Math.min(s.total, s.used + cost);
+        snapshotRemaining = Math.max(0, s.total - used);
         const history = [
           ...s.history,
           { ts: Date.now(), stage, label, cost, taskId: taskId ?? null },
@@ -83,34 +107,57 @@ export const useCredits = create<CreditsState>((set, get) => {
         persist({ total: s.total, used, history });
         return { used, history, pulseId: s.pulseId + 1 };
       });
-      // Fire-and-forget backend ledger insert. If it fails we keep the
-      // optimistic local change (best-effort), but on next syncFromBackend()
-      // the truth from DB wins.
+      notifyConsume(stage, cost, snapshotRemaining);
+      // Auto-trigger low-credit prompt
+      const tTotal = get().total;
+      if (snapshotRemaining === 0) {
+        set({ lowOpen: true, lowDismissedFor: null });
+      } else if (tTotal > 0 && snapshotRemaining / tTotal <= 0.1) {
+        if (!taskId || get().lowDismissedFor !== taskId) set({ lowOpen: true });
+      }
+      // Backend ledger insert (best-effort)
       void (async () => {
         try {
           const { consumeCredits } = await import("@/lib/credits.functions");
           const r = await consumeCredits({
-            data: {
-              taskId: taskId ?? null,
-              stage,
-              label,
-              cost,
-            },
+            data: { taskId: taskId ?? null, stage, label, cost },
           });
           set({ used: r.used, total: r.total, synced: true });
           persist({ total: r.total, used: r.used, history: get().history });
+          if (r.remaining === 0) set({ lowOpen: true, lowDismissedFor: null });
+          else if (r.total > 0 && r.remaining / r.total <= 0.1) {
+            if (!taskId || get().lowDismissedFor !== taskId) set({ lowOpen: true });
+          }
         } catch (err) {
           console.warn("[credits] backend ledger insert failed", err);
         }
       })();
     },
-    topUp: (n) => {
+
+    topUp: async (n, tier) => {
+      if (n <= 0) return;
+      // Optimistic update
       set((s) => {
         const total = s.total + n;
         persist({ total, used: s.used, history: s.history });
-        return { total, lowOpen: false, lowDismissedFor: null };
+        return { total, lowOpen: false, lowDismissedFor: null, toppingUp: true };
       });
+      try {
+        const { topUpCredits } = await import("@/lib/credits.functions");
+        const r = await topUpCredits({ data: { amount: n, tier } });
+        set({ used: r.used, total: r.total, synced: true, toppingUp: false });
+        persist({ total: r.total, used: r.used, history: get().history });
+        toast.success(`充值成功 · 到账 ${n} 积分`, {
+          description: `当前余额 ${Math.max(0, r.remaining)}`,
+          duration: 3000,
+        });
+      } catch (err) {
+        console.warn("[credits] backend topup failed", err);
+        set({ toppingUp: false });
+        toast.error("充值失败，请稍后重试");
+      }
     },
+
     resetUsed: () =>
       set((s) => {
         persist({ total: s.total, used: 0, history: [] });
