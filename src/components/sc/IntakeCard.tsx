@@ -9,19 +9,21 @@ import { cn } from "@/lib/utils";
 const titles = {
   adType: "1. 视频类型？",
   format: "2. 投放规格（时长 + 比例）？",
-  visualSource: "3. 画面来源？",
-  mode: "4. 创作模式？",
+  visualStyle: "3. 画风？",
+  visualSource: "4. 画面来源？",
+  mode: "5. 创作模式？",
 } as const;
 
 const shortLabels = {
   adType: "视频类型",
   format: "投放规格",
+  visualStyle: "画风",
   visualSource: "画面来源",
   mode: "创作模式",
 } as const;
 
 type Key = keyof typeof titles;
-const ORDER: Key[] = ["adType", "format", "visualSource", "mode"];
+const ORDER: Key[] = ["adType", "format", "visualStyle", "visualSource", "mode"];
 
 export function IntakeCard() {
   const {
