@@ -26,6 +26,8 @@ import { useCredits, creditsSelectors } from "@/lib/sc/credits-store";
 import { StageBoundary } from "./StageBoundary";
 import { VersionDrawer } from "./VersionDrawer";
 import { ChatAgentMessage } from "./ChatAgentMessage";
+import { CreateProjectDialog } from "./CreateProjectDialog";
+import { ProjectGuideCard } from "./ProjectGuideCard";
 
 import { cn } from "@/lib/utils";
 
