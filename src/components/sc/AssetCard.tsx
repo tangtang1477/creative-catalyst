@@ -46,6 +46,26 @@ export function AssetCard({
   const hasVersions = versionCount >= 2;
   const [loaded, setLoaded] = useState(false);
 
+  // —— Character ↔ voice badge (only on wardrobe W* characters) ——
+  const isCharacter = asset.stageId === "wardrobe" && /^W/i.test(asset.id);
+  const cvFetch = useCharacterVoices((s) => s.fetch);
+  const cvLoaded = useCharacterVoices((s) => s.loaded);
+  const binding = useCharacterVoices((s) =>
+    isCharacter ? s.voiceForName(asset.caption ?? asset.id) : undefined,
+  );
+  const voices = useVoices((s) => s.voices);
+  const voicesLoaded = useVoices((s) => s.loaded);
+  const fetchVoices = useVoices((s) => s.fetchVoices);
+  const previewVoice = useVoices((s) => s.preview);
+  const stopPreview = useVoices((s) => s.stopPreview);
+  const previewingId = useVoices((s) => s.previewingId);
+  useEffect(() => {
+    if (isCharacter && !cvLoaded) cvFetch();
+    if (isCharacter && !voicesLoaded) fetchVoices();
+  }, [isCharacter, cvLoaded, voicesLoaded, cvFetch, fetchVoices]);
+  const boundVoice = binding ? voices.find((v) => v.id === binding.voice_id) : undefined;
+  const voicePlaying = boundVoice && previewingId === boundVoice.id;
+
 
   const dim =
     asset.width && asset.height
@@ -56,13 +76,14 @@ export function AssetCard({
 
   const onOpen = () => openPreview(asset.id);
 
-  const isLoadingState =
-    !asset.url &&
-    (asset.status === "Queued" ||
-      asset.status === "Generating" ||
-      asset.status === "Processing" ||
-      asset.status === "Recovering" ||
-      asset.status === "Status checked");
+  const isGenerating =
+    asset.status === "Queued" ||
+    asset.status === "Generating" ||
+    asset.status === "Processing" ||
+    asset.status === "Recovering" ||
+    asset.status === "Status checked";
+  const showFullLoader = isGenerating && !asset.url;
+  const showOverlayLoader = isGenerating && !!asset.url;
 
   const loadingLabel =
     asset.kind === "video"
@@ -86,23 +107,50 @@ export function AssetCard({
       )}
     >
       <div className="relative w-full">
+        {/* Character voice badge (top-left) */}
+        {isCharacter && boundVoice && (
+          <div className="absolute left-1.5 top-1.5 z-10 inline-flex items-center gap-1 rounded-full bg-black/70 px-1.5 py-0.5 text-[10.5px] text-white backdrop-blur-sm">
+            <Mic className="h-3 w-3 text-accent" />
+            <span className="max-w-[80px] truncate">{boundVoice.name}</span>
+            <button
+              type="button"
+              aria-label="preview voice"
+              onClick={(e) => {
+                e.stopPropagation();
+                voicePlaying ? stopPreview() : previewVoice(boundVoice.id);
+              }}
+              className={cn(
+                "ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors",
+                voicePlaying
+                  ? "bg-accent text-accent-foreground"
+                  : "bg-white/15 text-white hover:bg-white/25",
+              )}
+            >
+              {voicePlaying ? <Pause className="h-2.5 w-2.5" /> : <Play className="h-2.5 w-2.5" />}
+            </button>
+          </div>
+        )}
+
         {asset.kind === "image" && asset.url ? (
-          <img
-            src={asset.url}
-            alt={asset.label}
-            loading="lazy"
-            onLoad={() => setLoaded(true)}
-            onDoubleClick={() => openPreview(asset.id)}
-            className={cn(
-              "block w-full cursor-zoom-in object-cover transition-[filter,opacity] duration-500",
-              !loaded && "scale-[1.02] opacity-60 blur-lg",
-              loaded && "blur-0 opacity-100",
-            )}
-            style={{
-              aspectRatio: "9 / 16",
-              maxHeight: compact ? 240 : 420,
-            }}
-          />
+          <>
+            <img
+              src={asset.url}
+              alt={asset.label}
+              loading="lazy"
+              onLoad={() => setLoaded(true)}
+              onDoubleClick={() => openPreview(asset.id)}
+              className={cn(
+                "block w-full cursor-zoom-in object-cover transition-[filter,opacity] duration-500",
+                (!loaded || showOverlayLoader) && "scale-[1.02] opacity-80 blur-lg",
+                loaded && !showOverlayLoader && "blur-0 opacity-100",
+              )}
+              style={{
+                aspectRatio: "9 / 16",
+                maxHeight: compact ? 240 : 420,
+              }}
+            />
+            {showOverlayLoader && <GeneratingPill label={loadingLabel} />}
+          </>
         ) : asset.kind === "video" && asset.url ? (
           <div className="relative">
             <video
@@ -117,8 +165,9 @@ export function AssetCard({
                 {asset.duration}
               </span>
             )}
+            {showOverlayLoader && <GeneratingPill label={loadingLabel} />}
           </div>
-        ) : isLoadingState ? (
+        ) : showFullLoader ? (
           <GradientLoader
             label={loadingLabel}
             aspect={asset.kind === "image" ? "9 / 16" : "16 / 9"}
