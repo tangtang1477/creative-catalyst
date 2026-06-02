@@ -1,7 +1,10 @@
 import { useRef, useState, type ReactNode } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Upload, Link2, Image as ImageIcon, Film } from "lucide-react";
+import { Upload, Link2, Image as ImageIcon, Film, Music } from "lucide-react";
 import { useSC } from "@/lib/sc/store";
+import { useVoices } from "@/lib/sc/voices-store";
+import { uploadGenericFile } from "@/lib/upload-image";
+import { supabase } from "@/integrations/supabase/client";
 import type { Attachment } from "@/lib/sc/types";
 import { cn } from "@/lib/utils";
 
@@ -23,16 +26,79 @@ function Row({ icon, label, onClick, children }: { icon: ReactNode; label: strin
   );
 }
 
+type AcceptKind = "image" | "video" | "audio" | "any";
+
 export function AttachMenu({ children, disabled }: { children: ReactNode; disabled?: boolean }) {
   const { addAttachment, assets } = useSC();
+  const clone = useVoices((s) => s.clone);
   const [open, setOpen] = useState(false);
   const [urlInput, setUrlInput] = useState("");
+  const [acceptKind, setAcceptKind] = useState<AcceptKind>("any");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const onFiles = (files: FileList | null) => {
+  const triggerFile = (k: AcceptKind) => {
+    setAcceptKind(k);
+    requestAnimationFrame(() => fileRef.current?.click());
+  };
+
+  const onFiles = async (files: FileList | null) => {
     if (!files) return;
-    Array.from(files).forEach((file) => {
-      const kind: Attachment["kind"] = file.type.startsWith("video") ? "video" : "image";
+    const arr = Array.from(files);
+    setOpen(false);
+    for (const file of arr) {
+      const mime = file.type || "";
+      const kind: "image" | "video" | "audio" = mime.startsWith("video")
+        ? "video"
+        : mime.startsWith("audio")
+          ? "audio"
+          : "image";
+
+      // Audio: upload to storage then offer to clone as a voice
+      if (kind === "audio") {
+        try {
+          const { data: au } = await supabase.auth.getUser();
+          if (!au.user) {
+            // Fallback: ephemeral object URL only
+            const url = URL.createObjectURL(file);
+            addAttachment({
+              id: aid(),
+              kind: "audio",
+              name: file.name,
+              url,
+              source: "upload",
+            });
+            continue;
+          }
+          const url = await uploadGenericFile({
+            file,
+            userId: au.user.id,
+          });
+          addAttachment({
+            id: aid(),
+            kind: "audio",
+            name: file.name,
+            url,
+            source: "upload",
+          });
+          const want = window.confirm(
+            `已上传 “${file.name}”。是否将其克隆为一个新音色加入音色库？`,
+          );
+          if (want) {
+            const voiceName = (file.name.replace(/\.[^/.]+$/, "") || "我的音色").slice(0, 60);
+            try {
+              await clone({ name: voiceName, audio_url: url });
+            } catch (e) {
+              console.error("[clone voice] failed", e);
+              window.alert(`音色克隆失败：${(e as Error).message}`);
+            }
+          }
+        } catch (e) {
+          console.error("[audio upload] failed", e);
+        }
+        continue;
+      }
+
+      // image / video
       const url = URL.createObjectURL(file);
       addAttachment({
         id: aid(),
@@ -42,25 +108,35 @@ export function AttachMenu({ children, disabled }: { children: ReactNode; disabl
         thumb: kind === "image" ? url : undefined,
         source: "upload",
       });
-    });
-    setOpen(false);
+    }
   };
 
   const onUrl = () => {
     const v = urlInput.trim();
     if (!v) return;
     const isVideo = /\.(mp4|mov|webm|m3u8)(\?|$)/i.test(v);
+    const isAudio = /\.(mp3|wav|m4a|ogg|aac)(\?|$)/i.test(v);
+    const kind: Attachment["kind"] = isVideo ? "video" : isAudio ? "audio" : "image";
     addAttachment({
       id: aid(),
-      kind: isVideo ? "video" : "image",
+      kind,
       name: v.split("/").pop() || v,
       url: v,
-      thumb: !isVideo ? v : undefined,
+      thumb: !isVideo && !isAudio ? v : undefined,
       source: "url",
     });
     setUrlInput("");
     setOpen(false);
   };
+
+  const acceptAttr =
+    acceptKind === "image"
+      ? "image/*"
+      : acceptKind === "video"
+        ? "video/*"
+        : acceptKind === "audio"
+          ? "audio/*"
+          : "image/*,video/*,audio/*";
 
   const readyAssets = assets.filter((a) => a.status === "Ready" && a.url);
 
@@ -71,19 +147,49 @@ export function AttachMenu({ children, disabled }: { children: ReactNode; disabl
         side="top"
         align="start"
         sideOffset={8}
-        className="w-[280px] rounded-2xl border-border bg-surface p-1.5 shadow-xl"
+        className="w-[290px] rounded-2xl border-border bg-surface p-1.5 shadow-xl"
       >
         <input
           ref={fileRef}
           type="file"
-          accept="image/*,video/*"
+          accept={acceptAttr}
           multiple
           className="hidden"
           onChange={(e) => onFiles(e.target.files)}
         />
-        <Row icon={<Upload className="h-3.5 w-3.5" />} label="Upload from device" onClick={() => fileRef.current?.click()} />
+        <Row
+          icon={<Upload className="h-3.5 w-3.5" />}
+          label="上传文件 · 图片/视频/音频"
+          onClick={() => triggerFile("any")}
+        />
+        <div className="grid grid-cols-3 gap-1 px-1.5 pt-1">
+          <button
+            type="button"
+            onClick={() => triggerFile("image")}
+            className="inline-flex items-center justify-center gap-1 rounded-lg bg-surface-2/60 px-2 py-1.5 text-[11px] text-foreground/85 hover:bg-surface-2 hover:text-accent"
+          >
+            <ImageIcon className="h-3 w-3" />
+            图片
+          </button>
+          <button
+            type="button"
+            onClick={() => triggerFile("video")}
+            className="inline-flex items-center justify-center gap-1 rounded-lg bg-surface-2/60 px-2 py-1.5 text-[11px] text-foreground/85 hover:bg-surface-2 hover:text-accent"
+          >
+            <Film className="h-3 w-3" />
+            视频
+          </button>
+          <button
+            type="button"
+            onClick={() => triggerFile("audio")}
+            className="inline-flex items-center justify-center gap-1 rounded-lg bg-surface-2/60 px-2 py-1.5 text-[11px] text-foreground/85 hover:bg-surface-2 hover:text-accent"
+          >
+            <Music className="h-3 w-3" />
+            音频
+          </button>
+        </div>
 
-        <div className="flex items-center gap-1.5 px-2.5 py-1.5">
+        <div className="mt-1 flex items-center gap-1.5 px-2.5 py-1.5">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-surface-2 text-foreground/70">
             <Link2 className="h-3.5 w-3.5" />
           </span>
@@ -91,7 +197,7 @@ export function AttachMenu({ children, disabled }: { children: ReactNode; disabl
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), onUrl())}
-            placeholder="Paste image or video URL"
+            placeholder="粘贴图片/视频/音频 URL"
             className="min-w-0 flex-1 rounded-lg bg-surface-2 px-2 py-1.5 text-[12px] text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>

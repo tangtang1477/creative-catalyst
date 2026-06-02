@@ -174,7 +174,7 @@ export type TaskKind = "oneoff" | "series";
 
 export interface Attachment {
   id: string;
-  kind: "image" | "video";
+  kind: "image" | "video" | "audio";
   name: string;
   url: string;
   thumb?: string;

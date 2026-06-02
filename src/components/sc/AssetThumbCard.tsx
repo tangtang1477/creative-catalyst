@@ -1,5 +1,5 @@
 import type { Asset } from "@/lib/sc/types";
-import { Image as ImageIcon, Film, Play } from "lucide-react";
+import { Image as ImageIcon, Film, Play, ZoomIn } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSC } from "@/lib/sc/store";
 import { AssetActions } from "./AssetActions";
@@ -20,7 +20,7 @@ export function AssetThumbCard({
   selected = false,
   highlighted = false,
 }: Props) {
-  const focusAsset = useSC((s) => s.focusAsset);
+  const openPreview = useSC((s) => s.openPreview);
   const openVersionDrawer = useSC((s) => s.openVersionDrawer);
   const Icon = asset.kind === "image" ? ImageIcon : Film;
   const thumb = asset.kind === "image" ? asset.url : asset.poster;
@@ -29,11 +29,7 @@ export function AssetThumbCard({
 
   const handleClick = () => {
     if (selectable) return;
-    focusAsset(asset.id);
-    const el = document.querySelector(
-      `[data-stage-id="${asset.stageId}"]`,
-    ) as HTMLElement | null;
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (asset.url || asset.poster) openPreview(asset.id);
   };
 
   const statusColor =
@@ -102,6 +98,21 @@ export function AssetThumbCard({
           className="absolute bottom-1 left-1 z-20 rounded-md bg-black/65 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold text-white/95 backdrop-blur hover:bg-accent hover:text-accent-foreground"
         >
           v{versionCount}
+        </button>
+      )}
+
+      {(asset.url || asset.poster) && (
+        <button
+          type="button"
+          aria-label="放大预览"
+          title="放大预览"
+          onClick={(e) => {
+            e.stopPropagation();
+            openPreview(asset.id);
+          }}
+          className="absolute right-1 top-1 z-20 inline-flex h-5 w-5 items-center justify-center rounded-md bg-black/55 text-white opacity-0 backdrop-blur transition-opacity hover:bg-accent hover:text-accent-foreground group-hover:opacity-100"
+        >
+          <ZoomIn className="h-3 w-3" />
         </button>
       )}
 

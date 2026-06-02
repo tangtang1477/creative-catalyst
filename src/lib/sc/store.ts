@@ -87,6 +87,8 @@ interface SCState {
   chatLog: ChatMsg[];
   /** Asset id currently shown in the VersionDrawer (null = closed). */
   versionDrawerAssetId: string | null;
+  /** Asset id shown in the AssetPreviewDialog lightbox (null = closed). */
+  previewAssetId: string | null;
 
 
 
@@ -134,6 +136,8 @@ interface SCState {
   setActiveVersion: (assetId: string, versionIndex: number) => void;
   openVersionDrawer: (assetId: string) => void;
   closeVersionDrawer: () => void;
+  openPreview: (assetId: string) => void;
+  closePreview: () => void;
 
 
 
@@ -460,12 +464,19 @@ export const useSC = create<SCState>((set, get) => {
     void (async () => {
       let script: GeneratedScript | null = null;
       try {
+        const attachments = get().attachments.map((a) => ({
+          kind: a.kind,
+          name: a.name,
+          caption: a.ref ?? undefined,
+          url: /^https?:\/\//.test(a.url) ? a.url : undefined,
+        }));
         script = await generateScript({
           data: {
             prompt: b?.prompt ?? "",
             adType: b?.adType ?? "",
             format: b?.format ?? "",
             visualSource: b?.visualSource ?? "",
+            attachments,
           },
         });
       } catch (e) {
@@ -591,6 +602,45 @@ export const useSC = create<SCState>((set, get) => {
 
       if (get().runId !== startedRunId) return;
       appendSummary("wardrobe", "服装/道具准备完毕 · 风格统一");
+
+      // Auto-bind a preset voice to every character (W*) asset.
+      try {
+        if (userId) {
+          const [{ useVoices }, { bindCharacterVoice, listCharacterVoices }] = await Promise.all([
+            import("@/lib/sc/voices-store"),
+            import("@/lib/characters.functions"),
+          ]);
+          const vState = useVoices.getState();
+          if (!vState.loaded) await vState.fetchVoices();
+          const voices = useVoices.getState().voices.filter((v) => v.status === "ready");
+          if (voices.length) {
+            const existing = await listCharacterVoices({ data: {} }).catch(() => ({ bindings: [] }));
+            const taken = new Set((existing.bindings as Array<{ character_name: string }>).map((b) => b.character_name));
+            const characters = wardrobeAssets.filter((w) => /^W/i.test(w.id));
+            for (let i = 0; i < characters.length; i++) {
+              const c = characters[i];
+              const name = c.caption ?? c.id;
+              if (taken.has(name)) continue;
+              const isFemale = /女|her|she|sister|mother|girl/i.test(name);
+              const isMale = /男|him|he|brother|father|boy/i.test(name);
+              const pool = voices.filter((v) => {
+                if (isFemale) return /female|woman|girl|她|女/i.test(`${v.name} ${v.description ?? ""}`);
+                if (isMale) return /male|man|boy|他|男/i.test(`${v.name} ${v.description ?? ""}`);
+                return true;
+              });
+              const pick = (pool.length ? pool : voices)[i % (pool.length || voices.length)];
+              if (!pick) continue;
+              await bindCharacterVoice({
+                data: { character_name: name, voice_id: pick.id, task_id: get().taskId ?? undefined },
+              }).catch(() => void 0);
+            }
+            appendSummary("wardrobe", `已为 ${characters.length} 位角色自动绑定默认音色 · 可在「音色库」中调整`);
+          }
+        }
+      } catch (e) {
+        console.warn("[wardrobe] auto-bind voice failed", e);
+      }
+
       updateStage("wardrobe", { status: "ready" });
       collapseAfter("wardrobe", 1600);
       persistCurrent("running");
@@ -1299,6 +1349,7 @@ export const useSC = create<SCState>((set, get) => {
     selection: [],
     chatLog: [],
     versionDrawerAssetId: null,
+    previewAssetId: null,
     currentUserId: null,
     script: null,
 
@@ -1592,11 +1643,12 @@ export const useSC = create<SCState>((set, get) => {
       if (!text) return;
       clearTimers();
       const taskKind: TaskKind = isSeriesPrompt(text) ? "series" : "oneoff";
+      const newTaskId = newId();
       set((s) => ({
         runId: s.runId + 1,
         prompt: "",
         taskTitle: inferTaskTitle(text),
-        taskId: newId(),
+        taskId: newTaskId,
         taskKind,
         phase: "thinking",
         stages: initialStages(),
@@ -1614,8 +1666,35 @@ export const useSC = create<SCState>((set, get) => {
         script: null,
       }));
       // submit 时兜底再拉一次，确保是最新登录态
-      supabase.auth.getUser().then(({ data }) => {
+      supabase.auth.getUser().then(async ({ data }) => {
         set({ currentUserId: data.user?.id ?? null });
+
+        // Auto-create + attach project when this looks like a series episode
+        if (data.user && taskKind === "series") {
+          try {
+            const { useProjects } = await import("@/lib/sc/projects-store");
+            const { createProject } = await import("@/lib/projects.functions");
+            const projectsState = useProjects.getState();
+            if (!projectsState.loaded) await projectsState.fetchProjects();
+            const fresh = useProjects.getState().projects;
+            const presetName = inferTaskTitle(text);
+            let existing = fresh.find((p) => p.name === presetName);
+            if (!existing) {
+              const { project } = await createProject({
+                data: { name: presetName, kind: "series", icon: "series" },
+              });
+              existing = project as typeof fresh[number];
+              useProjects.setState((s) => ({ projects: [existing!, ...s.projects] }));
+            }
+            useProjects.getState().setCurrentProject(existing.id);
+            // task_id column is uuid; the in-memory `t_xxx` ids aren't UUIDs,
+            // so skip the row-level attach. The currentProjectId in store is enough
+            // for the UI to highlight the project, and persistence is recorded in
+            // `projects.brief` on subsequent saves.
+          } catch (e) {
+            console.warn("[auto-create project] failed", e);
+          }
+        }
       });
       const delay = 1500 + Math.random() * 1000;
       schedule(() => {
@@ -2018,6 +2097,8 @@ export const useSC = create<SCState>((set, get) => {
 
     openVersionDrawer: (assetId) => set({ versionDrawerAssetId: assetId }),
     closeVersionDrawer: () => set({ versionDrawerAssetId: null }),
+    openPreview: (assetId) => set({ previewAssetId: assetId }),
+    closePreview: () => set({ previewAssetId: null }),
 
 
 

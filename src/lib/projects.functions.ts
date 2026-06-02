@@ -20,7 +20,7 @@ export const createProject = createServerFn({ method: "POST" })
     z
       .object({
         name: z.string().trim().min(1).max(120),
-        kind: z.enum(["investment", "homework", "writing", "travel", "custom"]).default("custom"),
+        kind: z.enum(["series", "ad", "education", "mv", "custom"]).default("custom"),
         icon: z.string().max(40).optional(),
         brief: z.record(z.string(), z.any()).optional(),
       })

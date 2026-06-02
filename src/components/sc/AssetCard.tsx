@@ -2,11 +2,9 @@ import { useState } from "react";
 import {
   Image as ImageIcon,
   Film,
-  Play,
-  ExternalLink,
   Download,
-  RotateCw,
   RefreshCw,
+  ZoomIn,
 } from "lucide-react";
 import type { Asset } from "@/lib/sc/types";
 import { StatusBadge } from "./StatusBadge";
@@ -35,9 +33,9 @@ export function AssetCard({
   selected = false,
 }: Props) {
   const Icon = asset.kind === "image" ? ImageIcon : Film;
-  const focusAsset = useSC((s) => s.focusAsset);
   const retryAsset = useSC((s) => s.retryAsset);
   const openVersionDrawer = useSC((s) => s.openVersionDrawer);
+  const openPreview = useSC((s) => s.openPreview);
   const versionCount = (asset.versions?.length ?? 0) + (asset.url ? 1 : 0);
   const hasVersions = versionCount >= 2;
   const [loaded, setLoaded] = useState(false);
@@ -50,17 +48,7 @@ export function AssetCard({
         ? "1080×1920"
         : "—";
 
-  const onOpen = () => {
-    focusAsset(asset.id);
-    const el = document.querySelector(
-      `[data-stage-id="${asset.stageId}"]`,
-    ) as HTMLElement | null;
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.classList.add("ring-2", "ring-accent");
-      setTimeout(() => el.classList.remove("ring-2", "ring-accent"), 1400);
-    }
-  };
+  const onOpen = () => openPreview(asset.id);
 
   const isLoadingState =
     !asset.url &&
@@ -98,8 +86,9 @@ export function AssetCard({
             alt={asset.label}
             loading="lazy"
             onLoad={() => setLoaded(true)}
+            onDoubleClick={() => openPreview(asset.id)}
             className={cn(
-              "block w-full object-cover transition-[filter,opacity] duration-500",
+              "block w-full cursor-zoom-in object-cover transition-[filter,opacity] duration-500",
               !loaded && "scale-[1.02] opacity-60 blur-lg",
               loaded && "blur-0 opacity-100",
             )}
@@ -208,16 +197,8 @@ export function AssetCard({
             className="h-6 gap-1 px-2 text-[11px]"
             onClick={onOpen}
           >
-            <ExternalLink className="h-3 w-3" />
-            Open
-          </SCButton>
-          <SCButton
-            variant="chip"
-            size="sm"
-            className="h-6 gap-1 px-2 text-[11px]"
-          >
-            <RotateCw className="h-3 w-3" />
-            Replace
+            <ZoomIn className="h-3 w-3" />
+            预览
           </SCButton>
           {hasVersions && (
             <SCButton
@@ -231,14 +212,18 @@ export function AssetCard({
               v{versionCount}
             </SCButton>
           )}
-          <SCButton
-            variant="icon"
-            size="icon"
-            className="h-6 w-6"
-            aria-label="download"
-          >
-            <Download className="h-3 w-3" />
-          </SCButton>
+          {asset.url && (
+            <a
+              href={asset.url}
+              download={`${asset.label}.${asset.kind === "video" ? "mp4" : "png"}`}
+              target="_blank"
+              rel="noopener"
+              aria-label="download"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+            >
+              <Download className="h-3 w-3" />
+            </a>
+          )}
         </div>
       </div>
     </div>
