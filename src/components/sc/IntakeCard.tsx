@@ -72,9 +72,11 @@ export function IntakeCard() {
       ? intake.adType
       : key === "format"
         ? intake.format
-        : key === "visualSource"
-          ? intake.visualSource
-          : intake.mode
+        : key === "visualStyle"
+          ? intake.visualStyle
+          : key === "visualSource"
+            ? intake.visualSource
+            : intake.mode
     ).filter((o) => o !== OTHERS_LABEL);
     const totalChipCount = opts.length + 1; // +1 for Others chip
 
