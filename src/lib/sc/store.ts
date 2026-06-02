@@ -1271,6 +1271,131 @@ export const useSC = create<SCState>((set, get) => {
    * Reuses the existing keyframe + wardrobe references; consumes credit only
    * on success (same as runLife).
    */
+  const runWardrobeAsset = (assetId: string) => {
+    const asset = get().assets.find((a) => a.id === assetId);
+    if (!asset || asset.stageId !== "wardrobe") return;
+    const startedRunId = get().runId;
+    const briefPrompt = get().brief?.prompt ?? "";
+    updateAsset(assetId, { status: "Generating", errorMessage: undefined, errorCode: undefined });
+    appendSummary("wardrobe", `${assetId} 单图重做中…`);
+    void (async () => {
+      const userId = await ensureUserId();
+      if (!userId) {
+        updateAsset(assetId, {
+          status: "Failed",
+          errorMessage: "请先登录后再生成",
+          errorCode: "auth_required",
+        });
+        return;
+      }
+      const taskId = get().taskId ?? undefined;
+      const isProp = /^P/i.test(assetId);
+      const isHero = /^W0*1$/i.test(assetId);
+      const role = isProp
+        ? "key prop / object hero shot, centered, studio lighting, neutral background"
+        : isHero
+          ? "main character / hero subject portrait, full body, neutral background, reference sheet style"
+          : "secondary character / supporting subject portrait, full body, neutral background, reference sheet style";
+      const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
+      const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
+      const fullPrompt = [
+        styleFragment ? `Style: ${styleFragment}.` : "",
+        `Reference asset ${assetId} for the short film. Subject: ${asset.caption ?? assetId}.`,
+        `Style direction: ${role}.`,
+        `User brief (must reflect the actual subject, do NOT invent unrelated brands or scenes): ${briefPrompt}`,
+      ].filter(Boolean).join("\n\n");
+      try {
+        const b64 = await streamGenerateImage({
+          prompt: fullPrompt,
+          quality: "low",
+          onPartial: (dataUrl) => {
+            if (get().runId !== startedRunId) return;
+            updateAsset(assetId, { url: dataUrl });
+          },
+        });
+        if (get().runId !== startedRunId) return;
+        const url = await uploadBase64Image({ base64: b64, userId, taskId });
+        if (get().runId !== startedRunId) return;
+        updateAssetWithVersion(assetId, url, "manual-retry", "单图重做", {
+          status: "Ready",
+          errorMessage: undefined,
+          errorCode: undefined,
+        });
+        consume("wardrobe", `Wardrobe · ${assetId} retry`, 2, get().taskId);
+        appendSummary("wardrobe", `${assetId} 重做完成`);
+      } catch (e) {
+        console.error("[wardrobe] single retry failed", assetId, e);
+        updateAsset(assetId, {
+          status: "Failed",
+          errorMessage: (e as Error).message,
+          errorCode: "gen_failed",
+        });
+      }
+    })();
+  };
+
+  const runPaintShot = (assetId: string) => {
+    const asset = get().assets.find((a) => a.id === assetId);
+    if (!asset || asset.stageId !== "paint") return;
+    const startedRunId = get().runId;
+    const briefPrompt = get().brief?.prompt ?? "";
+    const script = get().script;
+    const shot = script?.shots?.find((s) => s.shot === assetId);
+    updateAsset(assetId, { status: "Generating", errorMessage: undefined, errorCode: undefined });
+    appendSummary("paint", `${assetId} 单图重做中…`);
+    void (async () => {
+      const userId = await ensureUserId();
+      if (!userId) {
+        updateAsset(assetId, {
+          status: "Failed",
+          errorMessage: "请先登录后再生成",
+          errorCode: "auth_required",
+        });
+        return;
+      }
+      const taskId = get().taskId ?? undefined;
+      const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
+      const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
+      const stylePrefix = styleFragment ? `Style: ${styleFragment}.\n\n` : "";
+      const fullPrompt = shot?.prompt
+        ? `${stylePrefix}${shot.prompt}\n\nReference brief: ${briefPrompt}`
+        : [
+            stylePrefix + briefPrompt,
+            KEYFRAME_PROMPT_DETAIL,
+            shot
+              ? `Shot ${shot.shot} · ${shot.scene} · ${shot.motion} · ${shot.elements}`
+              : `Shot ${assetId} · ${asset.caption ?? ""}`,
+          ].filter(Boolean).join("\n\n");
+      try {
+        const b64 = await streamGenerateImage({
+          prompt: fullPrompt,
+          quality: "low",
+          onPartial: (dataUrl) => {
+            if (get().runId !== startedRunId) return;
+            updateAsset(assetId, { url: dataUrl });
+          },
+        });
+        if (get().runId !== startedRunId) return;
+        const url = await uploadBase64Image({ base64: b64, userId, taskId });
+        if (get().runId !== startedRunId) return;
+        updateAssetWithVersion(assetId, url, "manual-retry", "单图重做", {
+          status: "Ready",
+          errorMessage: undefined,
+          errorCode: undefined,
+        });
+        consume("paint", `Keyframe ${assetId} · retry`, 5, get().taskId);
+        appendSummary("paint", `${assetId} 重做完成`);
+      } catch (e) {
+        console.error("[paint] single retry failed", assetId, e);
+        updateAsset(assetId, {
+          status: "Failed",
+          errorMessage: (e as Error).message,
+          errorCode: "gen_failed",
+        });
+      }
+    })();
+  };
+
   const runLifeSegment = (assetId: string) => {
     const asset = get().assets.find((a) => a.id === assetId);
     if (!asset || asset.stageId !== "life") return;
