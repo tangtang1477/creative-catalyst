@@ -262,6 +262,7 @@ export function Workspace() {
 
                     if (id === "life") {
                       const lowCredit = st.status === "recovering" && remaining < 30;
+                      const lifeAssets = assets.filter((a) => a.stageId === "life");
                       return (
                         <StageBoundary key={id} stageId={id}>
                           <StageRow
@@ -273,9 +274,13 @@ export function Workspace() {
                           >
                             {lowCredit ? (
                               <InlineLowCredit />
-                            ) : (
-                              v01 && <AssetCard asset={v01} />
-                            )}
+                            ) : lifeAssets.length > 0 ? (
+                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                {lifeAssets.map((a) => (
+                                  <AssetCard key={a.id} asset={a} compact />
+                                ))}
+                              </div>
+                            ) : null}
                           </StageRow>
                         </StageBoundary>
                       );
