@@ -156,7 +156,7 @@ export function inferIntake(
     defaults: {
       adType: defaultType,
       format: defaultFormat,
-      visualSource: VISUAL_SOURCES[0],
+      visualSource: opts.hasAttachments ? "使用上传素材" : VISUAL_SOURCES[0],
       mode: MODES[0],
       visualStyle: defaultStyle,
     },
