@@ -44,9 +44,9 @@ export function ProjectGuideCard() {
   const triggered = !dismissed && (matchedKeyword || hasScriptAttachment || isFinished);
   if (!triggered || phase === "empty") return null;
 
-  // If already created a project matching this title, hide
+  // If already created a project matching this title (or auto-attached), show success state
   const presetName = (taskTitle || brief?.prompt?.slice(0, 24) || "新项目").trim();
-  if (projects.some((p) => p.name === presetName)) return null;
+  const matchingProject = currentProject ?? projects.find((p) => p.name === presetName) ?? null;
 
   const handleDismiss = () => {
     try {
@@ -56,6 +56,34 @@ export function ProjectGuideCard() {
     }
     setDismissed(true);
   };
+
+  if (matchingProject) {
+    return (
+      <div className="mb-4 flex items-center gap-3 rounded-2xl border border-accent/30 bg-[color-mix(in_oklab,var(--accent)_8%,var(--surface))] px-4 py-3 text-[12.5px] [animation:stream-fade_320ms_ease-out_both]">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
+          <Check className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-foreground">
+            已自动归档到项目 ·{" "}
+            <span className="text-accent">{matchingProject.name}</span>
+          </div>
+          <div className="text-[11.5px] text-muted-foreground">
+            后续素材、角色、音色都会保存到此项目，便于制作下一集。
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-label="dismiss"
+          onClick={handleDismiss}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
+
 
   return (
     <div
