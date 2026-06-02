@@ -758,58 +758,67 @@ export const useSC = create<SCState>((set, get) => {
     // 串行真实生图
     const startedRunId = get().runId;
     void (async () => {
-      const userId = get().currentUserId;
+      const userId = await ensureUserId();
       const taskId = get().taskId ?? undefined;
       const briefPrompt = get().brief?.prompt ?? "";
 
       if (!userId) {
-        appendSummary("paint", "未登录 · 跳过真实生图，使用示例图");
+        const reason = "请先登录后再生成关键帧";
         for (const r of SHOTS) {
           if (get().runId !== startedRunId) return;
-          updateAsset(r.shot, { status: "Ready", url: SAMPLE_KEYFRAME });
+          updateAsset(r.shot, {
+            status: "Failed",
+            errorMessage: reason,
+            errorCode: "auth_required",
+          });
         }
-      } else {
-        for (const r of SHOTS) {
+        appendSummary("paint", `未登录 · 已暂停生成（${reason}）`);
+        updateStage("paint", { status: "failed", errorMessage: reason });
+        set({ phase: "failed" });
+        persistCurrent("failed");
+        return;
+      }
+
+      for (const r of SHOTS) {
+        if (get().runId !== startedRunId) return;
+        updateAsset(r.shot, { status: "Generating" });
+        appendSummary("paint", `${r.shot} 生成中 · ${r.motion}`);
+        try {
+          const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
+          const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
+          const stylePrefix = styleFragment ? `Style: ${styleFragment}.\n\n` : "";
+          const fullPrompt = r.prompt
+            ? `${stylePrefix}${r.prompt}\n\nReference brief: ${briefPrompt}`
+            : [
+                stylePrefix + briefPrompt,
+                KEYFRAME_PROMPT_DETAIL,
+                `Shot ${r.shot} · ${r.scene} · ${r.motion} · ${r.elements}`,
+              ].filter(Boolean).join("\n\n");
+          const b64 = await streamGenerateImage({
+            prompt: fullPrompt,
+            quality: "low",
+            onPartial: (dataUrl) => {
+              if (get().runId !== startedRunId) return;
+              updateAsset(r.shot, { url: dataUrl });
+            },
+          });
           if (get().runId !== startedRunId) return;
-          updateAsset(r.shot, { status: "Generating" });
-          appendSummary("paint", `${r.shot} 生成中 · ${r.motion}`);
-          try {
-            const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
-            const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
-            const stylePrefix = styleFragment ? `Style: ${styleFragment}.\n\n` : "";
-            const fullPrompt = r.prompt
-              ? `${stylePrefix}${r.prompt}\n\nReference brief: ${briefPrompt}`
-              : [
-                  stylePrefix + briefPrompt,
-                  KEYFRAME_PROMPT_DETAIL,
-                  `Shot ${r.shot} · ${r.scene} · ${r.motion} · ${r.elements}`,
-                ].filter(Boolean).join("\n\n");
-            const b64 = await streamGenerateImage({
-              prompt: fullPrompt,
-              quality: "low",
-              onPartial: (dataUrl) => {
-                if (get().runId !== startedRunId) return;
-                updateAsset(r.shot, { url: dataUrl });
-              },
-            });
-            if (get().runId !== startedRunId) return;
-            const url = await uploadBase64Image({ base64: b64, userId, taskId });
-            if (get().runId !== startedRunId) return;
-            updateAsset(r.shot, { status: "Ready", url });
-            consume("paint", `Keyframe ${r.shot} · stream-gen`, 5, get().taskId);
-            appendSummary("paint", `${r.shot} Ready · ${r.motion}`);
-          } catch (e) {
-            console.error("[paint] failed", r.shot, e);
-            updateAsset(r.shot, {
-              status: "Failed",
-              errorMessage: (e as Error).message,
-              errorCode: "gen_failed",
-            });
-            appendSummary(
-              "paint",
-              `${r.shot} 生成失败：${(e as Error).message}（未扣积分）`,
-            );
-          }
+          const url = await uploadBase64Image({ base64: b64, userId, taskId });
+          if (get().runId !== startedRunId) return;
+          updateAsset(r.shot, { status: "Ready", url });
+          consume("paint", `Keyframe ${r.shot} · stream-gen`, 5, get().taskId);
+          appendSummary("paint", `${r.shot} Ready · ${r.motion}`);
+        } catch (e) {
+          console.error("[paint] failed", r.shot, e);
+          updateAsset(r.shot, {
+            status: "Failed",
+            errorMessage: (e as Error).message,
+            errorCode: "gen_failed",
+          });
+          appendSummary(
+            "paint",
+            `${r.shot} 生成失败：${(e as Error).message}（未扣积分）`,
+          );
         }
       }
 
