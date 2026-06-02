@@ -14,6 +14,7 @@ import {
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useVoices } from "@/lib/sc/voices-store";
 import { supabase } from "@/integrations/supabase/client";
+import { CharacterVoiceBinding } from "./CharacterVoiceBinding";
 import { cn } from "@/lib/utils";
 
 /**
@@ -129,6 +130,7 @@ export function VoiceLibraryPanel() {
         </>
       )}
 
+      <CharacterVoiceBinding />
       <CloneVoiceDialog />
     </div>
   );
