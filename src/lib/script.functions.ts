@@ -6,6 +6,7 @@ const GenerateScriptInput = z.object({
   adType: z.string().optional().default(""),
   format: z.string().optional().default(""),
   visualSource: z.string().optional().default(""),
+  visualStyle: z.string().optional().default(""),
   attachments: z
     .array(
       z.object({
