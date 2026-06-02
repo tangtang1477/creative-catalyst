@@ -1,5 +1,5 @@
 import type { Asset } from "@/lib/sc/types";
-import { Image as ImageIcon, Film, Play } from "lucide-react";
+import { Image as ImageIcon, Film, Play, ZoomIn } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSC } from "@/lib/sc/store";
 import { AssetActions } from "./AssetActions";
@@ -20,7 +20,7 @@ export function AssetThumbCard({
   selected = false,
   highlighted = false,
 }: Props) {
-  const focusAsset = useSC((s) => s.focusAsset);
+  const openPreview = useSC((s) => s.openPreview);
   const openVersionDrawer = useSC((s) => s.openVersionDrawer);
   const Icon = asset.kind === "image" ? ImageIcon : Film;
   const thumb = asset.kind === "image" ? asset.url : asset.poster;
@@ -29,11 +29,7 @@ export function AssetThumbCard({
 
   const handleClick = () => {
     if (selectable) return;
-    focusAsset(asset.id);
-    const el = document.querySelector(
-      `[data-stage-id="${asset.stageId}"]`,
-    ) as HTMLElement | null;
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (asset.url || asset.poster) openPreview(asset.id);
   };
 
   const statusColor =
