@@ -76,6 +76,8 @@ export interface StageState {
   expanded: boolean;
   toolCalls: ToolCall[];
   thoughts: Thought[];
+  /** Human-readable error message displayed inline when status === 'failed'. */
+  errorMessage?: string;
 }
 
 export interface AssetVersion {
