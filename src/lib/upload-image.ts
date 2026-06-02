@@ -32,6 +32,31 @@ export async function uploadBase64Image(opts: {
 }
 
 /**
+ * 通用文件上传到 media 桶。返回公开 URL。
+ * 用于用户上传图片 / 视频 / 音频。音频后续可被 cloneVoice 引用。
+ */
+export async function uploadGenericFile(opts: {
+  file: File;
+  userId: string;
+  taskId?: string;
+}): Promise<string> {
+  const { file, userId, taskId } = opts;
+  const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : "";
+  const safe = `${crypto.randomUUID()}${ext}`;
+  const path = taskId ? `${userId}/${taskId}/${safe}` : `${userId}/${safe}`;
+  const { error } = await supabase.storage
+    .from("media")
+    .upload(path, file, {
+      contentType: file.type || "application/octet-stream",
+      cacheControl: "31536000",
+      upsert: false,
+    });
+  if (error) throw new Error(error.message);
+  const { data } = supabase.storage.from("media").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+/**
  * 解析 SSE 流，拿到最终（completed）base64 图片；
  * onPartial 用于逐帧渲染预览（带 blur）。
  */
