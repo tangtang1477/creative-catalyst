@@ -131,6 +131,7 @@ export function IntakeCard() {
       format: intakeSel.format,
       visualSource: intakeSel.visualSource,
       mode: intakeSel.mode,
+      visualStyle: intakeSel.visualStyle,
     });
   };
 
