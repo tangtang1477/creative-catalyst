@@ -41,7 +41,6 @@ export function Workspace() {
   const openPricing = useCredits((s) => s.openPricing);
   const remaining = useCredits(creditsSelectors.remaining);
   const paintAssets = assets.filter((a) => a.stageId === "paint");
-  const v01 = assets.find((a) => a.id === "V01");
   const inFlow = phase === "running" || phase === "done" || phase === "failed";
 
   // ChatGPT-like auto-scroll to bottom when new content streams in.
