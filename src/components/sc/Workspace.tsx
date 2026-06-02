@@ -30,6 +30,16 @@ import { CreateProjectDialog } from "./CreateProjectDialog";
 import { ProjectGuideCard } from "./ProjectGuideCard";
 import { AssetPreviewDialog } from "./AssetPreviewDialog";
 import { ChatOptionCard } from "./ChatOptionCard";
+import { useProjects } from "@/lib/sc/projects-store";
+import { Folder as FolderIcon, FolderPlus as FolderPlusIcon, Clapperboard, Megaphone, GraduationCap, Music2 } from "lucide-react";
+
+const HOME_KIND_ICON: Record<string, typeof FolderIcon> = {
+  series: Clapperboard,
+  ad: Megaphone,
+  education: GraduationCap,
+  mv: Music2,
+  custom: FolderIcon,
+};
 
 import { cn } from "@/lib/utils";
 
