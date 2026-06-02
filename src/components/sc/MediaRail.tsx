@@ -19,14 +19,13 @@ import { Collapse } from "./Collapse";
 import { BatchEditDialog } from "./BatchEditDialog";
 
 type ViewMode = "grid" | "list";
-type Filter = "all" | "wardrobe" | "keyframe" | "video" | "fixed";
+type Filter = "all" | "image" | "video" | "audio";
 
 const FILTER_LABEL: Record<Filter, string> = {
-  all: "All",
-  wardrobe: "Wardrobe & Props",
-  keyframe: "Keyframes",
-  video: "Videos",
-  fixed: "Fix history",
+  all: "全部",
+  image: "图片",
+  video: "视频",
+  audio: "音频",
 };
 
 const WIDTH_KEY = "sc.rail.width";
@@ -94,27 +93,28 @@ export function MediaRail() {
 
   const images = useMemo(() => assets.filter((a) => a.kind === "image"), [assets]);
   const videos = useMemo(() => assets.filter((a) => a.kind === "video"), [assets]);
-  const wardrobeAssets = useMemo(() => assets.filter((a) => a.stageId === "wardrobe"), [assets]);
-  const keyframeAssets = useMemo(() => assets.filter((a) => a.stageId === "paint"), [assets]);
-  const fixedAssets = useMemo(
-    () => assets.filter((a) => (a.versions?.length ?? 0) >= 1),
+  const audios = useMemo(
+    () =>
+      assets.filter(
+        (a) =>
+          (a.kind as string) === "audio" ||
+          /\.(mp3|wav|m4a|ogg)$/i.test(a.url ?? ""),
+      ),
     [assets],
   );
 
   const visible = useMemo(() => {
     switch (filter) {
-      case "wardrobe":
-        return wardrobeAssets;
-      case "keyframe":
-        return keyframeAssets;
+      case "image":
+        return images;
       case "video":
         return videos;
-      case "fixed":
-        return fixedAssets;
+      case "audio":
+        return audios;
       default:
         return assets;
     }
-  }, [assets, filter, wardrobeAssets, keyframeAssets, videos, fixedAssets]);
+  }, [assets, filter, images, videos, audios]);
 
   const episodes = useMemo(() => {
     if (taskKind !== "series") return [];
@@ -223,18 +223,16 @@ export function MediaRail() {
 
         {/* Filter chips */}
         {assets.length > 0 && (
-          <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-3 py-1.5">
-            {(["all", "wardrobe", "keyframe", "video", "fixed"] as const).map((f) => {
+          <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-3 py-1.5">
+            {(["all", "image", "video", "audio"] as const).map((f) => {
               const count =
                 f === "all"
                   ? assets.length
-                  : f === "wardrobe"
-                    ? wardrobeAssets.length
-                    : f === "keyframe"
-                      ? keyframeAssets.length
-                      : f === "video"
-                        ? videos.length
-                        : fixedAssets.length;
+                  : f === "image"
+                    ? images.length
+                    : f === "video"
+                      ? videos.length
+                      : audios.length;
               return (
                 <button
                   key={f}

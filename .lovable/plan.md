@@ -1,116 +1,86 @@
-# 实施计划
+## 剩余实现计划（续上轮）
 
-## 一、素材管理优化（MediaRail / AssetCard）
+数据库与服务端函数（projects / voices / character_voices / assets 版本字段）已完成，VoiceLibraryPanel、CreateProjectDialog、ProjectGuideCard、projects-store、voices-store 已落地。本轮收尾以下 5 件事，全部前端 + 接线，不改数据库。
 
-**简化分类** — 把 `wardrobe / keyframe / video / fix history` 5 个 Filter 改为 3 个：
-- 图片（image）
-- 视频（video）
-- 音频（audio，新增）
+---
 
-**版本切换器** — 在原素材卡片上叠加（不新增卡片）：
-- 卡片右下角显示 `v1/v2/v3...` 小圆点（≤3 个时显示点，>3 显示数字徽章）
-- 鼠标悬停时左右出现 `‹ ›` 箭头切换；支持键盘左右键
-- 新增修改版本时：写入原 asset 的 `versions[]`，不再生成新卡片
-- 顶部右上角加一个 `v2` 角标，标识当前不是原版
-- 三态完整：默认 / hover（显示箭头与版本点）/ active 切换中
+### 1. Sidebar 项目列表渲染（真实后端）
 
-## 二、音色库（VoiceLibrary，新增模块）
+文件：`src/components/sc/Sidebar.tsx`
 
-入口：素材区新增「音频」Tab 下方分两块——音色库 & 音频素材。
+- 在「任务历史」上方新增「我的项目」分组：
+  - 头部：`我的项目` + `+` 图标按钮 → `useProjects().openCreate()`
+  - 列表：`useProjects().projects` 渲染为可点击行，左侧 emoji（icon 字段）+ 项目名 + 集数 badge
+  - 三态：loading（3 行 skeleton）/ empty（"还没有项目" 提示 + 创建按钮）/ ready
+- 未登录用户：显示「登录后管理项目」占位 + 跳转 `/login` 链接
+- 在根组件挂载 `useProjects().fetchProjects()`（仅登录时）
 
-**预设音色（内置）**
-- 复用 ElevenLabs 推荐声线（Sarah / Charlie / George / Laura / River / Liam / Alice 等约 12 个），存入 `seed_voices` 常量
-- 每张音色卡：头像（首字母圆形）/ 名称 / 语言标签 / 试听按钮
-- 试听通过新服务端函数 `previewVoice` 调用 ElevenLabs TTS（短句样本）
+### 2. MediaRail 三分类筛选
 
-**用户克隆音色**
-- 卡片：「+ 上传音频克隆」→ 弹窗
-- 支持拖入 / 选择 30s–3min 音频（mp3/wav/m4a，≤10MB）
-- 上传到 `media` bucket → 调用 `cloneVoice` 服务端函数（POST `https://api.elevenlabs.io/v1/voices/add`）→ 返回 `voice_id`
-- 存入 `voices` 表，状态机：`uploading → cloning → ready / failed`
-- 三态：上传中（进度条）/ 克隆中（呼吸光晕）/ 就绪（可试听+绑定角色）
+文件：`src/components/sc/MediaRail.tsx`（查看现有结构后改）
 
-**绑定到角色**
-- 角色卡片底部新增「音色：[未指定 ▾]」下拉
-- 选择后存入 `character_voices`（character_id + voice_id 映射）
-- 后续 TTS 时按角色匹配
+- 把原本 wardrobe/keyframe/video/fix-history 5 个 chip 改成 3 个：`图片 / 视频 / 音频`
+- 映射逻辑：
+  - 图片：`asset.kind === 'image'` 或 `media_kind === 'image'`
+  - 视频：`asset.kind === 'video'` 或 `media_kind === 'video'`
+  - 音频：`media_kind === 'audio'`（含 TTS 生成片段、上传音频）
+- 「修改版本」不再单独成 tab，改为在原图卡片上叠加版本切换器（见第 3 项）
+- chip 三态：default / hover / active；选中时显示计数 badge
 
-## 三、项目管理（Project，参考截图）
+### 3. AssetCard / AssetThumbCard 版本切换器
 
-**侧边栏 — 项目分组**（图 1 样式）
-- Sidebar 顶部 `项目` 折叠区，列出该用户的所有项目
-- 每项：图标（投资=$ / 作业=🎓 / 写作=🖊 / 旅行=✈ / 自定义）+ 名称
-- 顶部 `+ 新项目` 按钮 → 打开「创建项目」弹窗
+文件：`src/components/sc/AssetCard.tsx`、`src/components/sc/AssetThumbCard.tsx`
 
-**创建项目弹窗**（图 2 样式 1:1 还原）
-- 标题「创建项目」+ 右上齿轮 + ✕
-- 大输入框（占位「哥本哈根之旅」+ 左侧😊图标）
-- 4 个类型 chip：投资 / 作业 / 写作 / 旅行（图标颜色按截图）
-- 灰底提示卡：💡 项目功能可将聊天、文件和自定义指令集中保存…
-- 右下「创建项目」按钮（disabled 直到输入有效）
-- 三态：默认 / 输入聚焦 / 提交中（按钮 loading）
+当前已有 `openVersionDrawer` 按钮，按用户偏好改为**就地切换**：
 
-**项目智能引导卡**（task 列表上方）
-触发条件（两者都触发）：
-1. AI 检测到「第 X 集 / 下一集 / 系列 / 第二季 / 剧本」等关键词
-2. 用户上传 .txt/.md/.pdf 剧本附件
-3. 兜底：首次生成完成后弹一次「保存为项目？」
+- 用 `parent_asset_id` 聚合：父资产合并所有子版本到 `versions[]`
+- 卡片右下角叠加：
+  - ≤3 版本：圆点指示器（点亮 = 当前展示）+ 左右切换箭头（hover 显示）
+  - >3 版本：显示 `v2/5` 数字 badge + 左右箭头
+- 切换时只换 `url`/`poster`，标签栏显示 `v{n}` + 来源（qc-fix / manual-edit 等）小 chip
+- 完整三态：默认（只显示当前版本）/ hover（出现箭头）/ active（点亮当前圆点）
+- 保留旧 VersionDrawer 作为「查看全部版本」入口（双击或右键菜单触发）
 
-卡片样式：
-- 圆角，左侧文件夹📁图标，标题「保存为项目，方便制作后续集数」
-- 简述：自动归档本集素材、角色、音色、Brief
-- 主按钮「创建项目」/ 次按钮「暂不」/ ✕ 关闭
-- 三态：默认 / hover（轻微发光）/ 已关闭（不再本会话弹）
+新增 store 动作（`src/lib/sc/store.ts`）：`setActiveVersion(assetId, versionIndex)`
 
-**项目详情页**（点击侧边栏项目项进入）
-- 顶部：项目名 + 集数计数 + 「+ 新建一集」按钮
-- 三段：剧本/Brief · 素材库（沿用 MediaRail 分类）· 历史任务
-- 「+ 新建一集」预填上一集的角色、音色、风格、Brief
+### 4. 角色音色绑定 UI
 
-## 四、登录 & Lovable Cloud 持久化
+文件：新建 `src/components/sc/CharacterVoiceBinding.tsx`，挂载在 VoiceLibraryPanel 底部 + 剧本/角色卡侧边
 
-- 首次访问无 session 时不强制弹登录，仅在「创建项目 / 上传音色」时引导登录
-- 登录方式：邮箱密码 + Google（通过 `lovable.auth.signInWithOAuth("google")`，并同步 `configure_social_auth: ["google"]`）
-- 新建 `/login` 与 `/_authenticated` 布局；`projects / project_episodes / voices / character_voices` 都在 `_authenticated` 下读写
+- 列出当前 task 的角色（从 `script` 中提取 character 列表）
+- 每个角色一行：角色名 + 「选择音色」下拉（从 `useVoices().voices` 选）+ 试听按钮
+- 绑定写入 `character_voices` 表，需要新增服务端函数 `src/lib/characters.functions.ts`：
+  - `listCharacterVoices({ task_id })`
+  - `bindCharacterVoice({ task_id, project_id?, character_name, voice_id })`
+  - `unbindCharacterVoice({ id })`
+- 三态：空（"未绑定，点击选择音色"）/ 绑定中 loading / 已绑定（显示音色头像 + 解绑 ×）
 
-## 五、数据库迁移
+### 5. 登录态接入 + ProjectGuideCard 真实触发
 
-```text
-projects                  # 用户项目
-  id, user_id, name, kind (investment|homework|writing|travel|custom),
-  icon, brief jsonb, created_at, updated_at
-project_episodes          # 项目下每一集 (绑定到 video_tasks)
-  id, project_id, task_id (-> video_tasks), episode_no, created_at
-voices                    # 音色库
-  id, user_id, source (preset|cloned),
-  external_id (ElevenLabs voice_id), name, lang,
-  sample_url, origin_audio_url,
-  status (uploading|cloning|ready|failed), error, created_at
-character_voices          # 角色 -> 音色
-  id, user_id, task_id, character_name, voice_id, created_at
-assets 表新增列            # 版本系
-  version int default 1, parent_asset_id uuid,
-  media_kind text (image|video|audio)  -- 替代旧的 stage 分类
-```
+- `src/components/sc/Workspace.tsx`：
+  - 接入 `supabase.auth.getUser()`，未登录时 ProjectGuideCard 显示「登录后保存项目」按钮 → `/login`
+  - ProjectGuideCard 触发条件：用户输入命中正则 `/第\s*\d+\s*[集话]|下一集|系列|剧本/` 或上传 `.txt/.md/.fountain` 文件
+  - 触发后调用 `useProjects().openCreate({ name: 推断的项目名 })`
+- 在 `src/routes/__root.tsx` 添加 `onAuthStateChange` 监听，登录后 `fetchProjects()`
 
-全部带 RLS（`auth.uid() = user_id`），GRANT 给 `authenticated` 与 `service_role`，预设音色用全局只读策略。
+---
 
-## 六、Server Functions（新增）
+### 技术细节
 
-- `src/lib/projects.functions.ts` — `listProjects / createProject / getProject / attachEpisode`
-- `src/lib/voices.functions.ts` — `listVoices / cloneVoice / previewVoice / deleteVoice`
-- `src/lib/characters.functions.ts` — `setCharacterVoice`
-- 所有函数都用 `requireSupabaseAuth`，ElevenLabs 调用从 `process.env.ELEVENLABS_API_KEY` 读取（需用户提供）
+- 所有新 UI 使用 `src/styles.css` semantic tokens（surface-2, border, accent 等），禁止裸 hex
+- 圆角统一 `rounded-xl`（12px），chip 间距 `gap-2`（8px）
+- 版本切换器箭头用 `lucide-react` 的 `ChevronLeft/Right`
+- 服务端函数全部使用 `requireSupabaseAuth` 中间件，遵循 `server-side-modern`
+- 不再触碰 `client.ts` / `types.ts` / `routeTree.gen.ts`
 
-## 七、技术说明
+---
 
-- ElevenLabs API Key：需要用户提供 `ELEVENLABS_API_KEY`，否则音色试听/克隆不可用，UI 会显示「请配置音色服务」占位
-- 文件上传到 `media` bucket（已存在），新增 `voices/{user_id}/` 路径
-- 所有新 UI 严格使用 `src/styles.css` 的语义 token；三态（默认/hover/active 或 loading/error/empty）全部实现
-- 截图样式按 1:1 还原：圆角 12px、chip 间距 8px、提示卡灰底（`bg-surface-2`）
+### 验证步骤
 
-## 八、需要用户提供的密钥
+1. 构建通过（自动）
+2. 未登录访问首页：sidebar 显示登录占位，ProjectGuideCard 显示登录按钮
+3. 登录后输入「制作第一集」→ ProjectGuideCard 出现 → 点击创建项目 → sidebar 出现新项目
+4. 上传素材后 MediaRail 三分类正确切换
+5. 资产被 QC 修复后，原卡片出现版本切换器，可前后切换
 
-- `ELEVENLABS_API_KEY` — 用于音色试听与克隆（创建项目和项目管理本身不依赖它）
-
-确认后我将先创建数据库迁移并请求该密钥。
+是否批准？批准后我会一次性写所有文件。

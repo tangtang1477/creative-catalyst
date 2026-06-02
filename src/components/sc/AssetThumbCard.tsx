@@ -3,6 +3,7 @@ import { Image as ImageIcon, Film, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSC } from "@/lib/sc/store";
 import { AssetActions } from "./AssetActions";
+import { AssetVersionSwitcher } from "./AssetVersionSwitcher";
 
 interface Props {
   asset: Asset;
@@ -110,6 +111,7 @@ export function AssetThumbCard({
         selected={selected}
         variant="thumb"
       />
+      <AssetVersionSwitcher asset={asset} variant="thumb" />
     </div>
   );
 }

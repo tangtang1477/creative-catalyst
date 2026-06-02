@@ -197,6 +197,70 @@ export function Sidebar() {
           })}
         </nav>
 
+        {/* Projects */}
+        {open && (
+          <div className="mt-3 px-2">
+            <button
+              onClick={() => setProjectsOpen((v) => !v)}
+              className="flex w-full items-center justify-between px-2 pb-1 pt-2 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+            >
+              <span>我的项目</span>
+              <div className="flex items-center gap-1">
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openCreateProject(null);
+                  }}
+                  className="inline-flex h-4 w-4 cursor-pointer items-center justify-center rounded text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+                  aria-label="new project"
+                >
+                  <FolderPlus className="h-3 w-3" />
+                </span>
+                <ChevronDown
+                  className={cn(
+                    "h-3 w-3 transition-transform duration-200",
+                    !projectsOpen && "-rotate-90",
+                  )}
+                />
+              </div>
+            </button>
+            {projectsOpen && (
+              <div className="flex flex-col gap-0.5">
+                {!projectsLoaded ? (
+                  <div className="space-y-1 px-2 py-1">
+                    {[0, 1, 2].map((i) => (
+                      <div key={i} className="h-6 animate-pulse rounded-md bg-surface-2/50" />
+                    ))}
+                  </div>
+                ) : projects.length === 0 ? (
+                  <button
+                    onClick={() => openCreateProject(null)}
+                    className="mx-2 my-1 rounded-md border border-dashed border-border bg-surface-2/30 px-2 py-2 text-left text-[11px] text-muted-foreground hover:border-accent/50 hover:text-foreground"
+                  >
+                    还没有项目，点击创建
+                  </button>
+                ) : (
+                  projects.map((p) => {
+                    const Icon = KIND_ICON[p.kind] ?? Folder;
+                    const color = KIND_COLOR[p.kind] ?? "text-muted-foreground";
+                    return (
+                      <div
+                        key={p.id}
+                        className="group flex h-7 items-center gap-2 rounded-lg px-2 text-[12px] text-muted-foreground transition-colors hover:bg-surface-2/60 hover:text-foreground"
+                      >
+                        <Icon className={cn("h-3.5 w-3.5 shrink-0", color)} />
+                        <span className="truncate">{p.name}</span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Tasks */}
         {open && (
           <div className="mt-3 flex-1 overflow-y-auto px-2">
