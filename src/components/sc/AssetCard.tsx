@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { useSC } from "@/lib/sc/store";
 import { AssetActions } from "./AssetActions";
 import { GradientLoader } from "./GradientLoader";
+import { AssetVersionSwitcher } from "./AssetVersionSwitcher";
 
 
 interface Props {
@@ -172,6 +173,7 @@ export function AssetCard({
           selected={selected}
           variant="card"
         />
+        <AssetVersionSwitcher asset={asset} variant="card" />
       </div>
 
 
