@@ -2217,9 +2217,9 @@ export const useSC = create<SCState>((set, get) => {
     retryAsset: (assetId) => {
       const asset = get().assets.find((a) => a.id === assetId);
       if (!asset || !asset.stageId) return;
-      // V01 / life：整段重跑 life
+      // life：仅重做该单段
       if (asset.stageId === "life") {
-        get().retryStage("life");
+        runLifeSegment(assetId);
         return;
       }
       // paint 阶段：整段重跑 paint（简化处理，单帧重试不容易复用 prompt 顺序）
