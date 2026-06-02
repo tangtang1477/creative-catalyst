@@ -27,6 +27,24 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useCredits } from "@/lib/sc/credits-store";
+import { useProjects } from "@/lib/sc/projects-store";
+import { supabase } from "@/integrations/supabase/client";
+import { FolderPlus, Folder, DollarSign, GraduationCap, PenTool, Plane } from "lucide-react";
+
+const KIND_ICON: Record<string, typeof Folder> = {
+  investment: DollarSign,
+  homework: GraduationCap,
+  writing: PenTool,
+  travel: Plane,
+  custom: Folder,
+};
+const KIND_COLOR: Record<string, string> = {
+  investment: "text-emerald-400",
+  homework: "text-sky-400",
+  writing: "text-violet-400",
+  travel: "text-amber-400",
+  custom: "text-muted-foreground",
+};
 
 const navItems = [
   { id: "new", icon: Plus, label: "New task" },
