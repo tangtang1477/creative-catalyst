@@ -738,10 +738,13 @@ export const useSC = create<SCState>((set, get) => {
           updateAsset(r.shot, { status: "Generating" });
           appendSummary("paint", `${r.shot} 生成中 · ${r.motion}`);
           try {
+            const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
+            const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
+            const stylePrefix = styleFragment ? `Style: ${styleFragment}.\n\n` : "";
             const fullPrompt = r.prompt
-              ? `${r.prompt}\n\nReference brief: ${briefPrompt}`
+              ? `${stylePrefix}${r.prompt}\n\nReference brief: ${briefPrompt}`
               : [
-                  briefPrompt,
+                  stylePrefix + briefPrompt,
                   KEYFRAME_PROMPT_DETAIL,
                   `Shot ${r.shot} · ${r.scene} · ${r.motion} · ${r.elements}`,
                 ].filter(Boolean).join("\n\n");
