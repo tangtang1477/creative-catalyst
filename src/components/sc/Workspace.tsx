@@ -319,8 +319,9 @@ export function Workspace() {
                         text={m.text}
                         streaming={m.streaming}
                         toolCalls={m.toolCalls}
-                        // Hide awaiting cards here — they're surfaced ABOVE the script
-                        optionCards={m.optionCards?.filter((c) => c.status !== "awaiting")}
+                        // Option cards are rendered ABOVE the script — hide them here
+                        // so they don't appear twice (once above, once in the chat log).
+                        optionCards={undefined}
                         skill={m.skill}
                         actions={m.actions}
                       />
