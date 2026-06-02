@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Folder, X, Sparkles } from "lucide-react";
+import { Folder, X, Sparkles, Check } from "lucide-react";
 import { useSC } from "@/lib/sc/store";
 import { useProjects } from "@/lib/sc/projects-store";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,8 @@ export function ProjectGuideCard() {
   const attachments = useSC((s) => s.attachments);
   const openCreate = useProjects((s) => s.openCreate);
   const projects = useProjects((s) => s.projects);
+  const currentProjectId = useProjects((s) => s.currentProjectId);
+  const currentProject = projects.find((p) => p.id === currentProjectId) ?? null;
 
   const [dismissed, setDismissed] = useState(false);
   useEffect(() => {
