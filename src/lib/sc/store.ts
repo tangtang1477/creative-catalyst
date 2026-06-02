@@ -582,88 +582,100 @@ export const useSC = create<SCState>((set, get) => {
         persistCurrent("failed");
         return;
       }
-        for (const w of wardrobeAssets) {
+      for (const w of wardrobeAssets) {
+        if (get().runId !== startedRunId) return;
+        updateAsset(w.id, { status: "Generating", errorMessage: undefined });
+        const isProp = /^P/i.test(w.id);
+        const isHero = /^W0*1$/i.test(w.id);
+        const role = isProp
+          ? "key prop / object hero shot, centered, studio lighting, neutral background"
+          : isHero
+            ? "main character / hero subject portrait, full body, neutral background, reference sheet style"
+            : "secondary character / supporting subject portrait, full body, neutral background, reference sheet style";
+        const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
+        const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
+        const fullPrompt = [
+          styleFragment ? `Style: ${styleFragment}.` : "",
+          `Reference asset ${w.id} for the short film. Subject: ${w.caption}.`,
+          `Style direction: ${role}.`,
+          `User brief (must reflect the actual subject, do NOT invent unrelated brands or scenes): ${briefPrompt}`,
+        ].filter(Boolean).join("\n\n");
+        try {
+          const b64 = await streamGenerateImage({
+            prompt: fullPrompt,
+            quality: "low",
+            onPartial: (dataUrl) => {
+              if (get().runId !== startedRunId) return;
+              updateAsset(w.id, { url: dataUrl });
+            },
+          });
           if (get().runId !== startedRunId) return;
-          updateAsset(w.id, { status: "Generating", errorMessage: undefined });
-          const isProp = /^P/i.test(w.id);
-          const isHero = /^W0*1$/i.test(w.id);
-          const role = isProp
-            ? "key prop / object hero shot, centered, studio lighting, neutral background"
-            : isHero
-              ? "main character / hero subject portrait, full body, neutral background, reference sheet style"
-              : "secondary character / supporting subject portrait, full body, neutral background, reference sheet style";
-          const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
-          const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
-          const fullPrompt = [
-            styleFragment ? `Style: ${styleFragment}.` : "",
-            `Reference asset ${w.id} for the short film. Subject: ${w.caption}.`,
-            `Style direction: ${role}.`,
-            `User brief (must reflect the actual subject, do NOT invent unrelated brands or scenes): ${briefPrompt}`,
-          ].filter(Boolean).join("\n\n");
-          try {
-            const b64 = await streamGenerateImage({
-              prompt: fullPrompt,
-              quality: "low",
-              onPartial: (dataUrl) => {
-                if (get().runId !== startedRunId) return;
-                updateAsset(w.id, { url: dataUrl });
-              },
-            });
-            if (get().runId !== startedRunId) return;
-            const url = await uploadBase64Image({ base64: b64, userId, taskId });
-            if (get().runId !== startedRunId) return;
-            updateAsset(w.id, { status: "Ready", url, errorMessage: undefined });
-            consume("wardrobe", `Wardrobe · ${w.id}`, 2, get().taskId);
-          } catch (e) {
-            console.error("[wardrobe] failed", w.id, e);
-            updateAsset(w.id, {
-              status: "Failed",
-              errorMessage: (e as Error).message,
-              errorCode: "gen_failed",
-            });
-            appendSummary(
-              "wardrobe",
-              `${w.id} 生成失败：${(e as Error).message}（未扣积分）`,
-            );
-          }
+          const url = await uploadBase64Image({ base64: b64, userId, taskId });
+          if (get().runId !== startedRunId) return;
+          updateAsset(w.id, { status: "Ready", url, errorMessage: undefined });
+          consume("wardrobe", `Wardrobe · ${w.id}`, 2, get().taskId);
+        } catch (e) {
+          console.error("[wardrobe] failed", w.id, e);
+          updateAsset(w.id, {
+            status: "Failed",
+            errorMessage: (e as Error).message,
+            errorCode: "gen_failed",
+          });
+          appendSummary(
+            "wardrobe",
+            `${w.id} 生成失败：${(e as Error).message}（未扣积分）`,
+          );
         }
       }
 
       if (get().runId !== startedRunId) return;
       appendSummary("wardrobe", "服装/道具准备完毕 · 风格统一");
 
-      // Auto-bind a preset voice to every character (W*) asset.
+      // Auto-bind a preset voice to every character (W*) asset. Always
+      // fetches the voices store first so binding works even if the user
+      // hasn't opened the voice library panel yet.
       try {
-        if (userId) {
-          const [{ useVoices }, { bindCharacterVoice, listCharacterVoices }] = await Promise.all([
+        const [{ useVoices }, { bindCharacterVoice, listCharacterVoices }, { useCharacterVoices }] =
+          await Promise.all([
             import("@/lib/sc/voices-store"),
             import("@/lib/characters.functions"),
+            import("@/lib/sc/character-voices-store"),
           ]);
-          const vState = useVoices.getState();
-          if (!vState.loaded) await vState.fetchVoices();
-          const voices = useVoices.getState().voices.filter((v) => v.status === "ready");
-          if (voices.length) {
-            const existing = await listCharacterVoices({ data: {} }).catch(() => ({ bindings: [] }));
-            const taken = new Set((existing.bindings as Array<{ character_name: string }>).map((b) => b.character_name));
-            const characters = wardrobeAssets.filter((w) => /^W/i.test(w.id));
-            for (let i = 0; i < characters.length; i++) {
-              const c = characters[i];
-              const name = c.caption ?? c.id;
-              if (taken.has(name)) continue;
-              const isFemale = /女|her|she|sister|mother|girl/i.test(name);
-              const isMale = /男|him|he|brother|father|boy/i.test(name);
-              const pool = voices.filter((v) => {
-                if (isFemale) return /female|woman|girl|她|女/i.test(`${v.name} ${v.description ?? ""}`);
-                if (isMale) return /male|man|boy|他|男/i.test(`${v.name} ${v.description ?? ""}`);
-                return true;
-              });
-              const pick = (pool.length ? pool : voices)[i % (pool.length || voices.length)];
-              if (!pick) continue;
-              await bindCharacterVoice({
-                data: { character_name: name, voice_id: pick.id, task_id: get().taskId ?? undefined },
-              }).catch(() => void 0);
-            }
-            appendSummary("wardrobe", `已为 ${characters.length} 位角色自动绑定默认音色 · 可在「音色库」中调整`);
+        const vState = useVoices.getState();
+        await vState.fetchVoices().catch(() => void 0);
+        const voices = useVoices.getState().voices.filter((v) => v.status === "ready");
+        if (voices.length) {
+          const existing = await listCharacterVoices({ data: {} }).catch(() => ({ bindings: [] }));
+          const taken = new Set(
+            (existing.bindings as Array<{ character_name: string }>).map((b) => b.character_name),
+          );
+          const characters = wardrobeAssets.filter((w) => /^W/i.test(w.id));
+          let bound = 0;
+          for (let i = 0; i < characters.length; i++) {
+            const c = characters[i];
+            const name = c.caption ?? c.id;
+            if (taken.has(name)) continue;
+            const isFemale = /女|her|she|sister|mother|girl/i.test(name);
+            const isMale = /男|him|he|brother|father|boy/i.test(name);
+            const pool = voices.filter((v) => {
+              if (isFemale) return /female|woman|girl|她|女/i.test(`${v.name} ${v.description ?? ""}`);
+              if (isMale) return /male|man|boy|他|男/i.test(`${v.name} ${v.description ?? ""}`);
+              return true;
+            });
+            const pick = (pool.length ? pool : voices)[i % (pool.length || voices.length)];
+            if (!pick) continue;
+            await bindCharacterVoice({
+              data: { character_name: name, voice_id: pick.id, task_id: get().taskId ?? undefined },
+            }).catch(() => void 0);
+            bound++;
+          }
+          // Notify UI to refresh badges on AssetCard.
+          await useCharacterVoices.getState().refresh();
+          if (bound > 0) {
+            appendSummary(
+              "wardrobe",
+              `已为 ${bound} 位角色自动绑定默认音色 · 可在「音色库」中调整`,
+            );
           }
         }
       } catch (e) {
