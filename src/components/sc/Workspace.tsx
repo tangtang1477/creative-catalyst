@@ -179,12 +179,10 @@ export function Workspace() {
 
                   <SeriesBible />
 
-                  {/* Refining brief option cards — surface ABOVE script planning */}
+                  {/* Refining brief / preflight option cards — always rendered ABOVE script planning, regardless of status (so users keep their answers in view) */}
                   {chatLog
                     .flatMap((m) =>
-                      (m.optionCards ?? [])
-                        .filter((c) => c.status === "awaiting")
-                        .map((c) => ({ msgId: m.id, card: c })),
+                      (m.optionCards ?? []).map((c) => ({ msgId: m.id, card: c })),
                     )
                     .map(({ msgId, card }) => (
                       <ChatOptionCard key={`${msgId}-${card.id}-top`} msgId={msgId} card={card} />
