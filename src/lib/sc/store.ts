@@ -1597,11 +1597,12 @@ export const useSC = create<SCState>((set, get) => {
       if (!text) return;
       clearTimers();
       const taskKind: TaskKind = isSeriesPrompt(text) ? "series" : "oneoff";
+      const newTaskId = newId();
       set((s) => ({
         runId: s.runId + 1,
         prompt: "",
         taskTitle: inferTaskTitle(text),
-        taskId: newId(),
+        taskId: newTaskId,
         taskKind,
         phase: "thinking",
         stages: initialStages(),
@@ -1619,8 +1620,36 @@ export const useSC = create<SCState>((set, get) => {
         script: null,
       }));
       // submit 时兜底再拉一次，确保是最新登录态
-      supabase.auth.getUser().then(({ data }) => {
+      supabase.auth.getUser().then(async ({ data }) => {
         set({ currentUserId: data.user?.id ?? null });
+
+        // Auto-create + attach project when this looks like a series episode
+        if (data.user && taskKind === "series") {
+          try {
+            const { useProjects } = await import("@/lib/sc/projects-store");
+            const { createProject, attachEpisode } = await import("@/lib/projects.functions");
+            const projectsState = useProjects.getState();
+            if (!projectsState.loaded) await projectsState.fetchProjects();
+            const fresh = useProjects.getState().projects;
+            const presetName = inferTaskTitle(text);
+            let existing = fresh.find((p) => p.name === presetName);
+            if (!existing) {
+              const { project } = await createProject({
+                data: { name: presetName, kind: "series", icon: "series" },
+              });
+              existing = project as typeof fresh[number];
+              useProjects.setState((s) => ({ projects: [existing!, ...s.projects] }));
+            }
+            useProjects.getState().setCurrentProject(existing.id);
+            const epNoMatch = text.match(/第\s*(\d+)\s*集|episode\s*(\d+)|EP\s*(\d+)/i);
+            const epNo = Number(epNoMatch?.[1] ?? epNoMatch?.[2] ?? epNoMatch?.[3] ?? 1) || 1;
+            await attachEpisode({
+              data: { project_id: existing.id, task_id: newTaskId, episode_no: epNo },
+            }).catch((e) => console.warn("[attachEpisode] failed", e));
+          } catch (e) {
+            console.warn("[auto-create project] failed", e);
+          }
+        }
       });
       const delay = 1500 + Math.random() * 1000;
       schedule(() => {
