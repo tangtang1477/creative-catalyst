@@ -530,8 +530,8 @@ export const useSC = create<SCState>((set, get) => {
     runTool("wardrobe", "tool", "wardrobe-stylist · text-to-image", 1500, 0);
 
     const script = get().script;
-    const wardrobeSpec = script?.wardrobe?.length
-      ? script.wardrobe
+    const wardrobeSpec = Array.isArray(script?.wardrobe) && script!.wardrobe!.length > 0
+      ? script!.wardrobe!
       : [
           { id: "W01", caption: "主角形象" },
           { id: "W02", caption: "配角形象" },
