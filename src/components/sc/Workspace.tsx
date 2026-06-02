@@ -19,8 +19,6 @@ import { SCButton } from "./Button";
 
 import { Calendar, GalleryHorizontal, Zap } from "lucide-react";
 import { Logo } from "./Logo";
-import { PricingDialog } from "./credits/PricingDialog";
-import { LowCreditToast } from "./credits/LowCreditToast";
 import { InlineLowCredit } from "./credits/InlineLowCredit";
 import { useCredits, creditsSelectors } from "@/lib/sc/credits-store";
 import { StageBoundary } from "./StageBoundary";
@@ -356,8 +354,6 @@ export function Workspace() {
         </div>
       )}
 
-      <PricingDialog />
-      <LowCreditToast />
       <WorkspaceVersionDrawer />
       <CreateProjectDialog />
       <AssetPreviewDialog />

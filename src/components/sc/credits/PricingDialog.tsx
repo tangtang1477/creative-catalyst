@@ -61,13 +61,14 @@ export function PricingDialog() {
   const closePricing = useCredits((s) => s.closePricing);
   const setOpen = (v: boolean) => (v ? openPricing() : closePricing());
   const topUp = useCredits((s) => s.topUp);
+  const toppingUp = useCredits((s) => s.toppingUp);
   const [cycle, setCycle] = useState<"monthly" | "yearly">("yearly");
   const [selected, setSelected] = useState<Tier["id"]>("plus");
 
   const tier = TIERS.find((t) => t.id === selected)!;
 
-  const handleContinue = () => {
-    topUp(tier.credits);
+  const handleContinue = async () => {
+    await topUp(tier.credits, tier.id);
     setOpen(false);
   };
 
@@ -171,10 +172,11 @@ export function PricingDialog() {
             </button>
             <button
               onClick={handleContinue}
-              className="inline-flex items-center gap-1.5 rounded-full bg-accent px-5 py-2 text-[12.5px] font-semibold text-accent-foreground transition-all hover:brightness-110 hover:shadow-[0_0_18px_rgba(113,240,246,0.55)]"
+              disabled={toppingUp}
+              className="inline-flex items-center gap-1.5 rounded-full bg-accent px-5 py-2 text-[12.5px] font-semibold text-accent-foreground transition-all hover:brightness-110 hover:shadow-[0_0_18px_rgba(113,240,246,0.55)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Zap className="h-3.5 w-3.5" />
-              升级到 {tier.name} · 充值 {tier.credits} credits
+              {toppingUp ? "充值中…" : `升级到 ${tier.name} · 充值 ${tier.credits} credits`}
             </button>
           </div>
         </div>

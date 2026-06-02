@@ -1,4 +1,4 @@
-import { useCredits, creditsSelectors } from "@/lib/sc/credits-store";
+import { useCredits } from "@/lib/sc/credits-store";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -9,15 +9,16 @@ interface Props {
 }
 
 /**
- * SVG ring rendered around an avatar/trigger showing remaining credits ratio.
- * Color shifts to amber when <20% and red+pulse when <10%.
+ * SVG ring rendered around an avatar/trigger showing CONSUMPTION progress.
+ * Ring fills clockwise as credits are spent. Turns amber at ≥50% used and
+ * red+pulse at ≥80% used.
  */
 export function CreditRing({ size = 32, stroke = 2, children, className }: Props) {
-  const remaining = useCredits(creditsSelectors.remaining);
+  const used = useCredits((s) => s.used);
   const total = useCredits((s) => s.total);
-  const pct = total > 0 ? remaining / total : 0;
-  const isLow = pct <= 0.2;
-  const isCritical = pct <= 0.1;
+  const pct = total > 0 ? Math.min(1, used / total) : 0;
+  const isLow = pct >= 0.5;
+  const isCritical = pct >= 0.8;
 
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
