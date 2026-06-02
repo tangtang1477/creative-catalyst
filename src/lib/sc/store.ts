@@ -1463,8 +1463,7 @@ export const useSC = create<SCState>((set, get) => {
             route: "reference-image-to-video",
             payload: {
               prompt: segPrompt,
-              image_url: keyUrl,
-              reference_image_urls: refs,
+              image_urls: refs,
               ratio: videoRatio,
               duration: segDur,
             } as unknown as { prompt: string },
