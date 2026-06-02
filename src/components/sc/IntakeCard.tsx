@@ -34,10 +34,14 @@ export function IntakeCard() {
     intakeCustoms,
     setIntakeSel,
     autoMode,
+    attachments,
   } = useSC();
   const intake = useMemo(
-    () => inferIntake(brief?.prompt ?? ""),
-    [brief?.prompt],
+    () =>
+      inferIntake(brief?.prompt ?? "", {
+        hasAttachments: (attachments?.length ?? 0) > 0,
+      }),
+    [brief?.prompt, attachments?.length],
   );
 
   // Seed defaults into store once
