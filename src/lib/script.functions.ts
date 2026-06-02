@@ -139,6 +139,9 @@ export const generateScript = createServerFn({ method: "POST" })
       data.adType ? `视频类型：${data.adType}` : "",
       data.format ? `规格：${data.format}` : "",
       data.visualSource ? `画面来源：${data.visualSource}` : "",
+      data.visualStyle
+        ? `画风（每个分镜的 prompt 必须以 "Style: ${data.visualStyle}" 开头，并贯穿全片）：${data.visualStyle}`
+        : "",
     ]
       .filter(Boolean)
       .join("\n") + attachmentBlock;
