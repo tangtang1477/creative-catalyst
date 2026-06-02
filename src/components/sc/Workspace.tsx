@@ -316,7 +316,8 @@ export function Workspace() {
                         text={m.text}
                         streaming={m.streaming}
                         toolCalls={m.toolCalls}
-                        optionCards={m.optionCards}
+                        // Hide awaiting cards here — they're surfaced ABOVE the script
+                        optionCards={m.optionCards?.filter((c) => c.status !== "awaiting")}
                         skill={m.skill}
                         actions={m.actions}
                       />
