@@ -143,12 +143,18 @@ export const useCredits = create<CreditsState>((set, get) => {
         return { total, lowOpen: false, lowDismissedFor: null, toppingUp: true };
       });
       try {
-        const { topUpCredits } = await import("@/lib/credits.functions");
+        const { topUpCredits, getCreditsBalance } = await import("@/lib/credits.functions");
         const r = await topUpCredits({ data: { amount: n, tier } });
-        set({ used: r.used, total: r.total, synced: true, toppingUp: false });
-        persist({ total: r.total, used: r.used, history: get().history });
+        // Re-sync to be safe (covers race with concurrent consume rows).
+        let used = r.used, total = r.total, remaining = r.remaining;
+        try {
+          const b = await getCreditsBalance();
+          used = b.used; total = b.total; remaining = b.remaining;
+        } catch { /* ignore */ }
+        set({ used, total, synced: true, toppingUp: false });
+        persist({ total, used, history: get().history });
         toast.success(`充值成功 · 到账 ${n} 积分`, {
-          description: `当前余额 ${Math.max(0, r.remaining)}`,
+          description: `当前余额 ${Math.max(0, remaining)} · 总额度 ${total}`,
           duration: 3000,
         });
       } catch (err) {

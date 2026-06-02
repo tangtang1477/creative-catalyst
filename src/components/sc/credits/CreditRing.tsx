@@ -30,10 +30,14 @@ export function CreditRing({ size = 32, stroke = 2, children, className }: Props
       ? "var(--credit-low)"
       : "var(--accent)";
 
+  const remaining = Math.max(0, total - used);
+  const title = `已消耗 ${used} / 总额度 ${total}（剩余 ${remaining}）· 圆环合上代表用完 ${total} 积分`;
+
   return (
     <span
       className={cn("relative inline-flex items-center justify-center", className)}
       style={{ width: size, height: size }}
+      title={title}
     >
       <svg
         className={cn(
