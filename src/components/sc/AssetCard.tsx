@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Image as ImageIcon,
   Film,
   Download,
   RefreshCw,
   ZoomIn,
+  Mic,
+  Play,
+  Pause,
 } from "lucide-react";
 import type { Asset } from "@/lib/sc/types";
 import { StatusBadge } from "./StatusBadge";
@@ -14,6 +17,9 @@ import { useSC } from "@/lib/sc/store";
 import { AssetActions } from "./AssetActions";
 import { GradientLoader } from "./GradientLoader";
 import { AssetVersionSwitcher } from "./AssetVersionSwitcher";
+import { GeneratingPill } from "./GeneratingPill";
+import { useCharacterVoices } from "@/lib/sc/character-voices-store";
+import { useVoices } from "@/lib/sc/voices-store";
 
 
 interface Props {
