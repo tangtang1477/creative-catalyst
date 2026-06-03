@@ -233,7 +233,7 @@ const newId = () => {
 };
 
 /** Normalize titles/project names for loose comparison (collapse whitespace, trim, truncate). */
-const normalizeTitle = (s: string | null | undefined): string =>
+export const normalizeTitle = (s: string | null | undefined): string =>
   (s ?? "")
     .replace(/[…\u2026]+$/g, "")
     .replace(/\s+/g, " ")
@@ -242,7 +242,7 @@ const normalizeTitle = (s: string | null | undefined): string =>
     .slice(0, 60);
 
 /** Loose match: title (possibly truncated) belongs to project name. */
-const titleMatchesProject = (title: string | null | undefined, projectName: string | null | undefined): boolean => {
+export const titleMatchesProject = (title: string | null | undefined, projectName: string | null | undefined): boolean => {
   const a = normalizeTitle(title);
   const b = normalizeTitle(projectName);
   if (!a || !b) return false;
