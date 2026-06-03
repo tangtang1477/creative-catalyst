@@ -2085,12 +2085,24 @@ export const useSC = create<SCState>((set, get) => {
               })),
             }
           : undefined;
+        const ctxAssets = s.assets
+          .filter((a) => !!a.url)
+          .slice(-40)
+          .map((a) => ({
+            id: a.id,
+            label: a.label,
+            caption: a.caption,
+            kind: a.kind,
+            stageId: a.stageId,
+            hasUrl: true,
+          }));
         const payload = {
           messages: history,
           context: {
             phase: s.phase,
             brief: s.brief ?? undefined,
             script: ctxScript,
+            assets: ctxAssets.length ? ctxAssets : undefined,
           },
         };
 
