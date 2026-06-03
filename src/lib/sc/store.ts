@@ -453,6 +453,39 @@ export const useSC = create<SCState>((set, get) => {
     const next = [record, ...taskHistory.filter((t) => t.id !== taskId)];
     set({ taskHistory: next });
     saveHistory(next);
+    // Fire-and-forget remote sync (only when id is a real UUID)
+    if (UUID_RE_TASK.test(record.id)) {
+      const remoteStatus: "running" | "ready" | "failed" | "completed" =
+        record.status === "done"
+          ? "completed"
+          : record.status === "failed"
+            ? "failed"
+            : record.status === "interrupted"
+              ? "failed"
+              : "running";
+      const snapshot = {
+        kind: record.kind,
+        assets: record.assets,
+        stageSummaries: record.stageSummaries ?? {},
+        stageSnapshots: record.stageSnapshots ?? {},
+        script: record.script ?? null,
+        failureReason: record.failureReason ?? null,
+        brief: record.brief ?? null,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        status: record.status,
+      };
+      void upsertTaskSnapshot({
+        data: {
+          taskId: record.id,
+          projectId: record.projectId ?? null,
+          title: record.title || "Untitled",
+          status: remoteStatus,
+          prompt: record.prompt ?? "",
+          snapshot,
+        },
+      }).catch((e) => console.warn("[persistCurrent] remote sync failed", e));
+    }
   };
 
 
