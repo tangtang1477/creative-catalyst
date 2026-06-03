@@ -2368,18 +2368,24 @@ export const useSC = create<SCState>((set, get) => {
           const ps = useProjects.getState();
           if (!ps.loaded) await ps.fetchProjects();
           const fresh = useProjects.getState();
+          // 立即设置 currentProjectId，UI 同步响应（侧边栏高亮 + 空态横幅）
           fresh.setCurrentProject(projectId);
           const proj = fresh.projects.find((p) => p.id === projectId);
           if (!proj) return;
-          // Match by stored projectId (reliable). Fall back to title for old records.
+          // 按 projectId 命中（新任务）；旧任务按 title 兜底
           const history = get().taskHistory;
           const match =
             history.find((t) => t.projectId === projectId) ??
             history.find((t) => t.title === proj.name);
           if (match) {
             get().restoreTask(match.id);
+            // restoreTask 内部会写 rec.projectId（可能为 null），保险再覆盖一次
+            useProjects.getState().setCurrentProject(projectId);
           } else {
+            // 无本地历史：回到 empty 主页，currentProjectId 已设置 →
+            // 主页会显示"当前项目：xxx · 暂无历史，开始第一次创作"横幅
             get().reset({ fromUserAction: true });
+            useProjects.getState().setCurrentProject(projectId);
           }
         } catch (e) {
           console.warn("[enterProject] failed", e);
