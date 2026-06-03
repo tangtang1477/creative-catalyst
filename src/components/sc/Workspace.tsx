@@ -235,6 +235,23 @@ export function Workspace() {
                       );
                     }
 
+                    if (id === "cast") {
+                      const castAssets = assets.filter((a) => a.stageId === "cast");
+                      return (
+                        <StageBoundary key={id} stageId={id}>
+                          <StageRow id={id} state={st} keepChildrenWhenCollapsed>
+                            {castAssets.length > 0 && (
+                              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                {castAssets.map((a) => (
+                                  <AssetCard key={a.id} asset={a} compact />
+                                ))}
+                              </div>
+                            )}
+                          </StageRow>
+                        </StageBoundary>
+                      );
+                    }
+
                     if (id === "paint") {
                       return (
                         <StageBoundary key={id} stageId={id}>
@@ -293,15 +310,34 @@ export function Workspace() {
                       );
                     }
 
-                    if (id === "details" && st.status === "ready") {
+                    if (id === "details") {
+                      const lifeAssets = assets.filter((a) => a.stageId === "life" && a.status === "Ready");
                       return (
                         <StageBoundary key={id} stageId={id}>
                           <StageRow id={id} state={st} keepChildrenWhenCollapsed>
-                            <QualityCheck />
+                            <div className="space-y-2">
+                              <div className="rounded-2xl border border-border bg-surface px-3 py-2.5 text-[12.5px]">
+                                <div className="mb-1 flex items-center gap-2">
+                                  <span className="font-medium">合成完整成片</span>
+                                  <span className="rounded-md bg-accent/15 px-1.5 py-0.5 font-mono text-[10.5px] uppercase text-accent">
+                                    {lifeAssets.length} 段
+                                  </span>
+                                </div>
+                                <div className="text-muted-foreground">
+                                  {st.status === "ready"
+                                    ? "全部分镜已合并为完整成片。"
+                                    : st.status === "running"
+                                      ? "正在按时间线拼接所有分镜片段…"
+                                      : "等待用户确认后开始合成。"}
+                                </div>
+                              </div>
+                              {st.status === "ready" && <QualityCheck />}
+                            </div>
                           </StageRow>
                         </StageBoundary>
                       );
                     }
+
 
                     return (
                       <StageBoundary key={id} stageId={id}>

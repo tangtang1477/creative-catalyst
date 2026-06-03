@@ -133,10 +133,14 @@ interface SCState {
   tweakScript: () => void;
   approveWardrobe: () => void;
   tweakWardrobe: () => void;
+  approveCast: () => void;
+  tweakCast: () => void;
   approveKeyframe: () => void;
   regenerateKeyframe: () => void;
   applyQCFix: () => void;
   keepAsIs: () => void;
+  approveMerge: () => void;
+  cancelMerge: () => void;
   cancelSoftGate: () => void;
   cancel: () => void;
   reset: (opts?: { fromUserAction?: boolean }) => void;
@@ -648,9 +652,140 @@ export const useSC = create<SCState>((set, get) => {
       if (get().runId !== startedRunId) return;
       appendSummary("wardrobe", "服装/道具准备完毕 · 风格统一");
 
-      // Auto-bind a preset voice to every character (W*) asset. Always
-      // fetches the voices store first so binding works even if the user
-      // hasn't opened the voice library panel yet.
+      updateStage("wardrobe", { status: "ready" });
+      collapseAfter("wardrobe", 1600);
+      persistCurrent("running");
+      openGate("wardrobe", () => runCast());
+    })();
+  };
+
+  /**
+   * runCast — 生成「人物 & 场景素材」。基于剧本 characters/scenes
+   * 字段（缺省 2 角色 + 2 场景），尺寸：角色 3:4、场景 16:9。
+   * 完成后调用 ElevenLabs 自动绑定角色音色，再 openGate("cast", runPaint)。
+   */
+  const runCast = () => {
+    closeGate();
+    updateStage("cast", { status: "running", expanded: true });
+    runTool("cast", "tool", "cast-and-scene-director · text-to-image", 1400, 0);
+
+    const script = get().script as (GeneratedScript & { characters?: Array<{ name?: string; caption?: string }>; scenes?: Array<{ name?: string; caption?: string }> }) | null;
+    type CastSpec = { id: string; caption: string; kind: "character" | "scene" };
+    const characterSpec: CastSpec[] = Array.isArray(script?.characters) && script!.characters!.length
+      ? script!.characters!.slice(0, 4).map((c, i: number) => ({
+          id: `C${String(i + 1).padStart(2, "0")}`,
+          caption: c.name ?? c.caption ?? `角色 ${i + 1}`,
+          kind: "character" as const,
+        }))
+      : [
+          { id: "C01", caption: "主角", kind: "character" },
+          { id: "C02", caption: "配角", kind: "character" },
+        ];
+    const sceneSpec: CastSpec[] = Array.isArray(script?.scenes) && script!.scenes!.length
+      ? script!.scenes!.slice(0, 3).map((s, i: number) => ({
+          id: `S${String(i + 1).padStart(2, "0")}`,
+          caption: s.name ?? s.caption ?? `场景 ${i + 1}`,
+          kind: "scene" as const,
+        }))
+      : [
+          { id: "S01", caption: "主场景", kind: "scene" },
+          { id: "S02", caption: "次场景", kind: "scene" },
+        ];
+    const castSpec = [...characterSpec, ...sceneSpec];
+
+    streamLines("cast", castSpec.map((c) => `${c.id}：${c.caption}`), 600, 250);
+
+    const castAssets: Asset[] = castSpec.map((c) => ({
+      id: c.id,
+      kind: "image",
+      label: c.id,
+      caption: c.caption,
+      status: "Queued",
+      stageId: "cast",
+      width: c.kind === "scene" ? 1920 : 768,
+      height: c.kind === "scene" ? 1080 : 1024,
+      aspectRatio: c.kind === "scene" ? "16:9" : "3:4",
+    }));
+    set((s) => ({
+      assets: [...s.assets, ...castAssets],
+      rail: { ...s.rail, open: true, flashId: castSpec[0]?.id },
+    }));
+
+    const startedRunId = get().runId;
+    const taskId = get().taskId ?? undefined;
+    const briefPrompt = get().brief?.prompt ?? "";
+
+    // Wardrobe / prop references — bind characters to their clothing.
+    const wardrobeRefs = get()
+      .assets.filter((a) => a.stageId === "wardrobe" && a.url && /^https?:\/\//.test(a.url))
+      .map((a) => a.url as string);
+
+    void (async () => {
+      const userId = await ensureUserId();
+      if (!userId) {
+        const reason = "请先登录后再生成人物/场景素材";
+        for (const c of castAssets) {
+          if (get().runId !== startedRunId) return;
+          updateAsset(c.id, { status: "Failed", errorMessage: reason, errorCode: "auth_required" });
+        }
+        appendSummary("cast", `未登录 · 已暂停生成（${reason}）`);
+        updateStage("cast", { status: "failed", errorMessage: reason });
+        set({ phase: "failed" });
+        persistCurrent("failed");
+        return;
+      }
+
+      for (const c of castSpec) {
+        if (get().runId !== startedRunId) return;
+        updateAsset(c.id, { status: "Generating", errorMessage: undefined });
+        const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
+        const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
+        const userRefs = get().attachments
+          .filter((a) => a.kind === "image" && /^https?:\/\//.test(a.url))
+          .map((a) => a.url);
+        const refUrls = [...wardrobeRefs, ...userRefs].slice(0, 6);
+        const refLine = refUrls.length
+          ? `\n\nReferences (lock visual identity / wardrobe / style): ${refUrls.join(" ")}`
+          : "";
+        const subject = c.kind === "character"
+          ? `Character reference portrait: ${c.caption}. Cinematic close-up, neutral environment, consistent identity that can be re-used across keyframes. Wearing the wardrobe shown in the reference images.`
+          : `Scene reference plate: ${c.caption}. Wide establishing shot of the location, no characters, cinematic lighting, hero environment plate to be re-used across keyframes.`;
+        const fullPrompt = [
+          styleFragment ? `Visual style: ${styleFragment}.` : "",
+          `This is a ${c.kind === "character" ? "CHARACTER" : "SCENE"} REFERENCE asset (id ${c.id}) — it must be a reusable production reference, not a story keyframe.`,
+          subject,
+          `Project brief (context only): ${briefPrompt}`,
+          `NEGATIVE: no text, no watermark, no UI overlays.${refLine}`,
+        ].filter(Boolean).join("\n\n");
+        try {
+          const b64 = await streamGenerateImage({
+            prompt: fullPrompt,
+            quality: "low",
+            onPartial: (dataUrl) => {
+              if (get().runId !== startedRunId) return;
+              updateAsset(c.id, { url: dataUrl });
+            },
+          });
+          if (get().runId !== startedRunId) return;
+          const url = await uploadBase64Image({ base64: b64, userId, taskId });
+          if (get().runId !== startedRunId) return;
+          updateAsset(c.id, { status: "Ready", url, errorMessage: undefined });
+          consume("cast", `Cast · ${c.id}`, 5, get().taskId);
+        } catch (e) {
+          console.error("[cast] failed", c.id, e);
+          updateAsset(c.id, {
+            status: "Failed",
+            errorMessage: (e as Error).message,
+            errorCode: "gen_failed",
+          });
+          appendSummary("cast", `${c.id} 生成失败：${(e as Error).message}（未扣积分）`);
+        }
+      }
+
+      if (get().runId !== startedRunId) return;
+      appendSummary("cast", "人物 / 场景素材就绪");
+
+      // ElevenLabs auto-bind voice — now that characters exist as assets.
       try {
         const [{ useVoices }, { bindCharacterVoice, listCharacterVoices }, { useCharacterVoices }] =
           await Promise.all([
@@ -666,7 +801,7 @@ export const useSC = create<SCState>((set, get) => {
           const taken = new Set(
             (existing.bindings as Array<{ character_name: string }>).map((b) => b.character_name),
           );
-          const characters = wardrobeAssets.filter((w) => /^W/i.test(w.id));
+          const characters = castAssets.filter((c) => /^C/i.test(c.id));
           let bound = 0;
           for (let i = 0; i < characters.length; i++) {
             const c = characters[i];
@@ -686,25 +821,23 @@ export const useSC = create<SCState>((set, get) => {
             }).catch(() => void 0);
             bound++;
           }
-          // Notify UI to refresh badges on AssetCard.
           await useCharacterVoices.getState().refresh();
           if (bound > 0) {
-            appendSummary(
-              "wardrobe",
-              `已为 ${bound} 位角色自动绑定默认音色 · 可在「音色库」中调整`,
-            );
+            appendSummary("cast", `已为 ${bound} 位角色自动绑定默认音色 · 可在「音色库」中调整`);
           }
         }
       } catch (e) {
-        console.warn("[wardrobe] auto-bind voice failed", e);
+        console.warn("[cast] auto-bind voice failed", e);
       }
 
-      updateStage("wardrobe", { status: "ready" });
-      collapseAfter("wardrobe", 1600);
+      updateStage("cast", { status: "ready" });
+      collapseAfter("cast", 1600);
       persistCurrent("running");
-      openGate("wardrobe", () => runPaint());
+      openGate("cast", () => runPaint());
     })();
   };
+
+
 
 
   const runPaint = () => {
@@ -1267,7 +1400,7 @@ export const useSC = create<SCState>((set, get) => {
         appendSummary("life", `全部 ${okCount} 段 Ready · 合计 ≈ ${totalSeconds}s`);
         collapseAfter("life", 1800);
         persistCurrent("running");
-        schedule(() => runDetails(), 1600);
+        openGate("merge", () => runDetails());
       } else if (okCount === 0) {
         updateStage("life", { status: "failed", errorMessage: "全部视频段渲染失败，可在下方单独重做某一段" });
         set({ phase: "failed" });
@@ -1513,7 +1646,7 @@ export const useSC = create<SCState>((set, get) => {
             if (allLife.every((a) => a.status === "Ready")) {
               updateStage("life", { status: "ready", errorMessage: undefined });
               persistCurrent("running");
-              schedule(() => runDetails(), 1200);
+              openGate("merge", () => runDetails());
             }
             return;
           }
@@ -2123,7 +2256,7 @@ export const useSC = create<SCState>((set, get) => {
 
     approveScript: () => runWardrobe(),
     tweakScript: () => set({ phase: "intake", gate: null, softGate: null }),
-    approveWardrobe: () => runPaint(),
+    approveWardrobe: () => runCast(),
     tweakWardrobe: () => {
       closeGate();
       // simply re-run wardrobe
@@ -2132,6 +2265,15 @@ export const useSC = create<SCState>((set, get) => {
         stages: { ...s.stages, wardrobe: emptyStage() },
       }));
       runWardrobe();
+    },
+    approveCast: () => runPaint(),
+    tweakCast: () => {
+      closeGate();
+      set((s) => ({
+        assets: s.assets.filter((a) => a.stageId !== "cast"),
+        stages: { ...s.stages, cast: emptyStage() },
+      }));
+      runCast();
     },
     approveKeyframe: () => runQC(),
     regenerateKeyframe: () => {
@@ -2149,6 +2291,14 @@ export const useSC = create<SCState>((set, get) => {
       updateStage("qc", { status: "ready" });
       collapseAfter("qc", 1400);
       schedule(() => runLife(), 1100);
+    },
+    approveMerge: () => {
+      closeGate();
+      runDetails();
+    },
+    cancelMerge: () => {
+      closeGate();
+      appendSummary("life", "用户暂不合成完整成片 · 可在分镜列表中继续编辑");
     },
     cancelSoftGate: () => set({ softGate: null }),
 
@@ -2563,6 +2713,7 @@ export const useSC = create<SCState>((set, get) => {
               scene: ready(["方向已锁定"]),
               structure: ready(["脚本/分镜就绪"]),
               wardrobe: ready(["服装/道具就绪"]),
+              cast: ready(["人物/场景就绪"]),
               paint: ready(["A01 Ready"]),
               qc: ready(["一致性通过"]),
               life: ready(["V01 Ready"]),
@@ -2591,6 +2742,7 @@ export const useSC = create<SCState>((set, get) => {
               scene: ready(["剧集大纲已锁定"]),
               structure: ready(["每集分镜就绪"]),
               wardrobe: ready(["服装/道具就绪"]),
+              cast: ready(["人物/场景就绪"]),
               paint: ready(["关键帧批次完成"]),
               qc: ready(["一致性通过"]),
               life: ready(["全部成片完成"]),
@@ -2622,6 +2774,7 @@ export const useSC = create<SCState>((set, get) => {
               scene: ready(["方向已锁定"]),
               structure: ready(["脚本/分镜就绪"]),
               wardrobe: ready(["服装/道具就绪"]),
+              cast: ready(["人物/场景就绪"]),
               paint: ready(["A01 Ready"]),
               qc: ready(["一致性通过"]),
               life: { ...emptyStage(), status: "failed", summary: ["返回内容不是可播放视频"], expanded: true },

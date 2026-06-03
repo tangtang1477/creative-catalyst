@@ -12,10 +12,14 @@ export function ApprovalChips() {
     tweakScript,
     approveWardrobe,
     tweakWardrobe,
+    approveCast,
+    tweakCast,
     approveKeyframe,
     regenerateKeyframe,
     applyQCFix,
     keepAsIs,
+    approveMerge,
+    cancelMerge,
     cancelSoftGate,
   } = useSC();
 
@@ -53,12 +57,20 @@ export function ApprovalChips() {
       primaryAction: approveScript,
     },
     wardrobe: {
-      tip: "服装/道具已就绪，是否符合年代/世界观？",
+      tip: "服化道已就绪，是否进入人物/场景生成？",
       secondaryLabel: "重新生成",
       secondaryIcon: RotateCw,
       secondaryAction: tweakWardrobe,
       primaryLabel: "采纳并继续",
       primaryAction: approveWardrobe,
+    },
+    cast: {
+      tip: "人物 & 场景素材已就绪（含音色绑定），是否开始生成关键帧？",
+      secondaryLabel: "重新生成",
+      secondaryIcon: RotateCw,
+      secondaryAction: tweakCast,
+      primaryLabel: "确认并生成关键帧",
+      primaryAction: approveCast,
     },
     keyframe: {
       tip: "A01 Keyframe 已就绪，是否用作 V01 起始帧？",
@@ -75,6 +87,14 @@ export function ApprovalChips() {
       secondaryAction: keepAsIs,
       primaryLabel: "按建议调整",
       primaryAction: applyQCFix,
+    },
+    merge: {
+      tip: "所有分镜片段已生成，确认合成为完整成片？",
+      secondaryLabel: "稍后再合成",
+      secondaryIcon: X,
+      secondaryAction: cancelMerge,
+      primaryLabel: "合成完整成片",
+      primaryAction: approveMerge,
     },
   };
 

@@ -14,6 +14,7 @@ import {
   Sparkles,
   Shirt,
   ShieldCheck,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +22,7 @@ const STAGE_ICON: Record<StageId, typeof Layers> = {
   scene: Layers,
   structure: Film,
   wardrobe: Shirt,
+  cast: Users,
   paint: ImageIcon,
   qc: ShieldCheck,
   life: Wand2,
