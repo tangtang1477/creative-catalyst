@@ -1,48 +1,56 @@
-## 修复内容
+# 修复计划
 
-### 1. 侧边栏「我的项目」标题去掉 FolderPlus 图标
+## 目标
+1. 让头像外圈圆环与 hover 积分面板使用完全同一套口径，不再出现“圆环按 200、面板显示 3206”这种冲突。
+2. 修复“过去的项目不能点开查看内容”的问题，保证点击项目后能恢复该项目下最近一次任务内容。
 
-文件：`src/components/sc/Sidebar.tsx`
+## 我会做什么
 
-- 删除「我的项目」文字左侧的 `<FolderPlus>`，只保留文字本身和右侧的折叠箭头。
-- 下方的「新项目」入口行保留 `<FolderPlus>` 图标（避免重复）。
+### 1. 统一积分口径
+- 把当前积分展示拆成两层语义：
+  - **工作流积分环**：只表示当前产品内的 200 积分任务额度，圆环闭合/耗尽只跟这 200 的余额占比有关。
+  - **账户总积分**：hover 面板中的 `3206 left` 继续表示账户总余额，但不会再拿它去驱动这个 200 积分圆环。
+- 让 `CreditRing`、头像 hover 顶部进度条、消耗提示文案都读取同一个“任务额度余额”字段。
+- 在 hover 面板里明确区分：
+  - `任务额度剩余 X / 200`
+  - `账户总积分 3206`
+- 清掉现在这种“同一个区域里同时混用 total=200 和 backend total=3206”的状态覆盖问题。
 
-### 2. 点击项目能真正进入对应内容（修复匹配逻辑）
+### 2. 修正积分 store 的数据源覆盖问题
+- 检查并调整 `credits-store` 的同步逻辑，避免后端返回的账户总积分直接覆盖本地 200 总额度。
+- 将“任务额度”与“账户总积分”改成独立字段，避免 `syncFromBackend / consume / topUp` 后把圆环基准值从 200 改成 3206。
+- 保证所有消费提示都显示同一口径：本次消耗 5，当前任务额度剩余多少。
 
-当前 `enterProject` 用 `taskHistory.find(t => t.title === proj.name)` 匹配，但任务标题是从 prompt 自动推断的，几乎永远不等于项目名，所以「永远找不到」走 `reset` 分支 → 表现为「点了没反应」。
+### 3. 修复项目点击无法恢复内容
+- 保留现在按 `projectId` 匹配任务的方向，但补上旧数据兼容：
+  - 旧任务历史里没有 `projectId` 的，增加回填/迁移策略。
+  - 点击项目时，不只按当前内存列表找，还会按历史任务中与该项目关联的记录恢复最近一条。
+- 修正 `enterProject` 的恢复逻辑，避免出现：项目已高亮，但 workspace 被 `reset()` 成空白的情况。
+- 同步检查首页项目入口与侧边栏项目入口，两处点击行为保持一致。
 
-修改：用 `projectId` 真实建立关联。
+### 4. 验证结果
+- 验证点击任一已有项目后，主工作区能恢复该项目对应内容。
+- 验证积分变动后：
+  - 外圈圆环
+  - hover 顶部条
+  - hover 明细文案
+  - 扣分 toast
+  这四处数值与比例完全一致。
 
-文件：`src/lib/sc/types.ts`、`src/lib/sc/store.ts`、`src/components/sc/Sidebar.tsx`
+## 技术细节
+- 重点文件：
+  - `src/lib/sc/credits-store.ts`
+  - `src/components/sc/credits/CreditRing.tsx`
+  - `src/components/sc/UserHoverCard.tsx`
+  - `src/components/sc/credits/CreditsHoverPanel.tsx`
+  - `src/lib/sc/store.ts`
+  - `src/components/sc/Sidebar.tsx`
+  - `src/components/sc/Workspace.tsx`
+- 预计做法：
+  - 在积分 store 中拆分“任务额度”和“账户余额”两个字段。
+  - 在项目恢复逻辑中增加旧历史兼容和最近任务恢复策略。
 
-1. `TaskRecord` 新增可选字段 `projectId?: string | null`。
-2. `persistCurrent` 写入 record 时读取 `useProjects.getState().currentProjectId` 一并存进 `projectId`。
-3. `enterProject(projectId)`：
-   - `setCurrentProject(projectId)`
-   - 在 `taskHistory` 中按 `t.projectId === projectId` 匹配最近一条；找到 → `restoreTask(id)`；找不到 → `reset({ fromUserAction: true })` 进入空白工作区（保留项目上下文，让 ProjectGuideCard 引导用户开始第一集）。
-4. `restoreTask` 内部在恢复时同步调用 `useProjects.getState().setCurrentProject(rec.projectId ?? null)`，保证侧边栏 active 高亮 + 头部上下文跟随。
-5. Sidebar 的「我的项目」当前项目高亮逻辑沿用 `currentProjectId`。
-
-### 3. 积分总额度 = 200、单次消耗统一 5、ring 与 hover 完全一致
-
-文件：`src/lib/credits.functions.ts`、`src/lib/sc/credits-store.ts`、`src/lib/sc/store.ts`、`src/components/sc/credits/CreditRing.tsx`、`src/components/sc/UserHoverCard.tsx`
-
-1. **总额度 200**：
-   - `credits.functions.ts` 的 `CONSUME_TOTAL` 改为 `200`。
-   - `credits-store.ts` 的 `load()` 默认值改为 `{ total: 200, used: 0 }`；新增迁移：若 localStorage 中 `total < 200`，强制覆盖为 200（清掉旧的 100/42 mock 数据）。
-2. **统一 5 积分**：把 `store.ts` 中所有 `consume(stage, label, N, taskId)` 调用的 `N` 改为 `5`（涉及 scene/structure/wardrobe/paint/life/details 以及重试入口共 10 处）；`VIDEO_COST_PER_SEG` 也改为 5。
-3. **每次消耗显式提示**：`notifyConsume` 文案改为更直白的 `本次消耗 5 积分 · 剩余 X 积分`（描述行补「阶段 · {stage}」），保留 350ms 同阶段聚合避免连发刷屏。
-4. **圆环与 hover 卡片读同一数据源**：
-   - `CreditRing`：已用 `remaining/total`，保留；本次只确认在 `topUp/consume` 后 `pulseId` 变化 → 触发 flash。
-   - `CreditsHoverPanel` 顶部那一行 `X left` 与 20 个 dot 也读 `remaining/total`（已是），现在 `total=200` 后 dot 粒度变为 `200/20 = 10 积分/格`，与圆环视觉口径一致。
-   - `UserHoverCard` 头部 3px 条已是 `pctRemain`，保留。
-5. 充值/消耗后 `syncFromBackend` 已存在；本次只确保 `topUp` 成功后 `pulseId++`（已有），让圆环立即闪一下表示金额变化。
-
-### 涉及文件汇总
-
-- `src/components/sc/Sidebar.tsx` — 去掉「我的项目」前的 FolderPlus 图标
-- `src/lib/sc/types.ts` — `TaskRecord` 增加 `projectId`
-- `src/lib/sc/store.ts` — `persistCurrent` 写 projectId、`enterProject` 改用 projectId 匹配、`restoreTask` 同步 currentProjectId、所有 `consume` 改为 5、`VIDEO_COST_PER_SEG=5`
-- `src/lib/credits.functions.ts` — `CONSUME_TOTAL = 200`
-- `src/lib/sc/credits-store.ts` — 默认 total=200、旧值迁移、toast 文案改为「本次消耗 X · 剩余 Y」
-- `src/components/sc/credits/CreditRing.tsx`、`src/components/sc/UserHoverCard.tsx` — 仅口径核对，不改逻辑（数据源已一致）
+## 预期结果
+- 圆环只反映 200 额度，不再被 3000+ 账户余额冲掉。
+- hover 信息与圆环完全一致。
+- 过去的项目可以正常点开并看到对应内容。
