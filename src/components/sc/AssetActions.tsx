@@ -1,7 +1,9 @@
-import { Check, Download, Plus } from "lucide-react";
+import { useState } from "react";
+import { Check, Download, Plus, Wand2 } from "lucide-react";
 import type { Asset, Attachment } from "@/lib/sc/types";
 import { cn } from "@/lib/utils";
 import { useSC } from "@/lib/sc/store";
+import { LayerEditDialog } from "./LayerEditDialog";
 
 interface Props {
   asset: Asset;
@@ -41,8 +43,10 @@ export function AssetActions({
 }: Props) {
   const toggleSelect = useSC((s) => s.toggleSelect);
   const addAttachment = useSC((s) => s.addAttachment);
+  const [editorOpen, setEditorOpen] = useState(false);
 
   const isReady = asset.status === "Ready" || !!asset.url;
+  const canEdit = isReady && asset.kind === "image";
 
   const onAdd = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -97,20 +101,42 @@ export function AssetActions({
         <Check className={iconSize} strokeWidth={3} />
       </button>
 
-      {/* top-right download */}
-      <button
-        type="button"
-        aria-label="download"
-        onClick={onDownload}
-        disabled={!isReady}
-        className={cn(
-          "pointer-events-auto absolute flex items-center justify-center rounded-md bg-black/55 text-white/90 opacity-0 backdrop-blur transition-all hover:bg-black/75 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-0",
-          btnSize,
-        )}
+      {/* top-right: edit + download */}
+      <div
+        className="pointer-events-auto absolute z-10 flex items-center gap-1"
         style={{ top: inset, right: inset }}
       >
-        <Download className={iconSize} />
-      </button>
+        {canEdit && (
+          <button
+            type="button"
+            aria-label="edit image"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setEditorOpen(true);
+            }}
+            className={cn(
+              "inline-flex items-center justify-center rounded-md bg-accent/85 text-accent-foreground opacity-0 backdrop-blur transition-all hover:bg-accent group-hover:opacity-100",
+              btnSize,
+            )}
+            title="图层编辑"
+          >
+            <Wand2 className={iconSize} />
+          </button>
+        )}
+        <button
+          type="button"
+          aria-label="download"
+          onClick={onDownload}
+          disabled={!isReady}
+          className={cn(
+            "inline-flex items-center justify-center rounded-md bg-black/55 text-white/90 opacity-0 backdrop-blur transition-all hover:bg-black/75 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-0",
+            btnSize,
+          )}
+        >
+          <Download className={iconSize} />
+        </button>
+      </div>
 
       {/* bottom-right add to task */}
       <button
