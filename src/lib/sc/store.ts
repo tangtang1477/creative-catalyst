@@ -593,8 +593,18 @@ export const useSC = create<SCState>((set, get) => {
 
   const runStructure = () => {
     updateStage("structure", { status: "running", expanded: true });
-    const tcId = startToolCall("structure", "tool", "video-script-writer · LLM");
-    appendSummary("structure", "调用大模型生成本次剧本与分镜…");
+    const pending = get().pendingScript;
+    const tcId = startToolCall(
+      "structure",
+      "tool",
+      pending ? `script-parser · 解析上传剧本「${pending.fileName}」` : "video-script-writer · LLM",
+    );
+    appendSummary(
+      "structure",
+      pending
+        ? `读取上传剧本「${pending.fileName}」（${pending.text.length} 字符）并按你的指令解析…`
+        : "调用大模型生成本次剧本与分镜…",
+    );
     appendRefThumbs("structure");
 
 
@@ -603,29 +613,43 @@ export const useSC = create<SCState>((set, get) => {
     void (async () => {
       let script: GeneratedScript | null = null;
       try {
-        const attachments = get().attachments.map((a) => ({
-          kind: a.kind,
-          name: a.name,
-          caption: a.ref ?? undefined,
-          url: /^https?:\/\//.test(a.url) ? a.url : undefined,
-        }));
-        script = await generateScript({
-          data: {
-            prompt: b?.prompt ?? "",
-            adType: b?.adType ?? "",
-            format: b?.format ?? "",
-            visualSource: b?.visualSource ?? "",
-            visualStyle: b?.visualStyle ?? "",
-            attachments,
-          },
-        });
+        if (pending) {
+          // 用户上传剧本 → 真实后端按"原剧本 + 用户 prompt"解析，禁止二次创作
+          const { parseScriptText } = await import("@/lib/script-parse.functions");
+          script = await parseScriptText({
+            data: {
+              text: pending.text.slice(0, 60000),
+              briefHint: b?.prompt || undefined,
+            },
+          });
+          // 解析成功后清掉 pendingScript，避免下次 submit 重复解析
+          set({ pendingScript: null });
+        } else {
+          const attachments = get().attachments.map((a) => ({
+            kind: a.kind,
+            name: a.name,
+            caption: a.ref ?? undefined,
+            url: /^https?:\/\//.test(a.url) ? a.url : undefined,
+          }));
+          script = await generateScript({
+            data: {
+              prompt: b?.prompt ?? "",
+              adType: b?.adType ?? "",
+              format: b?.format ?? "",
+              visualSource: b?.visualSource ?? "",
+              visualStyle: b?.visualStyle ?? "",
+              attachments,
+            },
+          });
+        }
       } catch (e) {
-        console.error("[structure] generateScript failed", e);
+        console.error("[structure] script generation failed", e);
         appendSummary("structure", `脚本生成失败：${(e as Error).message}`);
         updateStage("structure", { errorMessage: (e as Error).message });
       }
       if (get().runId !== startedRunId) return;
       finishToolCall("structure", tcId);
+
 
       if (script) {
         set({ script });
