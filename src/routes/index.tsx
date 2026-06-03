@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Sidebar } from "@/components/sc/Sidebar";
 import { Workspace } from "@/components/sc/Workspace";
@@ -9,7 +9,36 @@ import { useTheme } from "@/hooks/use-theme";
 
 export const Route = createFileRoute("/")({
   component: Index,
+  errorComponent: IndexErrorComponent,
 });
+
+function IndexErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+  const router = useRouter();
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 text-foreground">
+      <div className="max-w-md space-y-3 text-center">
+        <h1 className="text-[18px] font-semibold">工作区加载失败</h1>
+        <p className="text-[12px] text-muted-foreground">{error?.message ?? "未知错误"}</p>
+        <div className="flex justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              router.invalidate();
+              reset();
+            }}
+            className="rounded-full bg-accent px-4 py-1.5 text-[12px] text-accent-foreground"
+          >
+            重试
+          </button>
+          <Link to="/" className="rounded-full bg-surface-2 px-4 py-1.5 text-[12px]">
+            返回首页
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function Index() {
   const forceState = useSC((s) => s.forceState);
