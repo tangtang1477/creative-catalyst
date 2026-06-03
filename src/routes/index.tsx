@@ -42,8 +42,15 @@ function IndexErrorComponent({ error, reset }: { error: Error; reset: () => void
 
 function Index() {
   const forceState = useSC((s) => s.forceState);
+  const hydrateWorkspace = useSC((s) => s.hydrateFromStorage);
+  const hydrateCredits = useCredits((s) => s.hydrateFromStorage);
   // initialise theme class on root <html>
   useTheme();
+
+  useEffect(() => {
+    hydrateWorkspace();
+    hydrateCredits();
+  }, [hydrateWorkspace, hydrateCredits]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
