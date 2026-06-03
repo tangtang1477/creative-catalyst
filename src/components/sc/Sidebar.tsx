@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useHydrated } from "@tanstack/react-router";
+import { useHydrated, useNavigate } from "@tanstack/react-router";
+
 import {
   Plus,
   Search,
