@@ -32,8 +32,9 @@ type AcceptKind = "image" | "video" | "audio" | "any";
 
 export function AttachMenu({ children, disabled }: { children: ReactNode; disabled?: boolean }) {
   const { addAttachment, assets } = useSC();
-  const importGeneratedScript = useSC((s) => s.importGeneratedScript);
-  const briefPrompt = useSC((s) => s.brief?.prompt ?? s.prompt ?? "");
+  const setPendingScript = useSC((s) => s.setPendingScript);
+  const pendingScript = useSC((s) => s.pendingScript);
+
   const clone = useVoices((s) => s.clone);
   const [open, setOpen] = useState(false);
   const [urlInput, setUrlInput] = useState("");
