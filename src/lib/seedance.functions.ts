@@ -300,12 +300,19 @@ export const pollVideoTask = createServerFn({ method: "POST" })
         assetId = refreshed?.asset_id ?? assetId;
       }
     } else {
+      const errMsg =
+        normalized === "failed"
+          ? (envelope.message ||
+              (envelope.data as { error?: string } | undefined)?.error ||
+              JSON.stringify(envelope.data ?? envelope).slice(0, 400))
+          : null;
       await supabaseAdmin
         .from("seedance_jobs")
         .update({
           status: normalized,
           progress,
           raw: (envelope.data ?? null) as unknown as never,
+          error_message: errMsg,
         })
         .eq("task_id", data.taskId);
     }
@@ -317,11 +324,25 @@ export const pollVideoTask = createServerFn({ method: "POST" })
         .eq("id", job.video_task_id);
     }
 
+    let errorCode: string | null = null;
+    let errorMessage: string | null = null;
+    if (normalized === "failed") {
+      const raw =
+        envelope.message ||
+        (envelope.data as { error?: string } | undefined)?.error ||
+        JSON.stringify(envelope.data ?? envelope);
+      const cls = classifySeedanceError(raw);
+      errorCode = cls.code;
+      errorMessage = cls.message;
+    }
+
     return {
       status: normalized,
       progress,
       ossUrl,
       videoUrl,
       assetId,
+      errorCode,
+      errorMessage,
     };
   });
