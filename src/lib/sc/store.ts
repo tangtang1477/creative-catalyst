@@ -436,7 +436,7 @@ export const useSC = create<SCState>((set, get) => {
     if (!taskId) return;
     const now = Date.now();
     const existing = taskHistory.find((t) => t.id === taskId);
-    const stageSummaries: Partial<Record<StageId, string[]>> = {};
+    const stageSummaries: Partial<Record<StageId, SummaryLine[]>> = {};
     const stageSnapshots: Partial<Record<StageId, StageSnapshot>> = {};
     let failureReason: string | undefined;
     for (const sid of STAGE_ORDER) {
@@ -451,9 +451,11 @@ export const useSC = create<SCState>((set, get) => {
         };
       }
       if (status === "failed" && st.status === "failed" && !failureReason) {
-        failureReason = st.summary[st.summary.length - 1] ?? `${STAGE_LABEL[sid]} 失败`;
+        const last = st.summary[st.summary.length - 1];
+        failureReason = (typeof last === "string" ? last : last?.text) ?? `${STAGE_LABEL[sid]} 失败`;
       }
     }
+
     // Read currently active project (if any) so this task is linked back to it.
     const currentProjectId = useProjects.getState().currentProjectId ?? existing?.projectId ?? null;
     const record: TaskRecord = {
