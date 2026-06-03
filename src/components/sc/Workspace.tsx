@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useSC } from "@/lib/sc/store";
+import { useSC, titleMatchesProject } from "@/lib/sc/store";
 import { CommandInput } from "./CommandInput";
 import { SuggestionChips } from "./SuggestionChips";
 import { IntakeCard } from "./IntakeCard";
@@ -471,7 +471,7 @@ function ActiveProjectBanner() {
   if (!proj) return null;
   const Icon = HOME_KIND_ICON[proj.kind] ?? FolderIcon;
   const projectTasks = taskHistory
-    .filter((t) => t.projectId === proj.id || (!t.projectId && t.title === proj.name))
+    .filter((t) => t.projectId === proj.id || (!t.projectId && titleMatchesProject(t.title, proj.name)))
     .filter((t) => t.id !== currentTaskId)
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, 6);

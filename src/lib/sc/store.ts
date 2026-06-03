@@ -28,7 +28,7 @@ import { submitVideoTask, pollVideoTask } from "@/lib/seedance.functions";
 import { generateScript, type GeneratedScript } from "@/lib/script.functions";
 import { parseFormatDuration, parseFormatRatio, formatDurationLabel, clampSeedanceDuration } from "@/lib/sc/format-utils";
 import { useProjects } from "@/lib/sc/projects-store";
-import { upsertTaskSnapshot, listProjectTasks } from "@/lib/tasks.functions";
+import { upsertTaskSnapshot, listProjectTasks, backfillLegacyTasksForProject } from "@/lib/tasks.functions";
 
 /** Chat agent 解析出来的"真指令"。后端 chat-stream.ts 端的 schema 同步。 */
 export interface AgentDirectives {
@@ -230,6 +230,26 @@ const newId = () => {
     return crypto.randomUUID();
   }
   return `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+};
+
+/** Normalize titles/project names for loose comparison (collapse whitespace, trim, truncate). */
+export const normalizeTitle = (s: string | null | undefined): string =>
+  (s ?? "")
+    .replace(/[…\u2026]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .slice(0, 60);
+
+/** Loose match: title (possibly truncated) belongs to project name. */
+export const titleMatchesProject = (title: string | null | undefined, projectName: string | null | undefined): boolean => {
+  const a = normalizeTitle(title);
+  const b = normalizeTitle(projectName);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (b.startsWith(a) && a.length >= 6) return true;
+  if (a.startsWith(b) && b.length >= 6) return true;
+  return false;
 };
 
 const loadHistory = (): TaskRecord[] => {
@@ -1424,10 +1444,12 @@ export const useSC = create<SCState>((set, get) => {
           mode: "refs" | "text-only",
         ): Promise<{ ok: true; ossUrl: string } | { ok: false; code: string; message: string }> => {
           try {
+            const currentTaskId = get().taskId;
             const submitArgs =
               mode === "refs"
                 ? {
                     route: "reference-image-to-video" as const,
+                    videoTaskId: currentTaskId ?? null,
                     payload: {
                       prompt: segPrompt,
                       image_urls: [...wardrobeRefs, keyUrl].slice(0, 6),
@@ -1437,6 +1459,7 @@ export const useSC = create<SCState>((set, get) => {
                   }
                 : {
                     route: "text-to-video" as const,
+                    videoTaskId: currentTaskId ?? null,
                     payload: {
                       prompt: `${segPrompt}\n(无真人参考，请按描述生成)`,
                       ratio: videoRatio,
@@ -1742,6 +1765,7 @@ export const useSC = create<SCState>((set, get) => {
         const { taskId: seedanceTaskId } = await submitVideoTask({
           data: {
             route: "reference-image-to-video",
+            videoTaskId: get().taskId ?? null,
             payload: {
               prompt: segPrompt,
               image_urls: refs,
@@ -2285,9 +2309,12 @@ export const useSC = create<SCState>((set, get) => {
       // submit 时兜底再拉一次，确保是最新登录态
       supabase.auth.getUser().then(async ({ data }) => {
         set({ currentUserId: data.user?.id ?? null });
+        if (!data.user) return;
+
+        let attachProjectId: string | null = null;
 
         // Auto-create + attach project when this looks like a series episode
-        if (data.user && taskKind === "series") {
+        if (taskKind === "series") {
           try {
             const { useProjects } = await import("@/lib/sc/projects-store");
             const { createProject } = await import("@/lib/projects.functions");
@@ -2295,7 +2322,9 @@ export const useSC = create<SCState>((set, get) => {
             if (!projectsState.loaded) await projectsState.fetchProjects();
             const fresh = useProjects.getState().projects;
             const presetName = inferTaskTitle(text);
-            let existing = fresh.find((p) => p.name === presetName);
+            let existing =
+              fresh.find((p) => p.name === presetName) ??
+              fresh.find((p) => titleMatchesProject(presetName, p.name));
             if (!existing) {
               const { project } = await createProject({
                 data: { name: presetName, kind: "series", icon: "series" },
@@ -2304,13 +2333,42 @@ export const useSC = create<SCState>((set, get) => {
               useProjects.setState((s) => ({ projects: [existing!, ...s.projects] }));
             }
             useProjects.getState().setCurrentProject(existing.id);
-            // task_id column is uuid; the in-memory `t_xxx` ids aren't UUIDs,
-            // so skip the row-level attach. The currentProjectId in store is enough
-            // for the UI to highlight the project, and persistence is recorded in
-            // `projects.brief` on subsequent saves.
+            attachProjectId = existing.id;
           } catch (e) {
             console.warn("[auto-create project] failed", e);
           }
+        } else {
+          // oneoff 也尝试沿用当前已选中的项目（用户可能从某个项目里发起一次性需求）
+          try {
+            const { useProjects } = await import("@/lib/sc/projects-store");
+            attachProjectId = useProjects.getState().currentProjectId ?? null;
+          } catch { /* ignore */ }
+        }
+
+        // 一创建就把 task 落库一次（最小骨架），保证下次 enterProject 能直接拉到。
+        if (UUID_RE_TASK.test(newTaskId)) {
+          const nowMs = Date.now();
+          void upsertTaskSnapshot({
+            data: {
+              taskId: newTaskId,
+              projectId: attachProjectId,
+              title: inferTaskTitle(text) || "Untitled",
+              status: "running",
+              prompt: text,
+              snapshot: {
+                kind: taskKind,
+                createdAt: nowMs,
+                updatedAt: nowMs,
+                status: "running",
+                assets: [],
+                stageSummaries: {},
+                stageSnapshots: {},
+                brief: { prompt: text, adType: "", format: "", visualSource: "", mode: "" },
+                script: null,
+                failureReason: null,
+              },
+            },
+          }).catch((e) => console.warn("[submit] initial persist failed", e));
         }
       });
       const delay = 1500 + Math.random() * 1000;
@@ -2681,41 +2739,55 @@ export const useSC = create<SCState>((set, get) => {
 
           // 拉远端任务（含 snapshot 为空的旧记录），合并入本地 taskHistory。
           let remoteLooseMatches: Array<{ id: string; title?: string; project_id?: string | null }> = [];
+          let remoteCount = 0;
+          const ingestRemote = (rows: Array<Record<string, unknown>>) => {
+            const local = get().taskHistory;
+            const byId = new Map<string, TaskRecord>(local.map((t) => [t.id, t]));
+            for (const raw of rows) {
+              const r = raw as {
+                id: string;
+                title?: string;
+                prompt?: string;
+                status?: string;
+                project_id?: string | null;
+                snapshot?: unknown;
+                created_at?: string;
+                updated_at?: string;
+              };
+              const snap = (r.snapshot ?? {}) as Partial<TaskRecord> & { status?: TaskRecord["status"] };
+              const looseTitleMatch = !r.project_id && titleMatchesProject(r.title, proj.name);
+              const inferProjectId =
+                r.project_id ?? (looseTitleMatch ? projectId : (byId.get(r.id)?.projectId ?? null));
+              const rec: TaskRecord = {
+                id: r.id,
+                title: r.title ?? "Untitled",
+                prompt: r.prompt ?? "",
+                createdAt: snap.createdAt ?? (Date.parse(r.created_at ?? "") || Date.now()),
+                updatedAt: snap.updatedAt ?? (Date.parse(r.updated_at ?? "") || Date.now()),
+                status: snap.status ?? (r.status === "completed" ? "done" : (r.status as TaskRecord["status"]) ?? "done"),
+                kind: snap.kind ?? "oneoff",
+                assets: snap.assets ?? [],
+                stageSummaries: snap.stageSummaries ?? {},
+                stageSnapshots: snap.stageSnapshots ?? {},
+                script: snap.script ?? null,
+                failureReason: snap.failureReason ?? undefined,
+                brief: snap.brief ?? null,
+                projectId: inferProjectId,
+              };
+              byId.set(rec.id, rec);
+              if (inferProjectId === projectId) {
+                remoteLooseMatches.push({ id: r.id, title: r.title ?? undefined, project_id: r.project_id });
+              }
+            }
+            const merged = Array.from(byId.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+            set({ taskHistory: merged });
+            saveHistory(merged);
+          };
+
           try {
             const { tasks: remote } = await listProjectTasks({ data: { projectId: null } });
-            if (Array.isArray(remote) && remote.length) {
-              const local = get().taskHistory;
-              const byId = new Map<string, TaskRecord>(local.map((t) => [t.id, t]));
-              for (const r of remote) {
-                const snap = (r.snapshot ?? {}) as Partial<TaskRecord> & { status?: TaskRecord["status"] };
-                const matchByTitle = !r.project_id && proj.name && r.title === proj.name;
-                const inferProjectId =
-                  r.project_id ?? (matchByTitle ? projectId : (byId.get(r.id)?.projectId ?? null));
-                const rec: TaskRecord = {
-                  id: r.id,
-                  title: r.title ?? "Untitled",
-                  prompt: r.prompt ?? "",
-                  createdAt: snap.createdAt ?? (Date.parse(r.created_at ?? "") || Date.now()),
-                  updatedAt: snap.updatedAt ?? (Date.parse(r.updated_at ?? "") || Date.now()),
-                  status: snap.status ?? (r.status === "completed" ? "done" : (r.status as TaskRecord["status"]) ?? "done"),
-                  kind: snap.kind ?? "oneoff",
-                  assets: snap.assets ?? [],
-                  stageSummaries: snap.stageSummaries ?? {},
-                  stageSnapshots: snap.stageSnapshots ?? {},
-                  script: snap.script ?? null,
-                  failureReason: snap.failureReason ?? undefined,
-                  brief: snap.brief ?? null,
-                  projectId: inferProjectId,
-                };
-                byId.set(rec.id, rec);
-                if (inferProjectId === projectId) {
-                  remoteLooseMatches.push({ id: r.id, title: r.title ?? undefined, project_id: r.project_id });
-                }
-              }
-              const merged = Array.from(byId.values()).sort((a, b) => b.updatedAt - a.updatedAt);
-              set({ taskHistory: merged });
-              saveHistory(merged);
-            }
+            remoteCount = Array.isArray(remote) ? remote.length : 0;
+            if (remoteCount) ingestRemote(remote as Array<Record<string, unknown>>);
           } catch (e) {
             console.warn("[enterProject] remote fetch failed", e);
           }
@@ -2734,11 +2806,39 @@ export const useSC = create<SCState>((set, get) => {
             } catch { /* ignore */ }
           })();
 
-          // 命中：projectId 精确 → title 兜底 → 该项目下最新一条
-          const history = get().taskHistory;
-          const projHits = history
-            .filter((t) => t.projectId === projectId || (!t.projectId && t.title === proj.name))
-            .sort((a, b) => b.updatedAt - a.updatedAt);
+          // 命中：projectId 精确 → title 模糊兜底 → 该项目下最新一条
+          const matchesProject = (t: TaskRecord) =>
+            t.projectId === projectId || (!t.projectId && titleMatchesProject(t.title, proj.name));
+
+          let history = get().taskHistory;
+          let projHits = history.filter(matchesProject).sort((a, b) => b.updatedAt - a.updatedAt);
+
+          // 若本项目仍然 0 条命中：尝试用 assets 表回填一次（一次性 backfill）
+          if (projHits.length === 0) {
+            try {
+              const res = await backfillLegacyTasksForProject({ data: { projectId } });
+              if (res?.created && res.created > 0) {
+                const { tasks: remote2 } = await listProjectTasks({ data: { projectId: null } });
+                if (Array.isArray(remote2) && remote2.length) {
+                  ingestRemote(remote2 as Array<Record<string, unknown>>);
+                  history = get().taskHistory;
+                  projHits = history.filter(matchesProject).sort((a, b) => b.updatedAt - a.updatedAt);
+                }
+              }
+              console.info("[enterProject] backfill", { projectId, ...res });
+            } catch (e) {
+              console.warn("[enterProject] backfill failed", e);
+            }
+          }
+
+          console.info("[enterProject] hits", {
+            projectId,
+            projName: proj.name,
+            remoteCount,
+            localCount: history.length,
+            matchedCount: projHits.length,
+          });
+
           const match = projHits[0];
           if (match) {
             get().restoreTask(match.id);
