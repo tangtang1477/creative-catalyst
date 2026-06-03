@@ -49,6 +49,7 @@ export function MediaRail() {
   const [imgOpen, setImgOpen] = useState(true);
   // (Single-group list view; vidOpen retained as no-op for backwards compat)
   const [filter, setFilter] = useState<Filter>("all");
+  const [audioTab, setAudioTab] = useState<"task" | "library">("task");
   const [batchOpen, setBatchOpen] = useState(false);
   const [view, setView] = useState<ViewMode>(loadView);
   const [width, setWidth] = useState<number>(loadWidth);
