@@ -92,11 +92,10 @@ export function Sidebar() {
   const setCurrentProject = useProjects((s) => s.setCurrentProject);
   const currentProjectId = useProjects((s) => s.currentProjectId);
 
+  const enterProject = useSC((s) => s.enterProject);
+
   const handleSelectProject = (id: string) => {
-    setCurrentProject(id);
-    if (phase !== "running" && phase !== "thinking") {
-      reset({ fromUserAction: true });
-    }
+    enterProject(id);
   };
 
   useEffect(() => {
