@@ -148,19 +148,42 @@ export const backfillLegacyTasksForProject = createServerFn({ method: "POST" })
     for (const g of groups) {
       const firstTs = new Date(g[0].created_at).getTime();
       const lastTs = new Date(g[g.length - 1].created_at).getTime();
-      const snapshotAssets = g.map((a, i) => ({
-        id: a.id,
-        kind: a.kind,
-        url: a.url,
-        source: a.source ?? "seedance",
-        stage: a.stage ?? "life",
-        status: "Ready",
-        version: a.version ?? 1,
-        label: a.label ?? `S${String(i + 1).padStart(2, "0")}`,
-        caption: a.caption ?? undefined,
-        poster: pickPoster(a.meta),
-        prompt: pickPrompt(a.meta) || undefined,
-      }));
+
+      // 把每个 asset 映射成与前端 Asset 接口对齐的结构，并按 kind 推断 stageId：
+      // - video → life (V0N)
+      // - image → paint (A0N)
+      // 这样恢复后 paint/life stage 才会渲染对应素材，并允许"重做"按钮命中。
+      let videoIdx = 0;
+      let imageIdx = 0;
+      const snapshotAssets = g.map((a) => {
+        const isVideo = a.kind === "video";
+        const idx = isVideo ? ++videoIdx : ++imageIdx;
+        const label = isVideo
+          ? `V${String(idx).padStart(2, "0")}`
+          : `A${String(idx).padStart(2, "0")}`;
+        return {
+          id: a.id,
+          kind: a.kind,
+          url: a.url,
+          source: a.source ?? "seedance",
+          stageId: isVideo ? ("life" as const) : ("paint" as const),
+          status: "Ready" as const,
+          version: a.version ?? 1,
+          label: a.label ?? label,
+          caption: a.caption ?? undefined,
+          poster: pickPoster(a.meta),
+          prompt: pickPrompt(a.meta) || undefined,
+          // 给视频段挂上 sourceShotId / segmentIndex，让 runLifeSegment 重做能命中关键帧
+          segmentIndex: isVideo ? idx - 1 : undefined,
+          sourceShotId: isVideo ? `A${String(idx).padStart(2, "0")}` : undefined,
+          duration: isVideo
+            ? (((a.meta as Record<string, unknown> | null)?.duration as string | undefined) ?? "0:05")
+            : undefined,
+        };
+      });
+
+      const imageAssets = snapshotAssets.filter((a) => a.kind === "image");
+      const videoAssets = snapshotAssets.filter((a) => a.kind === "video");
 
       let firstPrompt = "";
       for (const a of g) {
@@ -169,28 +192,76 @@ export const backfillLegacyTasksForProject = createServerFn({ method: "POST" })
       }
       const briefPrompt = firstPrompt || project.name;
 
+      // 合成 script.shots：优先按 image 数量，否则按 video 数量；保证后续 runLifeSegment
+      // 能 lookup 到 shot prompt。
+      const shotsCount = Math.max(imageAssets.length, videoAssets.length, 1);
       const synthScript = {
         mood: "—",
         cameraLanguage: "—",
-        structureSummary: [`从历史素材恢复 ${g.length} 个镜头`],
+        structureSummary: [
+          `从历史素材恢复 ${shotsCount} 个镜头`,
+          imageAssets.length ? `图片素材：${imageAssets.length}` : "",
+          videoAssets.length ? `视频段：${videoAssets.length}` : "",
+        ].filter(Boolean),
         wardrobe: [],
-        shots: g.map((a, i) => ({
-          shot: `A${String(i + 1).padStart(2, "0")}`,
-          duration: "—",
-          motion: "—",
-          scene: ((a.meta as Record<string, unknown> | null)?.scene as string | undefined) ?? "—",
-          elements: "—",
-          prompt: pickPrompt(a.meta) || "—",
-        })),
+        shots: Array.from({ length: shotsCount }).map((_, i) => {
+          const ia = imageAssets[i];
+          const va = videoAssets[i];
+          const ref = ia ?? va;
+          return {
+            shot: `A${String(i + 1).padStart(2, "0")}`,
+            duration: va?.duration ?? "0:05",
+            motion: "—",
+            scene: (ref && ((g.find((x) => x.id === ref.id)?.meta as Record<string, unknown> | null)?.scene as string | undefined)) ?? ref?.caption ?? "—",
+            elements: "—",
+            prompt: ref?.prompt || "—",
+          };
+        }),
       };
 
       const createdDate = new Date(firstTs).toLocaleDateString("zh-CN");
       const stageSummaries: Record<string, string[]> = {
         life: [
-          `已从历史素材恢复 ${g.length} 个镜头 · 项目「${project.name}」`,
+          `已从历史素材恢复 ${snapshotAssets.length} 个素材 · 项目「${project.name}」`,
           `项目类型：${project.kind} · 首次创建：${createdDate}`,
         ],
       };
+
+      // 给恢复出来的 stages 加 snapshot，让前端能直接渲染 paint/life 两段而不是只读卡片。
+      const stageSnapshots: Record<string, unknown> = {
+        scene: { status: "ready", summary: ["方向已锁定（历史恢复）"], toolCalls: [], thoughts: [] },
+        structure: {
+          status: "ready",
+          summary: synthScript.structureSummary,
+          toolCalls: [],
+          thoughts: [{
+            id: "restored-shots",
+            title: "分镜方案（来自历史素材）",
+            body: synthScript.shots.map(
+              (sh) => `${sh.shot} · ${sh.duration} — ${sh.scene}`,
+            ),
+          }],
+        },
+      };
+      if (imageAssets.length) {
+        stageSnapshots.paint = {
+          status: "ready",
+          summary: [`已从历史恢复 ${imageAssets.length} 个关键帧`],
+          toolCalls: [],
+          thoughts: [],
+        };
+      }
+      if (videoAssets.length) {
+        stageSnapshots.life = {
+          status: "ready",
+          summary: [
+            `已从历史恢复 ${videoAssets.length} 个视频段`,
+            `可单独点击下方任一段进行重做`,
+          ],
+          toolCalls: [],
+          thoughts: [],
+        };
+      }
 
       const snapshot = {
         kind: project.kind === "series" ? "series" : "oneoff",
@@ -199,7 +270,7 @@ export const backfillLegacyTasksForProject = createServerFn({ method: "POST" })
         status: "done",
         assets: snapshotAssets,
         stageSummaries,
-        stageSnapshots: {},
+        stageSnapshots,
         brief: {
           prompt: briefPrompt,
           adType: project.kind === "series" ? "Series" : "One-off",
@@ -211,8 +282,9 @@ export const backfillLegacyTasksForProject = createServerFn({ method: "POST" })
         failureReason: null,
         legacyBackfill: true,
         projectName: project.name,
-        shotCount: g.length,
+        shotCount: shotsCount,
       };
+
 
       const { data: row, error: insErr } = await supabase
         .from("video_tasks")

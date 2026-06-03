@@ -239,3 +239,16 @@ export interface ImageEditDirective {
   refs?: string[];
 }
 
+/** 用户上传的剧本（待解析）。在用户后续输入 prompt 时连同 prompt 一起送后端解析。 */
+export interface PendingScript {
+  /** 抽取后的纯文本（已截断到 60k） */
+  text: string;
+  /** 原始文件名 */
+  fileName: string;
+  /** 来源类型 */
+  source: "txt" | "md" | "docx" | "pdf";
+  /** 上传时间 */
+  uploadedAt: number;
+}
+
+

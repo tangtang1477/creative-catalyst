@@ -1,84 +1,86 @@
-# 三处修复
+1. 修复图 1：把“历史项目恢复”从素材级恢复升级为任务级可继续运行恢复
+- 改造历史回填逻辑，让回填出的 task snapshot 不只包含 assets，还补齐可继续操作所需的运行上下文：
+  - `script.shots` 与每个视频段的 `sourceShotId`
+  - `life` / `details` 阶段的完整 `stageSnapshots`
+  - 失败态所需的 `errorMessage` / `errorCode` / `failureReason`
+  - 可重做视频段所需的段时长、poster、shot 关联
+- 调整 `restoreTask`：
+  - 区分“失败任务恢复”与“历史归档恢复”两类场景
+  - 失败任务恢复后保留对应失败阶段与重做 action
+  - 历史归档恢复后，如果已有可推断的 life/video 上下文，就允许对单段视频继续“重试/重做”而不是只读展示
+- 调整项目恢复后的主工作区展示：
+  - 不再只显示一句“已恢复 N 个素材”
+  - 对历史项目展示完整项目摘要、已恢复镜头/分段、失败原因和可执行入口
+  - 让“重做此步 / 重做此段”只依赖恢复后的真实 stage/asset 状态，而不是当前临时运行态
 
-## 一、历史项目恢复时信息展示不全
+2. 重做图 2：点击项目进入独立“项目详情页”，再从详情页进入具体 task
+- 新增独立路由，例如项目详情页：
+  - 首页保留“我的项目”入口，但点击项目后不再直接 `restoreTask(latest)`
+  - 改为进入项目详情页，展示该项目下全部 tasks
+- 项目详情页信息结构：
+  - 顶部：项目名、类型、创建/更新时间、任务总数
+  - 主列表：该项目下所有 task，按时间倒序，展示状态、日期、标题、已生成镜头/素材数量、失败原因摘要
+  - 点击某个 task 后，再进入该 task 的具体工作区恢复视图
+- 主页中的 `ActiveProjectBanner` 改为轻量项目上下文提示，不再承担 task 列表主入口职责
+- Sidebar / HomeProjectsRow / 项目横幅三个入口统一到同一导航逻辑，避免现在“一个入口直接恢复 task、一个入口只是 banner”的不一致行为
 
-### 现状
-图 1 中右侧 Assets 已经成功拉回 S01/S02/S03 三个视频，但中间区域只剩一张 `Selected Brief · RESTORED` 卡，所有字段都是 "—"，且没有任何 prompt / 分镜 / 阶段摘要 / 聊天记录。
+3. 改造剧本上传流程：上传后先存入待处理状态，不立即解析
+- 现在上传剧本后会立刻 `parseScriptText` 并直接 `importGeneratedScript`，这会被改掉。
+- 新流程改为：
+  - 上传 `.txt/.md/.docx/.pdf` 后，只做文件读取/抽取文本
+  - 把“原始剧本文本 + 文件名 + 来源”存入 store 的待处理剧本状态
+  - UI 显示“已上传剧本，等待你的指令”而不是立即进入 structure ready
+- 用户随后在输入框里补充 prompt（例如“按这个剧本做 9:16 连续剧第一集，节奏更悬疑”）时：
+  - `submit()` 把用户 prompt 与待处理剧本文本一起传给真实后端
+  - 后端按“剧本原文 + 用户意图”做结构化解析
+  - 解析结果进入当前任务的 `script`
+  - 后续流程直接进入“依据上传剧本输出”的规划链路，而不是再调用通用 `generateScript`
 
-原因：
-1. `backfillLegacyTasksForProject` 合成快照时写死 `brief: null / script: null / stageSummaries: {} / stageSnapshots: {}`，只塞了 assets。
-2. `restoreTask` 在 `rec.brief` 为空时回填了一个占位 brief（`adType: "Restored"`, format/visual/mode 全是 "—"），Workspace 又只要 `brief.adType` 非空就强制渲染那张「Selected Brief」卡。
-3. 中间区域没有兜底叙事，所以"历史归档/已生成 N 个镜头"这种信息完全没出现。
+4. 接入真实后端：把“基于上传剧本规划”做成独立服务端函数
+- 新增真实后端 server function，用于：
+  - 输入：`scriptText`、`briefHint/prompt`、必要的格式/风格参数
+  - 输出：与当前前端兼容的 `GeneratedScript`
+- 这个函数会严格以上传剧本为主，不二次编新故事，只按用户 prompt 调整：
+  - 节奏/时长压缩
+  - 风格导向
+  - 镜头组织方式
+  - 输出规格适配
+- `runStructure()` 中增加分支：
+  - 如果当前任务存在“待处理剧本”，则走“上传剧本解析函数”
+  - 否则才走原来的 `generateScript`
+- 保证所有参数是真实从前端传到后端，而不是本地假灌数据
 
-### 修复方案
+5. 需要改动的主要文件
+- 路由/页面：
+  - `src/routes/index.tsx`
+  - 新增项目详情 route 文件
+- 项目入口与展示：
+  - `src/components/sc/Workspace.tsx`
+  - `src/components/sc/Sidebar.tsx`
+  - 可能新增项目详情组件
+- 状态管理：
+  - `src/lib/sc/store.ts`
+  - `src/lib/sc/types.ts`
+  - `src/lib/sc/projects-store.ts`
+- 后端函数：
+  - `src/lib/tasks.functions.ts`
+  - `src/lib/script-parse.functions.ts`
+  - 可能新增“按上传剧本+用户意图解析”的 server function
+- 上传入口：
+  - `src/components/sc/AttachMenu.tsx`
+  - `src/components/sc/CommandInput.tsx`
 
-**A. 让回填能带回更多真实信息**（`src/lib/tasks.functions.ts` 中的 `backfillLegacyTasksForProject`）
-- assets select 增加 `prompt, label, caption, poster` 等字段（meta 里有则一并读出）。
-- 取该组 assets 中第一条非空的 `prompt / meta.prompt / meta.scene_prompt` 作为 `snapshot.brief.prompt`，没有则用 `project.name`。
-- 写入 `snapshot.brief`：`{ prompt, adType: project.kind === "series" ? "Series" : "One-off", format: "—", visualSource: "—", mode: "Restored" }`，但加上 `legacyBackfill: true` 标记。
-- 合成 `snapshot.script`：把每个 asset 转成一条 shot（`{shot:'A01', duration:'—', scene: a.meta?.scene ?? '', prompt: a.prompt ?? '', motion:'—', elements:'—'}`），数量同 assets。
-- 合成 `snapshot.stageSummaries.life`：一行 "已从历史素材恢复 N 个镜头"；并补一行 "项目类型：{kind} · 创建于 {date}"。
-- 给 `snapshot.assets` 每条加上 `prompt / caption / poster`（如果库里有）。
-
-**B. 让 restoreTask 显示真实快照而不是占位**（`src/lib/sc/store.ts`）
-- 删除把 brief 兜底为 `adType: "Restored", format/visual/mode: "—"` 的逻辑：当 `rec.brief` 不存在时，brief 设为 `{ prompt: rec.prompt || rec.title, adType: "", ... }`（adType 为空 → Workspace 不会渲染那张 "—" 卡）。
-- 恢复后向 `chatLog` 追加一条 agent 提示："已从历史归档恢复 {assets.length} 个素材 · 项目 {projectName}。可以基于这些镜头继续生成下一集，或在右侧画廊里复用。"（含 "继续生成下一集 / 重新整理剧本" 两个 action chip，复用现有 action 机制）。
-- 同时把 `script` 真实塞回去，使 ScriptTable 可见。
-
-**C. Workspace 渲染兜底**（`src/components/sc/Workspace.tsx`）
-- "Selected Brief" 卡的条件改为：仅当 `brief.adType && brief.format !== "—"` 才渲染那张四行卡；对 legacyBackfill / 无 brief 的任务改为渲染一张"项目快照"卡（显示：项目名、创建时间、镜头数 N、最后更新时间），样式沿用现有 surface 卡。
-
-完成后图 1 应该能看到：项目快照卡 + script 表 + 阶段摘要（"已从历史素材恢复 3 个镜头"）+ 一条恢复提示对话。
-
----
-
-## 二、AttachMenu 重新组织（`src/components/sc/AttachMenu.tsx`）
-
-### 当前结构
+6. 技术说明
+- 当前问题的根因不是单一 UI 文案，而是三条链路混在一起：
+```text
+项目点击 -> 直接恢复最新 task
+历史回填 -> 只恢复到素材层，不足以继续“重做”
+上传剧本 -> 立即解析，没等用户补充意图
 ```
-上传文件 · 图片/视频/音频
-上传剧本 · .txt/.md/.docx     ← 把单文件入口和它的快捷分类切开了
-[ 图片 ][ 视频 ][ 音频 ]
-粘贴 URL
+- 本次会把它拆成三条明确链路：
+```text
+项目点击 -> 项目详情页 -> 选择 task -> 恢复 task
+上传剧本 -> 暂存原文 -> 用户补 prompt -> 后端解析 -> 进入结构规划
+历史恢复 -> 恢复完整 task 上下文 -> 允许继续重做/重跑
 ```
-
-### 调整后
-```
-── 媒体 ───────────────────
-上传文件 · 图片/视频/音频
-[ 图片 ][ 视频 ][ 音频 ]
-粘贴 URL
-── 剧本 ───────────────────
-上传剧本 · .txt / .md / .docx / .pdf
-```
-- 用一条 `border-t border-border/60` 分隔，并各加 11px 的 section label（`媒体` / `剧本`）。
-- "上传剧本" 移到分隔线下面，避免它把"上传文件"和下方的图片/视频/音频快捷按钮割裂。
-
----
-
-## 三、剧本上传支持 PDF
-
-### 后端：新增 `extractPdfText` server function（`src/lib/script-parse.functions.ts`）
-- 用 `unpdf`（Worker 兼容、内嵌 WASM、TanStack Start 上可用）解析。
-- 入参：`{ base64: string }`（≤ 10 MB）。
-- 输出：`{ text: string }`（拼接所有页文本，trim，截断到 60k 字符）。
-- 若 unpdf 抽到的文本为空（扫描件无内嵌文本层），回退调用 Lovable AI Gateway 的 `google/gemini-2.5-pro` 走 multimodal 把 PDF 当图像 OCR（PDF base64 + 系统提示"提取剧本文本，保留对白与场景描写"）。
-
-### 前端（`AttachMenu.tsx`）
-- script `<input accept>` 追加 `.pdf,application/pdf`。
-- 文案改为 `上传剧本 · .txt / .md / .docx / .pdf`。
-- `onScriptFile` 分支：`name.endsWith(".pdf")` → `file.arrayBuffer()` → base64 → `extractPdfText({data:{base64}})` → 拿到 `text` 后走原有 `parseScriptText` 流程。
-- 增加 20 MB 大小校验和友好 toast。
-
-### 依赖
-- 安装 `unpdf`（纯 ESM，Cloudflare Workers 已验证可用）。无需 pdfjs/canvas/native binary。
-
----
-
-## 技术细节速查
-- `tasks.functions.ts`：扩展 select 列、生成 brief/script/stageSummaries，不改 RLS、不改表结构。
-- `store.ts` `restoreTask`：去掉 "Restored" 占位 brief；插入恢复对话；保持 set() 结构。
-- `Workspace.tsx`：拆分 "Selected Brief"（完整 brief）与 "项目快照"（legacy/无 brief）两种卡片渲染。
-- `AttachMenu.tsx`：仅调整布局 + accept；不动 onFiles 主链。
-- `script-parse.functions.ts`：新增 `extractPdfText`，复用现有 `parseScriptText`。
-- 不动 Supabase schema、不动 client.ts。
+- 不涉及现在就改数据库表；优先在现有任务快照与前端状态模型上补齐。如果实施过程中发现项目详情页必须做服务端分页或额外 project-task 汇总，再补最小必要后端读取逻辑。
