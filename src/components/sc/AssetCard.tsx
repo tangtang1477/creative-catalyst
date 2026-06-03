@@ -66,6 +66,36 @@ export function AssetCard({
   const boundVoice = binding ? voices.find((v) => v.id === binding.voice_id) : undefined;
   const voicePlaying = boundVoice && previewingId === boundVoice.id;
 
+  // Derive display aspect ratio: explicit asset.aspectRatio wins, else infer
+  // from width/height, else fall back per kind/stage.
+  const inferAspect = (): string => {
+    if (asset.aspectRatio) return asset.aspectRatio.replace(":", " / ");
+    if (asset.width && asset.height) {
+      // snap to supported ratios
+      const r = asset.width / asset.height;
+      const candidates: Array<[string, number]> = [
+        ["16 / 9", 16 / 9],
+        ["9 / 16", 9 / 16],
+        ["1 / 1", 1],
+        ["3 / 4", 3 / 4],
+        ["4 / 3", 4 / 3],
+      ];
+      let best = candidates[0];
+      let bestDiff = Infinity;
+      for (const c of candidates) {
+        const d = Math.abs(Math.log(r) - Math.log(c[1]));
+        if (d < bestDiff) { bestDiff = d; best = c; }
+      }
+      return best[0];
+    }
+    // Stage-based defaults
+    if (asset.stageId === "wardrobe") return "1 / 1";
+    return asset.kind === "image" ? "9 / 16" : "16 / 9";
+  };
+  const aspectCss = inferAspect();
+  // tall portrait/vertical => use max-height to limit excessive height in card view
+  const isTall = ["9 / 16", "3 / 4"].includes(aspectCss);
+  const maxH = isTall ? (compact ? 240 : 420) : (compact ? 200 : 360);
 
   const dim =
     asset.width && asset.height
