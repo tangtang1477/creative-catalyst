@@ -2715,19 +2715,21 @@ export const useSC = create<SCState>((set, get) => {
       if (patch.script) {
         const cur = (get().script as Record<string, unknown> | null) ?? {};
         const next = { ...cur, ...patch.script };
-        set({ script: next as unknown as typeof get extends never ? never : never });
+        set({ script: next as unknown as never });
       }
 
-      // 3) characters / scenes 暂时只记录到 brief.meta 以便后续 cast/paint 取用
+      // 3) characters / scenes 暂时写入 brief.meta 以便后续 cast/paint 阶段取用
       if ((patch.characters && patch.characters.length) || (patch.scenes && patch.scenes.length)) {
-        const cur = (get().brief as unknown as Record<string, unknown>) ?? {};
-        const meta = ((cur.meta as Record<string, unknown>) ?? {}) as Record<string, unknown>;
-        const nextMeta = {
-          ...meta,
-          ...(patch.characters ? { characters: patch.characters } : {}),
-          ...(patch.scenes ? { scenes: patch.scenes } : {}),
-        };
-        set({ brief: { ...(cur as object), meta: nextMeta } as unknown as Brief });
+        const curBrief = get().brief;
+        if (curBrief) {
+          const meta = ((curBrief as unknown as { meta?: Record<string, unknown> }).meta ?? {}) as Record<string, unknown>;
+          const nextMeta = {
+            ...meta,
+            ...(patch.characters ? { characters: patch.characters } : {}),
+            ...(patch.scenes ? { scenes: patch.scenes } : {}),
+          };
+          set({ brief: { ...curBrief, meta: nextMeta } as unknown as Brief });
+        }
       }
 
       // 4) rerun：按 stage 顺序触发对应阶段重跑
