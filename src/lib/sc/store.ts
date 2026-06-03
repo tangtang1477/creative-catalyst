@@ -2739,41 +2739,55 @@ export const useSC = create<SCState>((set, get) => {
 
           // 拉远端任务（含 snapshot 为空的旧记录），合并入本地 taskHistory。
           let remoteLooseMatches: Array<{ id: string; title?: string; project_id?: string | null }> = [];
+          let remoteCount = 0;
+          const ingestRemote = (rows: Array<Record<string, unknown>>) => {
+            const local = get().taskHistory;
+            const byId = new Map<string, TaskRecord>(local.map((t) => [t.id, t]));
+            for (const raw of rows) {
+              const r = raw as {
+                id: string;
+                title?: string;
+                prompt?: string;
+                status?: string;
+                project_id?: string | null;
+                snapshot?: unknown;
+                created_at?: string;
+                updated_at?: string;
+              };
+              const snap = (r.snapshot ?? {}) as Partial<TaskRecord> & { status?: TaskRecord["status"] };
+              const looseTitleMatch = !r.project_id && titleMatchesProject(r.title, proj.name);
+              const inferProjectId =
+                r.project_id ?? (looseTitleMatch ? projectId : (byId.get(r.id)?.projectId ?? null));
+              const rec: TaskRecord = {
+                id: r.id,
+                title: r.title ?? "Untitled",
+                prompt: r.prompt ?? "",
+                createdAt: snap.createdAt ?? (Date.parse(r.created_at ?? "") || Date.now()),
+                updatedAt: snap.updatedAt ?? (Date.parse(r.updated_at ?? "") || Date.now()),
+                status: snap.status ?? (r.status === "completed" ? "done" : (r.status as TaskRecord["status"]) ?? "done"),
+                kind: snap.kind ?? "oneoff",
+                assets: snap.assets ?? [],
+                stageSummaries: snap.stageSummaries ?? {},
+                stageSnapshots: snap.stageSnapshots ?? {},
+                script: snap.script ?? null,
+                failureReason: snap.failureReason ?? undefined,
+                brief: snap.brief ?? null,
+                projectId: inferProjectId,
+              };
+              byId.set(rec.id, rec);
+              if (inferProjectId === projectId) {
+                remoteLooseMatches.push({ id: r.id, title: r.title ?? undefined, project_id: r.project_id });
+              }
+            }
+            const merged = Array.from(byId.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+            set({ taskHistory: merged });
+            saveHistory(merged);
+          };
+
           try {
             const { tasks: remote } = await listProjectTasks({ data: { projectId: null } });
-            if (Array.isArray(remote) && remote.length) {
-              const local = get().taskHistory;
-              const byId = new Map<string, TaskRecord>(local.map((t) => [t.id, t]));
-              for (const r of remote) {
-                const snap = (r.snapshot ?? {}) as Partial<TaskRecord> & { status?: TaskRecord["status"] };
-                const matchByTitle = !r.project_id && proj.name && r.title === proj.name;
-                const inferProjectId =
-                  r.project_id ?? (matchByTitle ? projectId : (byId.get(r.id)?.projectId ?? null));
-                const rec: TaskRecord = {
-                  id: r.id,
-                  title: r.title ?? "Untitled",
-                  prompt: r.prompt ?? "",
-                  createdAt: snap.createdAt ?? (Date.parse(r.created_at ?? "") || Date.now()),
-                  updatedAt: snap.updatedAt ?? (Date.parse(r.updated_at ?? "") || Date.now()),
-                  status: snap.status ?? (r.status === "completed" ? "done" : (r.status as TaskRecord["status"]) ?? "done"),
-                  kind: snap.kind ?? "oneoff",
-                  assets: snap.assets ?? [],
-                  stageSummaries: snap.stageSummaries ?? {},
-                  stageSnapshots: snap.stageSnapshots ?? {},
-                  script: snap.script ?? null,
-                  failureReason: snap.failureReason ?? undefined,
-                  brief: snap.brief ?? null,
-                  projectId: inferProjectId,
-                };
-                byId.set(rec.id, rec);
-                if (inferProjectId === projectId) {
-                  remoteLooseMatches.push({ id: r.id, title: r.title ?? undefined, project_id: r.project_id });
-                }
-              }
-              const merged = Array.from(byId.values()).sort((a, b) => b.updatedAt - a.updatedAt);
-              set({ taskHistory: merged });
-              saveHistory(merged);
-            }
+            remoteCount = Array.isArray(remote) ? remote.length : 0;
+            if (remoteCount) ingestRemote(remote as Array<Record<string, unknown>>);
           } catch (e) {
             console.warn("[enterProject] remote fetch failed", e);
           }
@@ -2792,11 +2806,39 @@ export const useSC = create<SCState>((set, get) => {
             } catch { /* ignore */ }
           })();
 
-          // 命中：projectId 精确 → title 兜底 → 该项目下最新一条
-          const history = get().taskHistory;
-          const projHits = history
-            .filter((t) => t.projectId === projectId || (!t.projectId && t.title === proj.name))
-            .sort((a, b) => b.updatedAt - a.updatedAt);
+          // 命中：projectId 精确 → title 模糊兜底 → 该项目下最新一条
+          const matchesProject = (t: TaskRecord) =>
+            t.projectId === projectId || (!t.projectId && titleMatchesProject(t.title, proj.name));
+
+          let history = get().taskHistory;
+          let projHits = history.filter(matchesProject).sort((a, b) => b.updatedAt - a.updatedAt);
+
+          // 若本项目仍然 0 条命中：尝试用 assets 表回填一次（一次性 backfill）
+          if (projHits.length === 0) {
+            try {
+              const res = await backfillLegacyTasksForProject({ data: { projectId } });
+              if (res?.created && res.created > 0) {
+                const { tasks: remote2 } = await listProjectTasks({ data: { projectId: null } });
+                if (Array.isArray(remote2) && remote2.length) {
+                  ingestRemote(remote2 as Array<Record<string, unknown>>);
+                  history = get().taskHistory;
+                  projHits = history.filter(matchesProject).sort((a, b) => b.updatedAt - a.updatedAt);
+                }
+              }
+              console.info("[enterProject] backfill", { projectId, ...res });
+            } catch (e) {
+              console.warn("[enterProject] backfill failed", e);
+            }
+          }
+
+          console.info("[enterProject] hits", {
+            projectId,
+            projName: proj.name,
+            remoteCount,
+            localCount: history.length,
+            matchedCount: projHits.length,
+          });
+
           const match = projHits[0];
           if (match) {
             get().restoreTask(match.id);
