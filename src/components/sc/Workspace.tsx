@@ -197,7 +197,7 @@ export function Workspace() {
                       <ul className="space-y-0.5 text-muted-foreground">
                         <li>· 项目：{taskTitle || "—"}</li>
                         <li>· 镜头数：{assets.filter((a) => a.kind === "video").length || assets.length}</li>
-                        <li>· 素材总数：{assets.length}（图片 {assets.filter((a) => a.kind === "image").length} · 视频 {assets.filter((a) => a.kind === "video").length} · 音频 {assets.filter((a) => a.kind === "audio").length}）</li>
+                        <li>· 素材总数：{assets.length}（图片 {assets.filter((a) => a.kind === "image").length} · 视频 {assets.filter((a) => a.kind === "video").length}）</li>
                         {brief.prompt && brief.prompt !== taskTitle && (
                           <li className="line-clamp-2">· 原始 prompt：{brief.prompt}</li>
                         )}
