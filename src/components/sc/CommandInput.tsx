@@ -163,6 +163,17 @@ export function CommandInput({ placeholder, compact = false }: Props) {
         )}
       />
       <MentionPopover value={value} caret={caret} anchorRef={taRef} onPick={handlePick} />
+      <InlineReferenceRow
+        value={value}
+        attachments={attachments}
+        assets={assets}
+        onRemoveAttachment={removeAttachment}
+        onStrip={(token) => {
+          const re = new RegExp(`\\s*${escapeRegExp(token)}\\s?`, "g");
+          setValue((prev) => prev.replace(re, " ").replace(/\s{2,}/g, " ").trimStart());
+        }}
+      />
+
       <div className="flex items-center justify-between gap-2 px-2 pb-2">
         <div className="flex items-center gap-1.5">
           <AttachMenu disabled={inputDisabled}>
