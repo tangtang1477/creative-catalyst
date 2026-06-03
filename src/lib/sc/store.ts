@@ -1444,10 +1444,12 @@ export const useSC = create<SCState>((set, get) => {
           mode: "refs" | "text-only",
         ): Promise<{ ok: true; ossUrl: string } | { ok: false; code: string; message: string }> => {
           try {
+            const currentTaskId = get().taskId;
             const submitArgs =
               mode === "refs"
                 ? {
                     route: "reference-image-to-video" as const,
+                    videoTaskId: currentTaskId ?? null,
                     payload: {
                       prompt: segPrompt,
                       image_urls: [...wardrobeRefs, keyUrl].slice(0, 6),
@@ -1457,6 +1459,7 @@ export const useSC = create<SCState>((set, get) => {
                   }
                 : {
                     route: "text-to-video" as const,
+                    videoTaskId: currentTaskId ?? null,
                     payload: {
                       prompt: `${segPrompt}\n(无真人参考，请按描述生成)`,
                       ratio: videoRatio,
