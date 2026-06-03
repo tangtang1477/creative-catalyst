@@ -8,11 +8,12 @@ import { LowCreditPill } from "./LowCreditPill";
 export function InlineLowCredit() {
   const openPricing = useCredits((s) => s.openPricing);
   const remaining = useCredits(creditsSelectors.remaining);
+  const hydrated = useCredits((s) => s.hydrated);
 
   return (
     <LowCreditPill
       variant="inline"
-      message={`仅剩 ${remaining} · 无法继续渲染`}
+      message={hydrated ? `仅剩 ${remaining} · 无法继续渲染` : "积分不足 · 无法继续渲染"}
       onTopUp={openPricing}
     />
   );

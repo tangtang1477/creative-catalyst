@@ -18,6 +18,7 @@ export function CreditRing({ size = 32, stroke = 2, children, className }: Props
   const remaining = useCredits(creditsSelectors.remaining);
   const ringPct = useCredits(creditsSelectors.ringPercent);
   const pulseId = useCredits((s) => s.pulseId);
+  const hydrated = useCredits((s) => s.hydrated);
 
   const isCritical = remaining <= 20;
   const isLow = !isCritical && remaining <= 50;
@@ -40,7 +41,7 @@ export function CreditRing({ size = 32, stroke = 2, children, className }: Props
     return () => window.clearTimeout(t);
   }, [pulseId]);
 
-  const title = `账户余额 ${remaining} 积分`;
+  const title = hydrated ? `账户余额 ${remaining} 积分` : "账户余额";
 
   return (
     <span
@@ -71,10 +72,10 @@ export function CreditRing({ size = 32, stroke = 2, children, className }: Props
           cy={size / 2}
           r={r}
           fill="none"
-          stroke={color}
+          stroke={hydrated ? color : "var(--accent)"}
           strokeWidth={stroke}
           strokeLinecap="round"
-          strokeDasharray={`${dash} ${c - dash}`}
+          strokeDasharray={hydrated ? `${dash} ${c - dash}` : `0 ${c}`}
           style={{
             transition:
               "stroke-dasharray 600ms cubic-bezier(0.22, 1, 0.36, 1), stroke 240ms",
