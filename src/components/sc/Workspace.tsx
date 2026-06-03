@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useSC } from "@/lib/sc/store";
+import { useSC, titleMatchesProject } from "@/lib/sc/store";
 import { CommandInput } from "./CommandInput";
 import { SuggestionChips } from "./SuggestionChips";
 import { IntakeCard } from "./IntakeCard";
