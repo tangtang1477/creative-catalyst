@@ -59,9 +59,11 @@ export function AttachMenu({ children, disabled }: { children: ReactNode; disabl
       let text = "";
       const name = file.name.toLowerCase();
       if (name.endsWith(".docx")) {
-        const mammoth = await import("mammoth/mammoth.browser");
+        const mammothMod = (await import("mammoth/mammoth.browser")) as unknown as {
+          extractRawText: (opts: { arrayBuffer: ArrayBuffer }) => Promise<{ value: string }>;
+        };
         const arrayBuffer = await file.arrayBuffer();
-        const res = await mammoth.extractRawText({ arrayBuffer });
+        const res = await mammothMod.extractRawText({ arrayBuffer });
         text = res.value ?? "";
       } else if (name.endsWith(".txt") || name.endsWith(".md") || file.type.startsWith("text")) {
         text = await file.text();
