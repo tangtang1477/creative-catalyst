@@ -199,8 +199,13 @@ const initialStages = (): Record<StageId, StageState> =>
 const isSeriesPrompt = (text: string) =>
   /(剧集|系列|连续剧|episode|series|第\s*\d+\s*集|EP\s*\d)/i.test(text);
 
-const newId = () =>
-  `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+const UUID_RE_TASK = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const newId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+};
 
 const loadHistory = (): TaskRecord[] => {
   if (typeof window === "undefined") return [];
