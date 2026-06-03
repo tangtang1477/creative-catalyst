@@ -2692,9 +2692,32 @@ export const useSC = create<SCState>((set, get) => {
       // Defensive: legacy records persisted from older versions may be missing
       // fields like assets / stageSnapshots — fill with safe defaults so the
       // downstream render path never throws "Cannot read length of undefined".
+      const normalizedAssets: Asset[] = Array.isArray(found.assets)
+        ? found.assets.map((asset, index): Asset => ({
+            id: asset?.id ?? `restored-${found.id}-${index}`,
+            kind: asset?.kind === "video" ? "video" : "image",
+            label: asset?.label ?? asset?.id ?? `A${String(index + 1).padStart(2, "0")}`,
+            status: asset?.status ?? "Ready",
+            caption: asset?.caption,
+            url: asset?.url,
+            poster: asset?.poster,
+            width: asset?.width,
+            height: asset?.height,
+            aspectRatio: asset?.aspectRatio,
+            duration: asset?.duration,
+            stageId: asset?.stageId ?? ((asset as { stage?: StageId | undefined })?.stage ?? undefined),
+            episode: asset?.episode,
+            scene: asset?.scene,
+            errorMessage: asset?.errorMessage,
+            errorCode: asset?.errorCode,
+            versions: Array.isArray(asset?.versions) ? asset.versions : undefined,
+            segmentIndex: asset?.segmentIndex,
+            sourceShotId: asset?.sourceShotId,
+          }))
+        : [];
       const rec: TaskRecord = {
         ...found,
-        assets: Array.isArray(found.assets) ? found.assets : [],
+        assets: normalizedAssets,
         stageSummaries: found.stageSummaries ?? {},
         stageSnapshots: found.stageSnapshots ?? {},
         prompt: found.prompt ?? "",
@@ -2716,10 +2739,10 @@ export const useSC = create<SCState>((set, get) => {
         const sum = sums[sid];
         if (snap) {
           stages[sid] = {
-            status: snap.status,
-            summary: snap.summary.slice(),
-            toolCalls: snap.toolCalls.slice(),
-            thoughts: snap.thoughts.slice(),
+            status: snap.status ?? "ready",
+            summary: Array.isArray(snap.summary) ? snap.summary.slice() : [],
+            toolCalls: Array.isArray(snap.toolCalls) ? snap.toolCalls.slice() : [],
+            thoughts: Array.isArray(snap.thoughts) ? snap.thoughts.slice() : [],
             expanded: true,
           };
           if (snap.status === "failed" && !failedStageId) failedStageId = sid;
