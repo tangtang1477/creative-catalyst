@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
   Loader2,
   Check,
@@ -79,9 +79,17 @@ export function StageRow({
 }: Props) {
   const { toggleStage } = useSC();
   const retryStage = useSC((s) => s.retryStage);
+  const hydrated = useSC((s) => s.hydrated);
   const Icon = stageIcon[id];
   const expanded = state.expanded;
   const isRunning = state.status === "running" || state.status === "recovering";
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!hydrated || !isRunning) return;
+    const timer = window.setInterval(() => setTick((v) => v + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [hydrated, isRunning]);
 
   if (state.status === "pending") return null;
 
@@ -94,7 +102,7 @@ export function StageRow({
           ? "bg-status-failed/20 text-status-failed"
           : "bg-surface-2 text-muted-foreground";
 
-  const duration = totalDuration(state);
+  const duration = hydrated ? totalDuration(state) : 0;
 
   return (
     <section

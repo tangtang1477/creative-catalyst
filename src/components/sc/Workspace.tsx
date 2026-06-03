@@ -488,14 +488,15 @@ function ActiveProjectBanner() {
   const projects = useProjects((s) => s.projects);
   const taskHistory = useSC((s) => s.taskHistory);
   const currentTaskId = useSC((s) => s.taskId);
+  const hydrated = useSC((s) => s.hydrated);
   const navigate = useNavigate();
   const proj = projects.find((p) => p.id === currentProjectId) ?? null;
   if (!proj) return null;
   const Icon = HOME_KIND_ICON[proj.kind] ?? FolderIcon;
-  const total = taskHistory.filter(
+  const total = hydrated ? taskHistory.filter(
     (t) => (t.projectId === proj.id || (!t.projectId && titleMatchesProject(t.title, proj.name)))
       && t.id !== currentTaskId,
-  ).length;
+  ).length : 0;
 
   return (
     <div className="mb-4 rounded-2xl border border-accent/30 bg-[color-mix(in_oklab,var(--accent)_8%,var(--surface))] px-4 py-3 text-[12.5px] [animation:stream-fade_320ms_ease-out_both]">

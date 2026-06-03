@@ -142,6 +142,9 @@ interface SCState {
   /** 用户上传的剧本（待解析），等待用户输入 prompt 时一起送后端解析 */
   pendingScript: PendingScript | null;
 
+  hydrated: boolean;
+  hydrateFromStorage: () => void;
+
 
   intakeSel: Record<string, string>;
   intakeCustoms: Record<string, string[]>;
@@ -297,6 +300,49 @@ const loadViewMode = (): ViewMode => {
   if (typeof window === "undefined") return "list";
   const v = window.localStorage.getItem(VIEW_KEY);
   return v === "canvas" ? "canvas" : "list";
+};
+
+export const normalizeTaskRecord = (found: Partial<TaskRecord> & Pick<TaskRecord, "id">): TaskRecord => {
+  const normalizedAssets: Asset[] = Array.isArray(found.assets)
+    ? found.assets.map((asset, index): Asset => ({
+        id: asset?.id ?? `restored-${found.id}-${index}`,
+        kind: asset?.kind === "video" ? "video" : "image",
+        label: asset?.label ?? asset?.id ?? `A${String(index + 1).padStart(2, "0")}`,
+        status: asset?.status ?? "Ready",
+        caption: asset?.caption,
+        url: asset?.url,
+        poster: asset?.poster,
+        width: asset?.width,
+        height: asset?.height,
+        aspectRatio: asset?.aspectRatio,
+        duration: asset?.duration,
+        stageId: asset?.stageId ?? ((asset as { stage?: StageId | undefined })?.stage ?? undefined),
+        episode: asset?.episode,
+        scene: asset?.scene,
+        errorMessage: asset?.errorMessage,
+        errorCode: asset?.errorCode,
+        versions: Array.isArray(asset?.versions) ? asset.versions : undefined,
+        segmentIndex: asset?.segmentIndex,
+        sourceShotId: asset?.sourceShotId,
+      }))
+    : [];
+
+  return {
+    id: found.id,
+    title: found.title ?? "Untitled",
+    prompt: found.prompt ?? "",
+    createdAt: typeof found.createdAt === "number" ? found.createdAt : 0,
+    updatedAt: typeof found.updatedAt === "number" ? found.updatedAt : 0,
+    status: found.status ?? "done",
+    kind: found.kind ?? "oneoff",
+    assets: normalizedAssets,
+    stageSummaries: found.stageSummaries ?? {},
+    stageSnapshots: found.stageSnapshots ?? {},
+    script: found.script ?? null,
+    failureReason: found.failureReason ?? undefined,
+    brief: found.brief ?? null,
+    projectId: found.projectId ?? null,
+  };
 };
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -2002,13 +2048,13 @@ export const useSC = create<SCState>((set, get) => {
     taskTitle: "New chat",
     taskId: null,
     taskKind: "oneoff",
-    taskHistory: loadHistory(),
+    taskHistory: [],
     attachments: [],
     gate: null,
     softGate: null,
     rail: { open: false },
-    viewMode: loadViewMode(),
-    autoMode: loadAutoMode(),
+    viewMode: "list",
+    autoMode: "auto",
     timers: [],
     runId: 0,
     selection: [],
@@ -2018,11 +2064,23 @@ export const useSC = create<SCState>((set, get) => {
     currentUserId: null,
     script: null,
     pendingScript: null,
+    hydrated: false,
 
 
     intakeSel: {},
     intakeCustoms: {},
     intakeOthers: null,
+
+    hydrateFromStorage: () => {
+      if (typeof window === "undefined") return;
+      const history = loadHistory().map((task) => normalizeTaskRecord(task));
+      set({
+        taskHistory: history,
+        viewMode: loadViewMode(),
+        autoMode: loadAutoMode(),
+        hydrated: true,
+      });
+    },
 
     setPrompt: (v) => set({ prompt: v }),
     setAutoMode: (m) => {
@@ -2689,44 +2747,7 @@ export const useSC = create<SCState>((set, get) => {
         console.warn("[restoreTask] task not found in local history", id);
         return;
       }
-      // Defensive: legacy records persisted from older versions may be missing
-      // fields like assets / stageSnapshots — fill with safe defaults so the
-      // downstream render path never throws "Cannot read length of undefined".
-      const normalizedAssets: Asset[] = Array.isArray(found.assets)
-        ? found.assets.map((asset, index): Asset => ({
-            id: asset?.id ?? `restored-${found.id}-${index}`,
-            kind: asset?.kind === "video" ? "video" : "image",
-            label: asset?.label ?? asset?.id ?? `A${String(index + 1).padStart(2, "0")}`,
-            status: asset?.status ?? "Ready",
-            caption: asset?.caption,
-            url: asset?.url,
-            poster: asset?.poster,
-            width: asset?.width,
-            height: asset?.height,
-            aspectRatio: asset?.aspectRatio,
-            duration: asset?.duration,
-            stageId: asset?.stageId ?? ((asset as { stage?: StageId | undefined })?.stage ?? undefined),
-            episode: asset?.episode,
-            scene: asset?.scene,
-            errorMessage: asset?.errorMessage,
-            errorCode: asset?.errorCode,
-            versions: Array.isArray(asset?.versions) ? asset.versions : undefined,
-            segmentIndex: asset?.segmentIndex,
-            sourceShotId: asset?.sourceShotId,
-          }))
-        : [];
-      const rec: TaskRecord = {
-        ...found,
-        assets: normalizedAssets,
-        stageSummaries: found.stageSummaries ?? {},
-        stageSnapshots: found.stageSnapshots ?? {},
-        prompt: found.prompt ?? "",
-        title: found.title ?? "Untitled",
-        kind: found.kind ?? "oneoff",
-        status: found.status ?? "done",
-        brief: found.brief ?? null,
-        script: found.script ?? null,
-      };
+      const rec = normalizeTaskRecord(found);
       clearTimers();
       const stages = initialStages();
       // Prefer full snapshots (toolCalls + thoughts). Fall back to legacy
@@ -2861,7 +2882,7 @@ export const useSC = create<SCState>((set, get) => {
               const looseTitleMatch = !r.project_id && titleMatchesProject(r.title, proj.name);
               const inferProjectId =
                 r.project_id ?? (looseTitleMatch ? projectId : (byId.get(r.id)?.projectId ?? null));
-              const rec: TaskRecord = {
+              const rec = normalizeTaskRecord({
                 id: r.id,
                 title: r.title ?? "Untitled",
                 prompt: r.prompt ?? "",
@@ -2876,7 +2897,7 @@ export const useSC = create<SCState>((set, get) => {
                 failureReason: snap.failureReason ?? undefined,
                 brief: snap.brief ?? null,
                 projectId: inferProjectId,
-              };
+              });
               byId.set(rec.id, rec);
               if (inferProjectId === projectId) {
                 remoteLooseMatches.push({ id: r.id, title: r.title ?? undefined, project_id: r.project_id });

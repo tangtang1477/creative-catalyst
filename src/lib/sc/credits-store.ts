@@ -21,6 +21,8 @@ interface CreditsState {
   pulseId: number;
   synced: boolean;
   toppingUp: boolean;
+  hydrated: boolean;
+  hydrateFromStorage: () => void;
   consume: (stage: string, label: string, cost: number, taskId?: string | null) => void;
   topUp: (n: number, tier?: string) => Promise<void>;
   resetUsed: () => void;
@@ -92,17 +94,23 @@ function notifyConsume(stage: string, cost: number, remaining: number) {
 }
 
 export const useCredits = create<CreditsState>((set, get) => {
-  const init = load();
   return {
-    total: init.total,
-    used: init.used,
-    history: init.history,
+    total: DEFAULT_TOTAL,
+    used: 0,
+    history: [],
     pricingOpen: false,
     lowOpen: false,
     lowDismissedFor: null,
     pulseId: 0,
     synced: false,
     toppingUp: false,
+    hydrated: false,
+
+    hydrateFromStorage: () => {
+      if (typeof window === "undefined") return;
+      const next = load();
+      set({ total: next.total, used: next.used, history: next.history, hydrated: true });
+    },
 
     consume: (stage, label, cost, taskId) => {
       if (cost <= 0) return;

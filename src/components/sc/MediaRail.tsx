@@ -46,33 +46,41 @@ const loadView = (): ViewMode => {
 };
 
 export function MediaRail() {
-  const { assets, phase, rail, setRailOpen, taskKind, selection, toggleSelect, clearSelection, addAttachment } = useSC();
+  const { assets, phase, rail, setRailOpen, taskKind, selection, toggleSelect, clearSelection, addAttachment, hydrated } = useSC();
   const [imgOpen, setImgOpen] = useState(true);
   // (Single-group list view; vidOpen retained as no-op for backwards compat)
   const [filter, setFilter] = useState<Filter>("all");
   const [audioTab, setAudioTab] = useState<"task" | "library">("task");
   const [batchOpen, setBatchOpen] = useState(false);
-  const [view, setView] = useState<ViewMode>(loadView);
-  const [width, setWidth] = useState<number>(loadWidth);
+  const [view, setView] = useState<ViewMode>("grid");
+  const [width, setWidth] = useState<number>(DEFAULT_W);
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
   // Selection auto-activates whenever at least one asset is selected.
   const multi = selection.length > 0;
 
   // persist
   useEffect(() => {
+    if (!hydrated) return;
+    setView(loadView());
+    setWidth(loadWidth());
+  }, [hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
     try {
       window.localStorage.setItem(VIEW_KEY, view);
     } catch {
       /* ignore */
     }
-  }, [view]);
+  }, [view, hydrated]);
   useEffect(() => {
+    if (!hydrated) return;
     try {
       window.localStorage.setItem(WIDTH_KEY, String(width));
     } catch {
       /* ignore */
     }
-  }, [width]);
+  }, [width, hydrated]);
 
   const onDragStart = (e: React.MouseEvent) => {
     e.preventDefault();

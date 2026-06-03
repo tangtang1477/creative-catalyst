@@ -5,6 +5,7 @@ import { Workspace } from "@/components/sc/Workspace";
 import { MediaRail } from "@/components/sc/MediaRail";
 import { DotGridBackground } from "@/components/sc/DotGridBackground";
 import { useSC } from "@/lib/sc/store";
+import { useCredits } from "@/lib/sc/credits-store";
 import { useTheme } from "@/hooks/use-theme";
 
 export const Route = createFileRoute("/")({
@@ -42,8 +43,15 @@ function IndexErrorComponent({ error, reset }: { error: Error; reset: () => void
 
 function Index() {
   const forceState = useSC((s) => s.forceState);
+  const hydrateWorkspace = useSC((s) => s.hydrateFromStorage);
+  const hydrateCredits = useCredits((s) => s.hydrateFromStorage);
   // initialise theme class on root <html>
   useTheme();
+
+  useEffect(() => {
+    hydrateWorkspace();
+    hydrateCredits();
+  }, [hydrateWorkspace, hydrateCredits]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

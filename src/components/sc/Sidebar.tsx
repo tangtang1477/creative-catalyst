@@ -67,6 +67,7 @@ export function Sidebar() {
     taskHistory,
     restoreTask,
     deleteTask,
+    hydrated: workspaceHydrated,
   } = useSC();
   const openPricing = useCredits((s) => s.openPricing);
 
@@ -122,14 +123,15 @@ export function Sidebar() {
 
   // current active task injected on top of history
   const tasks = useMemo(() => {
+    if (!workspaceHydrated) return [];
     const active =
       phase !== "empty" && taskId
         ? [{
             id: taskId,
             title: taskTitle,
             prompt: "",
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
+            createdAt: 0,
+            updatedAt: 0,
             status: phase === "done" ? "done" : phase === "failed" ? "failed" : "running" as const,
             kind: "oneoff" as const,
             assets: [],
@@ -137,7 +139,7 @@ export function Sidebar() {
         : [];
     const rest = taskHistory.filter((t) => t.id !== taskId).slice(0, 12);
     return [...active, ...rest];
-  }, [phase, taskId, taskTitle, taskHistory]);
+  }, [phase, taskId, taskTitle, taskHistory, workspaceHydrated]);
 
   const handleNewTask = () => {
     if (phase === "running" || phase === "thinking") {
@@ -312,7 +314,7 @@ export function Sidebar() {
                 )}
               />
             </button>
-            {tasksOpen && hydrated && (
+            {tasksOpen && hydrated && workspaceHydrated && (
               <div className="flex flex-col gap-0.5">
                 {tasks.length === 0 && (
                   <div className="px-2 py-3 text-[11px] text-muted-foreground">

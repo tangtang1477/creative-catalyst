@@ -5,11 +5,13 @@ import { Sidebar } from "@/components/sc/Sidebar";
 import { DotGridBackground } from "@/components/sc/DotGridBackground";
 import { useTheme } from "@/hooks/use-theme";
 import { useProjects } from "@/lib/sc/projects-store";
-import { useSC, titleMatchesProject } from "@/lib/sc/store";
+import { useSC, titleMatchesProject, normalizeTaskRecord } from "@/lib/sc/store";
 import { listProjectTasks, backfillLegacyTasksForProject, attachTaskToProject } from "@/lib/tasks.functions";
 import type { TaskRecord } from "@/lib/sc/types";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+
+const EMPTY_TASKS: TaskRecord[] = [];
 
 export const Route = createFileRoute("/projects/$projectId")({
   component: ProjectDetailPage,
@@ -49,6 +51,7 @@ function ProjectDetailPage() {
   const fetchProjects = useProjects((s) => s.fetchProjects);
   const setCurrentProject = useProjects((s) => s.setCurrentProject);
   const taskHistory = useSC((s) => s.taskHistory);
+  const workspaceHydrated = useSC((s) => s.hydrated);
   const restoreTask = useSC((s) => s.restoreTask);
   const reset = useSC((s) => s.reset);
 
@@ -104,7 +107,7 @@ function ProjectDetailPage() {
             const snap = (r.snapshot ?? {}) as Partial<TaskRecord> & { status?: TaskRecord["status"] };
             const looseTitleMatch = !r.project_id && proj && titleMatchesProject(r.title, proj.name);
             const inferProjectId = r.project_id ?? (looseTitleMatch ? projectId : (byId.get(r.id)?.projectId ?? null));
-            const rec: TaskRecord = {
+            const rec = normalizeTaskRecord({
               id: r.id,
               title: r.title ?? "Untitled",
               prompt: r.prompt ?? "",
@@ -119,7 +122,7 @@ function ProjectDetailPage() {
               failureReason: snap.failureReason ?? undefined,
               brief: snap.brief ?? null,
               projectId: inferProjectId,
-            };
+            });
             byId.set(rec.id, rec);
             if (inferProjectId === projectId) loose.push({ id: r.id, projectId: r.project_id ?? null });
           }
@@ -164,11 +167,11 @@ function ProjectDetailPage() {
   }, [projectId, refreshKey]);
 
   const tasks = useMemo(() => {
-    if (!project) return [];
+    if (!project || !workspaceHydrated) return EMPTY_TASKS;
     return taskHistory
       .filter((t) => t.projectId === project.id || (!t.projectId && titleMatchesProject(t.title, project.name)))
       .sort((a, b) => b.updatedAt - a.updatedAt);
-  }, [taskHistory, project]);
+  }, [taskHistory, project, workspaceHydrated]);
 
   const handleOpenTask = (taskId: string) => {
     try {
@@ -246,7 +249,7 @@ function ProjectDetailPage() {
                         {project.name}
                       </h1>
                       <p className="mt-1 text-[12.5px] text-muted-foreground">
-                        类型：{project.kind} · 创建于 <span suppressHydrationWarning>{mounted ? new Date(project.created_at).toLocaleString("zh-CN") : ""}</span> · 共 {tasks.length} 个任务
+                        类型：{project.kind} · 创建于 <span suppressHydrationWarning>{mounted ? new Date(project.created_at).toLocaleString("zh-CN") : ""}</span> · 共 <span suppressHydrationWarning>{workspaceHydrated ? tasks.length : 0}</span> 个任务
                       </p>
                     </div>
                   </div>

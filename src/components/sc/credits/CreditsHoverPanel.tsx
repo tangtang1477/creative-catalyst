@@ -7,6 +7,7 @@ export function CreditsHoverPanel({ onTopUp }: { onTopUp: () => void }) {
   const ringPct = useCredits(creditsSelectors.ringPercent);
   const pulseId = useCredits((s) => s.pulseId);
   const history = useCredits((s) => s.history);
+  const hydrated = useCredits((s) => s.hydrated);
 
   // 动画计数 — 跟踪账户余额
   const [display, setDisplay] = useState(remaining);
@@ -42,7 +43,7 @@ export function CreditsHoverPanel({ onTopUp }: { onTopUp: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pulseId]);
 
-  const recent = history.slice(-3).reverse();
+  const recent = hydrated ? history.slice(-3).reverse() : [];
 
   return (
     <div className="mt-2 rounded-xl bg-surface-2/60 px-3 py-2.5">
@@ -52,12 +53,12 @@ export function CreditsHoverPanel({ onTopUp }: { onTopUp: () => void }) {
           onClick={onTopUp}
           className="text-muted-foreground transition-colors hover:text-accent"
         >
-          <span className="tabular-nums">{display}</span> 积分 ›
+          <span className="tabular-nums" suppressHydrationWarning>{hydrated ? display : "--"}</span> 积分 ›
         </button>
       </div>
       <div className="mt-2 flex gap-[3px]">
         {Array.from({ length: DOTS }).map((_, i) => {
-          const isFilled = i < filled;
+          const isFilled = hydrated && i < filled;
           const isFlash = i === flashDot;
           return (
             <span
