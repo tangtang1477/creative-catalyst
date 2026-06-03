@@ -229,3 +229,13 @@ export interface TaskRecord {
   projectId?: string | null;
 }
 
+/** Chat agent 单条"直接改图"指令。 */
+export interface ImageEditDirective {
+  /** 目标 asset id（与现有 assets[].id 对齐，例 A03 / W01 / C02）。 */
+  assetId: string;
+  /** 用户的自然语言改图指令。 */
+  prompt: string;
+  /** 参考素材 id 列表（可选，用来提供角色/道具/风格参考）。 */
+  refs?: string[];
+}
+

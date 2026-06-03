@@ -1,12 +1,14 @@
 import { useRef, useState, type ReactNode } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Upload, Link2, Image as ImageIcon, Film, Music } from "lucide-react";
+import { Upload, Link2, Image as ImageIcon, Film, Music, FileText, Loader2 } from "lucide-react";
 import { useSC } from "@/lib/sc/store";
 import { useVoices } from "@/lib/sc/voices-store";
 import { uploadGenericFile } from "@/lib/upload-image";
 import { supabase } from "@/integrations/supabase/client";
+import { parseScriptText } from "@/lib/script-parse.functions";
 import type { Attachment } from "@/lib/sc/types";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const aid = () => `att_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
@@ -30,16 +32,65 @@ type AcceptKind = "image" | "video" | "audio" | "any";
 
 export function AttachMenu({ children, disabled }: { children: ReactNode; disabled?: boolean }) {
   const { addAttachment, assets } = useSC();
+  const importGeneratedScript = useSC((s) => s.importGeneratedScript);
+  const briefPrompt = useSC((s) => s.brief?.prompt ?? s.prompt ?? "");
   const clone = useVoices((s) => s.clone);
   const [open, setOpen] = useState(false);
   const [urlInput, setUrlInput] = useState("");
   const [acceptKind, setAcceptKind] = useState<AcceptKind>("any");
+  const [scriptBusy, setScriptBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const scriptRef = useRef<HTMLInputElement>(null);
 
   const triggerFile = (k: AcceptKind) => {
     setAcceptKind(k);
     requestAnimationFrame(() => fileRef.current?.click());
   };
+  const triggerScript = () => {
+    requestAnimationFrame(() => scriptRef.current?.click());
+  };
+
+  const onScriptFile = async (files: FileList | null) => {
+    if (!files || !files[0]) return;
+    const file = files[0];
+    setOpen(false);
+    setScriptBusy(true);
+    try {
+      let text = "";
+      const name = file.name.toLowerCase();
+      if (name.endsWith(".docx")) {
+        const mammothMod = (await import("mammoth/mammoth.browser")) as unknown as {
+          extractRawText: (opts: { arrayBuffer: ArrayBuffer }) => Promise<{ value: string }>;
+        };
+        const arrayBuffer = await file.arrayBuffer();
+        const res = await mammothMod.extractRawText({ arrayBuffer });
+        text = res.value ?? "";
+      } else if (name.endsWith(".txt") || name.endsWith(".md") || file.type.startsWith("text")) {
+        text = await file.text();
+      } else {
+        toast.error("暂只支持 .txt / .md / .docx 剧本上传；.pdf 请先转换为文本");
+        return;
+      }
+      const trimmed = text.trim();
+      if (!trimmed) {
+        toast.error("剧本内容为空");
+        return;
+      }
+      toast("正在解析剧本…");
+      const script = await parseScriptText({
+        data: { text: trimmed.slice(0, 60000), briefHint: briefPrompt || undefined },
+      });
+      importGeneratedScript(script);
+      toast.success(`已导入剧本：${script.shots.length} 个分镜`);
+    } catch (e) {
+      console.error("[script upload] failed", e);
+      toast.error(`剧本解析失败：${(e as Error).message}`);
+    } finally {
+      setScriptBusy(false);
+      if (scriptRef.current) scriptRef.current.value = "";
+    }
+  };
+
 
   const onFiles = async (files: FileList | null) => {
     if (!files) return;
@@ -157,11 +208,24 @@ export function AttachMenu({ children, disabled }: { children: ReactNode; disabl
           className="hidden"
           onChange={(e) => onFiles(e.target.files)}
         />
+        <input
+          ref={scriptRef}
+          type="file"
+          accept=".txt,.md,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          className="hidden"
+          onChange={(e) => onScriptFile(e.target.files)}
+        />
         <Row
           icon={<Upload className="h-3.5 w-3.5" />}
           label="上传文件 · 图片/视频/音频"
           onClick={() => triggerFile("any")}
         />
+        <Row
+          icon={scriptBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+          label={scriptBusy ? "正在解析剧本…" : "上传剧本 · .txt / .md / .docx"}
+          onClick={scriptBusy ? undefined : triggerScript}
+        />
+
         <div className="grid grid-cols-3 gap-1 px-1.5 pt-1">
           <button
             type="button"

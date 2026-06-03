@@ -1,67 +1,100 @@
-## 根因诊断
+## 目标
 
-直接查了数据库，结果出乎意料：
+1. Chatbox 里说"把这张图改成 X / 加点雨 / 换背景"必须真正调后端改图，结果落到该 asset 的新版本里。
+2. 在 AssetCard 上加一个 Lovart 同款的"图层编辑"入口（弹窗形式），可以挑选图层 / 圈选区域 + 写 prompt 真改图。
+3. 支持上传剧本文件（txt / md / docx / pdf）并解析成现有 `GeneratedScript` 结构，直接进入 structure 阶段；流程全部走真实后端。
 
-- `projects` 表里你的项目都在（包括截图里的 `_ (4).jpeg 用这个形象做连续剧…`）。
-- `video_tasks` 表 **总共 0 行**（`select count(*) → 0`）。
-- `assets` 表却有 12 条已生成的视频，且 **全部 `task_id` 为 NULL**。
+---
 
-所以"点项目→暂无历史"不是匹配逻辑的 bug，而是 **任务从来没被持久化到数据库**。之前那轮"去掉 snapshot 非空过滤 / title 兜底 / 异步回填"全部是在拉空表，再怎么补匹配规则都拉不出东西。同理，资源生成走的是 seedance 直连流程，`task_id` 没回填，所以连"从 assets 反推 task"这条路也断了。
+## 一、Chat 真改图（directives 扩展）
 
-两条因果链：
+现状：`/api/chat-stream` 已能 emit `<directives>` 给 `patch / rerun`，但**没有**"对某个素材按 prompt 直接改图"的指令；用户在 chat 说"把 A03 改成雨夜"只会触发文字回复或把它当 brief patch。
 
-1. **submit() 只在内存里建 task**：`taskId = newId()` 仅写到 store，没有立刻 `upsertTaskSnapshot`。`persistCurrent` 只在 stages 跑起来时才触发；如果用户停在 intake、或走的是 seedance 直生成路径（不经过 stages），数据库永远没记录。
-2. **seedance 生成的 asset 没绑 task_id**：`seedance.functions.ts:275` 写的是 `task_id: job.video_task_id ?? null`，而 `seedance_jobs.video_task_id` 在前端提交时也基本是 null（submit 路径里没有把 store 的 `taskId` 透传给 seedance），所以 asset 全部裸挂在 user 名下。
+改动：
 
-## 修复计划
+- `chat-stream.ts` system prompt 新增第三种指令 `imageEdits`：
+  ```json
+  { "imageEdits": [
+      { "assetId": "A03", "prompt": "把整体改成雨夜，加湿润反光", "refs": ["W01","P01"] }
+  ]}
+  ```
+  规则：用户指向**具体已生成的图片 / 关键帧 / 角色卡 / 服装卡**做局部修改时使用；
+  禁止与 `rerun` 同时输出；与 `patch` 可共存。
+- `store.ts › applyAgentPatch` 增加 `imageEdits` 分支：
+  - 对每条 `imageEdits[i]`：找到对应 asset → status 置 `Generating` → 调 `editImageWithRefs({prompt, imageUrls: [原图URL, ...refs解析为URL]})` → 上传 base64 → 作为该 asset 的新版本写入（沿用 `updateAsset` 的版本机制，原版本进入 `asset.versions`）。
+  - 异常时回退 `Failed` + 不扣积分（与现有 qc 修正一致）。
+  - 完成后向 chatLog 追加一条 agent 确认消息。
+- 上下文增强：`Workspace.tsx` 在调 `/api/chat-stream` 时把当前 `assets` 的 `{id, label, caption, kind, stageId, hasUrl}` 摘要并入 `context`，让模型能正确写 `assetId`。
 
-### 1. 任务一创建就落库（最关键）
+## 二、Lovart 同款图层编辑面板
 
-`src/lib/sc/store.ts` 的 `submit()`：在 `set({ taskId: newTaskId, ... })` 之后、自动建项目之后，**立即** `await upsertTaskSnapshot(...)` 一次，写入最小骨架：
-- `taskId: newTaskId`
-- `projectId: currentProjectId`（series 流程下，等自动建项目完成后再发；oneoff 直接发 null）
-- `title: inferTaskTitle(text)`
-- `prompt: text`
-- `status: "running"`
-- `snapshot: { kind, createdAt, updatedAt, status, assets:[], stageSummaries:{}, stageSnapshots:{}, brief, script:null }`
+入口：`AssetCard` hover 工具栏新增 "编辑" 按钮（铅笔图标），点开 `LayerEditDialog`（新文件 `src/components/sc/LayerEditDialog.tsx`）。
 
-这样无论用户后续走什么路径，DB 里都已经有这一行，下次 enterProject 一定能拉到。
+弹窗布局（左图 / 右控件）：
 
-### 2. seedance 资产回绑 task_id
+```text
+┌──────────────────────┬─────────────────────┐
+│                      │  图层 (chip 多选)    │
+│   原图预览（可缩放）  │  □ 主体  □ 背景      │
+│   + 可选画笔涂抹 mask │  □ 文字  □ 光影      │
+│                      │                     │
+│                      │  参考素材 (从图库挑) │
+│                      │  [+W01] [+P01] …    │
+│                      │                     │
+│                      │  Prompt 输入框       │
+│                      │  [应用编辑]          │
+└──────────────────────┴─────────────────────┘
+```
 
-`src/lib/sc/store.ts` 调 `submitVideoTask` 的两处（约 1446 / 1742 行）：把当前 store 的 `taskId` 透传到 `submitVideoTask({ data: { ..., videoTaskId: taskId } })`。
+- MVP 不做像素级 mask 编辑（图层 chip + prompt 已能覆盖 80% 场景）；预留 `mask?: string` 字段供后续扩展。
+- 提交时调用新的 server fn `editAssetWithLayers`（`src/lib/image-edit.functions.ts` 内追加），内部沿用 `editImageWithRefs` 的 gateway 调用，但把图层 chip 拼到 prompt 头：
+  ```text
+  Edit ONLY the following layers: {主体, 光影}. Keep other layers unchanged.
+  User instruction: <prompt>
+  ```
+- 返回 base64 → `uploadBase64Image` → `useSC.addAssetVersion(assetId, url)`（如已有则复用，无则新增一个 store action：把当前 `url` 推入 `versions[]`，再把新 url 设为 `asset.url`）。
+- 编辑历史直接走现有 `AssetVersionSwitcher`，无需新组件。
 
-`src/lib/seedance.functions.ts`：`submitVideoTask` 的输入加可选 `videoTaskId`，写入 `seedance_jobs.video_task_id`。然后 `pollVideoTask` 在 `assets.insert` 处用这个值。
+## 三、上传剧本 + 真实后端解析
 
-效果：以后生成的视频会绑定到当前 task，可以反向支撑"从 assets 反推 task"的兜底路径。
+入口：
 
-### 3. enterProject 兜底再加一层：title 模糊匹配
+- `AttachMenu.tsx` 新增一行 "上传剧本（.txt / .md / .docx / .pdf）"。
+- `IntakeCard.tsx` 起步态也加一个 "我已经有剧本，直接导入" 链接，点开同一上传入口。
 
-当前 `enterProject` 只匹配 `title === proj.name`。但 `inferTaskTitle` 会截断到 ~40 字、去换行，而项目名是完整 prompt（带换行、带 `[偏好]`）。两者大概率不相等。
+流程：
 
-改成：`normalize(title) === normalize(proj.name)` 或 `proj.name.startsWith(title)` 或 `title.includes(first 20 chars of proj.name)`，任一命中即视为本项目任务。同样的规则也用在 `ActiveProjectBanner` 的过滤里。
-
-`normalize` = `.replace(/\s+/g," ").trim().slice(0, 60)`。
-
-### 4. 老项目历史回填（一次性 backfill）
-
-对当前用户已存在的 `assets` 且 `task_id IS NULL`、`projects` 表里有项目名能和 asset 的 `meta.prompt`（如果有的话）/ 创建时间窗口对上的，新建一个 `video_tasks` 行 + 把 asset 的 `task_id` 更新过去。这一步用新增的服务函数 `backfillLegacyTasksForProject({ projectId })`，在 `enterProject` 拉到 0 条远程任务时自动调用一次。
-
-匹配启发式：
-- 该用户名下 `assets.created_at` 落在项目 `[created_at, updated_at + 7d]` 区间内、且没有 task_id 的，
-- 按"同一天内连续生成的视频"分组，每组合成一个 task 行，`title = project.name`，`projectId = project.id`，`snapshot.assets` 用 `{ id, url, kind: "video", source: "seedance" }` 重建。
-
-跑完后老项目就能看到"这些历史视频"，而不是一片空白。
-
-### 5. 调试可见性
-
-`enterProject` 末尾打一条 `console.info("[enterProject] hits", { projectId, projName, remoteCount, localCount, matchedCount })`。下次用户截图，我们直接能从浏览器控制台看到哪一步断了，不用再猜。
+1. 文件先经 `uploadGenericFile` 上传到 storage（已存在）。
+2. 客户端：
+   - `.txt / .md`：直接 `await file.text()`。
+   - `.docx / .pdf`：丢给新 server fn `parseScriptFile({ url, mime })`，server 端 fetch 文件 → 抽文本：
+     - docx：`mammoth`（pure JS，Worker 兼容）。
+     - pdf：`pdf-parse` 或 `unpdf`（验证 Worker 兼容；若不行回退到 gateway 多模态：直接把 pdf URL 当 `image_url` 之一交给 gemini-2.5-pro 提取文字）。
+3. 拿到纯文本后调用新的 server fn `parseScriptText({ text, briefHint? })`：
+   - LLM=`google/gemini-2.5-flash`，沿用 `script.functions.ts` 里 `emit_script` 同一个 tool schema，**直接复用 `GeneratedScript` 结构**；system prompt 改成"从用户已写好的剧本里抽取结构，不要二次创作，shots 数量按原剧本真实分镜数（最多 12）"。
+4. 客户端：
+   - `useSC.importGeneratedScript(script)`（新 action）：写 `script` + 跳过 intake/structure 生成、直接进入 wardrobe 阶段，同时 `appendSummary('structure', '已导入用户剧本')`。
+   - 任务即时 `upsertTaskSnapshot` 落库。
 
 ## 涉及文件
 
-- `src/lib/sc/store.ts`（submit 立刻落库；seedance 调用透传 taskId；enterProject 模糊匹配 + backfill 调用 + 日志；ActiveProjectBanner 过滤同步）
-- `src/components/sc/Workspace.tsx`（ActiveProjectBanner 的过滤改成 normalize 匹配）
-- `src/lib/seedance.functions.ts`（`submitVideoTask` 接 `videoTaskId`，写入 `seedance_jobs.video_task_id`）
-- `src/lib/tasks.functions.ts`（新增 `backfillLegacyTasksForProject`）
+新增：
+- `src/components/sc/LayerEditDialog.tsx`
+- `src/lib/script-parse.functions.ts`（`parseScriptFile` + `parseScriptText`）
 
-不动 schema，不加表，不动 RLS。
+修改：
+- `src/routes/api/chat-stream.ts`（directives schema 加 `imageEdits`；上下文加 asset 摘要）
+- `src/lib/sc/store.ts`（`applyAgentPatch` 增 `imageEdits` 分支；新 action `addAssetVersion`、`importGeneratedScript`；`/api/chat-stream` 调用处把 assets 摘要塞进 context）
+- `src/lib/sc/types.ts`（`AgentDirectives` 增 `imageEdits?: {assetId, prompt, refs?}[]`）
+- `src/lib/image-edit.functions.ts`（新增 `editAssetWithLayers`）
+- `src/components/sc/AssetCard.tsx`、`AssetActions.tsx`（hover 工具栏加"编辑"按钮 → 打开 `LayerEditDialog`）
+- `src/components/sc/AttachMenu.tsx`（加"上传剧本"行）
+- `src/components/sc/IntakeCard.tsx`（加"我已经有剧本"入口）
+
+依赖：可能新增 `mammoth`、`unpdf`（按 Worker 兼容性验证后再装）。
+
+## 不做的事
+
+- 不做像素级 mask 画笔（预留字段，留作 V2）。
+- 不动 seedance / qc / wardrobe 既有链路。
+- 不改数据库 schema（图层编辑结果复用 assets 表已有的 versions 机制；剧本导入复用 video_tasks.snapshot）。

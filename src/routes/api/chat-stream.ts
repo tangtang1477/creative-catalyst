@@ -36,6 +36,14 @@ export const Route = createFileRoute("/api/chat-stream")({
               mood?: string;
               shots?: Array<{ shot: string; duration: string; scene: string }>;
             };
+            assets?: Array<{
+              id: string;
+              label?: string;
+              caption?: string;
+              kind?: "image" | "video";
+              stageId?: string;
+              hasUrl?: boolean;
+            }>;
           };
         };
         try {
@@ -64,6 +72,21 @@ export const Route = createFileRoute("/api/chat-stream")({
                 .map((s) => `${s.shot}(${s.duration}) ${s.scene}`)
                 .join("； "),
           );
+        }
+        if (ctx?.assets?.length) {
+          // 让模型能正确写 imageEdits.assetId
+          const readyAssets = ctx.assets.filter((a) => a.hasUrl).slice(0, 40);
+          if (readyAssets.length) {
+            ctxLines.push(
+              "已生成素材（可被 imageEdits 引用）：" +
+                readyAssets
+                  .map(
+                    (a) =>
+                      `${a.id}[${a.kind ?? "image"}/${a.stageId ?? "?"}]${a.caption ? " " + a.caption : a.label ? " " + a.label : ""}`,
+                  )
+                  .join("；"),
+            );
+          }
         }
 
         // ===== Preflight options 分支：让模型直接产出 JSON 问题卡 =====
@@ -203,12 +226,14 @@ export const Route = createFileRoute("/api/chat-stream")({
           "（接着直接输出给用户的最终回复，中文，简洁专业，不超过 120 字，不要 markdown 标题，不要再出现 <thinking> 标签）",
           "",
           "**指令协议（重要）**：如果用户的话**明确要求改动**当前 brief / 脚本 / 角色 / 场景（例如\"把女主换成男主\"\"场景改成雨夜地铁\"\"时长改成 30 秒\"），在回复正文之后追加一个 `<directives>...</directives>` JSON 块（不要 markdown 代码块），schema：",
-          '{"patch":{"brief":{"prompt"?:string,"adType"?:string,"format"?:string},"script":{"mood"?:string,"shots"?:[{"shot":string,"duration"?:string,"scene"?:string,"motion"?:string,"elements"?:string,"prompt"?:string}]},"characters":[{"id":string,"name"?:string,"look"?:string}],"scenes":[{"id":string,"name"?:string,"description"?:string}]},"rerun":["script"|"wardrobe"|"cast"|"paint"]}',
+          '{"patch":{"brief":{"prompt"?:string,"adType"?:string,"format"?:string},"script":{"mood"?:string,"shots"?:[{"shot":string,"duration"?:string,"scene"?:string,"motion"?:string,"elements"?:string,"prompt"?:string}]},"characters":[{"id":string,"name"?:string,"look"?:string}],"scenes":[{"id":string,"name"?:string,"description"?:string}]},"rerun":["script"|"wardrobe"|"cast"|"paint"],"imageEdits":[{"assetId":string,"prompt":string,"refs"?:string[]}]}',
           "- 只输出**真正需要改动**的字段，无须改动就**完全不要**输出 <directives> 标签。",
           "- rerun 数组只能用于「用户明确说要**重新生成 / 重画 / 重做**某阶段」的场景。",
           "- 用户说「合并/拆分/调整时长/改时长/微调/再润色/把 A0X 改成…/把 brief.format 改成 30s 9:16」这类**局部 patch**，必须**只输出 patch**，rerun **留空数组或不输出**——否则会清空用户已生成的关键帧 / 视频片段。",
           "- 不要为同一改动同时输出 brief.format 微调和 rerun:[\"script\"]。format / shots 字段微调由前端直接应用，不需要重跑 script 阶段。",
           "- 仅当用户说「重新分镜 / 整套服装重画 / 角色重做 / 关键帧重出」这种破坏性请求时，才允许出现对应 rerun。",
+          "- **imageEdits**：当用户对某张**已生成的具体图片**（关键帧 A0X / 角色 W0X / 服装 P0X / 人物 C0X）说\"把这张改成…/给它加…/换背景…/改成雨夜\"等局部改图诉求时，使用 imageEdits 而**不要**用 rerun；assetId 必须从上下文「已生成素材」列表中精确选取，禁止瞎编 id；refs 可填同列表中的其它 id（角色/道具参考），最多 4 个。",
+          "- imageEdits 与 rerun **不要同时输出**；与 patch 可以共存（例如修脚本里 A03 的 prompt 同时把现有 A03 关键帧真改图）。",
           "- JSON 之外不要任何额外字符。",
           "",
           "规则：每个 ## 小节只写 1-2 行；最终回复必须紧扣用户输入，禁止套用 YSL/巴黎/丝绒 等无关案例。",

@@ -49,6 +49,8 @@ export interface AgentDirectives {
     scenes?: Array<{ id: string; name?: string; description?: string }>;
   };
   rerun?: Array<"script" | "wardrobe" | "cast" | "paint">;
+  /** 用户对某张已生成图片说"改成…"时，由模型产出的真改图指令。 */
+  imageEdits?: Array<{ assetId: string; prompt: string; refs?: string[] }>;
 }
 
 
@@ -180,10 +182,14 @@ interface SCState {
   retryStage: (id: StageId) => void;
   retryAsset: (assetId: string) => void;
   setActiveVersion: (assetId: string, versionIndex: number) => void;
+  /** 把当前 url 推进 versions 历史，再把新 url 设为 active；用于图层编辑 / chat 真改图。 */
+  addAssetVersion: (assetId: string, newUrl: string, note?: string) => void;
   openVersionDrawer: (assetId: string) => void;
   closeVersionDrawer: () => void;
   openPreview: (assetId: string) => void;
   closePreview: () => void;
+  /** 用户上传剧本后由后端 parseScriptText 返回的结构，直接灌进 store 并跳过 structure 生成。 */
+  importGeneratedScript: (script: GeneratedScript) => void;
 
 
 
@@ -2079,12 +2085,24 @@ export const useSC = create<SCState>((set, get) => {
               })),
             }
           : undefined;
+        const ctxAssets = s.assets
+          .filter((a) => !!a.url)
+          .slice(-40)
+          .map((a) => ({
+            id: a.id,
+            label: a.label,
+            caption: a.caption,
+            kind: a.kind,
+            stageId: a.stageId,
+            hasUrl: true,
+          }));
         const payload = {
           messages: history,
           context: {
             phase: s.phase,
             brief: s.brief ?? undefined,
             script: ctxScript,
+            assets: ctxAssets.length ? ctxAssets : undefined,
           },
         };
 
@@ -2859,7 +2877,15 @@ export const useSC = create<SCState>((set, get) => {
       if (!dir || typeof dir !== "object") return;
       const patch = dir.patch ?? {};
       const rerun = Array.isArray(dir.rerun) ? dir.rerun : [];
-      if (!patch.brief && !patch.script && !patch.characters && !patch.scenes && !rerun.length) {
+      const imageEdits = Array.isArray(dir.imageEdits) ? dir.imageEdits : [];
+      if (
+        !patch.brief &&
+        !patch.script &&
+        !patch.characters &&
+        !patch.scenes &&
+        !rerun.length &&
+        !imageEdits.length
+      ) {
         return;
       }
       const changeBits: string[] = [];
@@ -2949,6 +2975,100 @@ export const useSC = create<SCState>((set, get) => {
           break;
         }
       }
+
+      // 5) imageEdits：对具体已生成图片做真改图（后端 Gemini Nano Banana）
+      if (imageEdits.length) {
+        void (async () => {
+          const { editImageWithRefs } = await import(
+            "@/lib/image-edit.functions"
+          );
+          for (const edit of imageEdits) {
+            const target = get().assets.find((a) => a.id === edit.assetId);
+            if (!target || !target.url || target.kind !== "image") {
+              const msg: ChatMsg = {
+                id: uid(),
+                role: "agent",
+                ts: Date.now(),
+                text: `跳过改图：找不到可编辑的图片 @${edit.assetId}`,
+                skill: { name: "chat-director", sub: "image-edit" },
+              };
+              set((s) => ({ chatLog: [...s.chatLog, msg] }));
+              continue;
+            }
+            const userId = get().currentUserId ?? null;
+            if (!userId) {
+              const msg: ChatMsg = {
+                id: uid(),
+                role: "agent",
+                ts: Date.now(),
+                text: "请先登录后再进行图片编辑。",
+                skill: { name: "chat-director", sub: "image-edit" },
+              };
+              set((s) => ({ chatLog: [...s.chatLog, msg] }));
+              continue;
+            }
+
+            // 收集参考图
+            const refUrls = (edit.refs ?? [])
+              .map((rid) => get().assets.find((a) => a.id === rid)?.url)
+              .filter((u): u is string => !!u && /^https?:\/\//.test(u))
+              .slice(0, 4);
+            const imageUrls = [target.url, ...refUrls].slice(0, 6);
+
+            // mark generating
+            set((s) => ({
+              assets: s.assets.map((a) =>
+                a.id === edit.assetId ? { ...a, status: "Generating" as const, errorMessage: undefined } : a,
+              ),
+            }));
+
+            try {
+              const fullPrompt =
+                `Edit the FIRST reference image while preserving its composition, framing and subject identity. ` +
+                `Subsequent images (if any) are identity / style references only.\n\n` +
+                `User instruction: ${edit.prompt}`;
+              const { b64 } = await editImageWithRefs({
+                data: { prompt: fullPrompt, imageUrls },
+              });
+              const url = await uploadBase64Image({
+                base64: b64,
+                userId,
+                taskId: get().taskId ?? undefined,
+              });
+              get().addAssetVersion(edit.assetId, url, `chat: ${edit.prompt.slice(0, 40)}`);
+              const ok: ChatMsg = {
+                id: uid(),
+                role: "agent",
+                ts: Date.now(),
+                text: `已改好 @${edit.assetId}（已保留旧版本到历史，可在卡片右下角切换）。`,
+                skill: { name: "chat-director", sub: "image-edit" },
+              };
+              set((s) => ({ chatLog: [...s.chatLog, ok] }));
+            } catch (e) {
+              console.error("[applyAgentPatch] imageEdits failed", edit, e);
+              set((s) => ({
+                assets: s.assets.map((a) =>
+                  a.id === edit.assetId
+                    ? {
+                        ...a,
+                        status: "Ready" as const,
+                        errorMessage: undefined,
+                      }
+                    : a,
+                ),
+              }));
+              const fail: ChatMsg = {
+                id: uid(),
+                role: "agent",
+                ts: Date.now(),
+                text: `改图失败 @${edit.assetId}：${(e as Error).message}（未扣积分，原图保留）`,
+                skill: { name: "chat-director", sub: "image-edit" },
+              };
+              set((s) => ({ chatLog: [...s.chatLog, fail] }));
+            }
+          }
+        })();
+      }
     },
 
     retryStage: (id) => {
@@ -3024,6 +3144,87 @@ export const useSC = create<SCState>((set, get) => {
         }),
       }));
     },
+
+    addAssetVersion: (assetId, newUrl, note) => {
+      set((s) => ({
+        assets: s.assets.map((a) => {
+          if (a.id !== assetId) return a;
+          const prevVersions = a.versions ?? [];
+          const nextVersions = a.url
+            ? [
+                ...prevVersions,
+                {
+                  url: a.url,
+                  createdAt: Date.now(),
+                  source: "manual-edit" as const,
+                  note,
+                },
+              ]
+            : prevVersions;
+          return {
+            ...a,
+            url: newUrl,
+            status: "Ready" as const,
+            errorMessage: undefined,
+            errorCode: undefined,
+            versions: nextVersions,
+          };
+        }),
+      }));
+      // 写盘
+      try {
+        const s = get();
+        const tid = s.taskId;
+        if (tid) {
+          void upsertTaskSnapshot({
+            data: {
+              taskId: tid,
+              projectId: useProjects.getState().currentProjectId ?? null,
+              title: s.taskTitle,
+              status: s.phase === "done" ? "done" : "running",
+              snapshot: {
+                assets: s.assets,
+                stageSummaries: Object.fromEntries(
+                  STAGE_ORDER.map((id) => [id, s.stages[id].summary]),
+                ),
+              } as Record<string, unknown>,
+            },
+          }).catch(() => undefined);
+        }
+      } catch { /* ignore */ }
+    },
+
+    importGeneratedScript: (script) => {
+      // 直接进入 running 阶段；structure 标 ready，跳过 LLM 生成
+      set((s) => ({
+        phase: "running" as Phase,
+        script,
+        stages: {
+          ...s.stages,
+          structure: {
+            ...s.stages.structure,
+            status: "ready" as const,
+            expanded: false,
+            summary: [
+              "已导入用户上传的剧本",
+              `情绪：${script.mood}`,
+              `镜头语言：${script.cameraLanguage}`,
+              ...script.structureSummary,
+            ],
+            thoughts: [
+              {
+                id: uid(),
+                title: "分镜方案（来自上传剧本）",
+                body: script.shots.map(
+                  (sh) => `${sh.shot} · ${sh.duration} · ${sh.motion} — ${sh.scene}（${sh.elements}）`,
+                ),
+              },
+            ],
+          },
+        },
+      }));
+    },
+
 
     openVersionDrawer: (assetId) => set({ versionDrawerAssetId: assetId }),
     closeVersionDrawer: () => set({ versionDrawerAssetId: null }),
