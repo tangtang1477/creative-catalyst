@@ -45,8 +45,8 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
           )}
         >
           <CreditRing size={30} stroke={2}>
-            <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-status-ready to-accent">
-              <span className="text-[10px] font-bold text-background">V</span>
+            <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent">
+              <span className="text-[10px] font-bold text-accent-foreground">V</span>
             </span>
           </CreditRing>
           {!collapsed && (
@@ -85,8 +85,8 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
         {/* Workspace header */}
         <div className="flex items-center gap-2.5 px-2 py-2">
           <CreditRing size={40} stroke={2.5}>
-            <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-status-ready to-accent">
-              <span className="text-[12px] font-bold text-background">V</span>
+            <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent">
+              <span className="text-[12px] font-bold text-accent-foreground">V</span>
             </span>
           </CreditRing>
           <div className="min-w-0 flex-1">
