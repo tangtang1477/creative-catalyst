@@ -174,10 +174,7 @@ export function AssetCard({
                 (!loaded || showOverlayLoader) && "scale-[1.02] opacity-80 blur-lg",
                 loaded && !showOverlayLoader && "blur-0 opacity-100",
               )}
-              style={{
-                aspectRatio: "9 / 16",
-                maxHeight: compact ? 240 : 420,
-              }}
+              style={{ aspectRatio: aspectCss, maxHeight: maxH }}
             />
             {showOverlayLoader && <GeneratingPill label={loadingLabel} />}
           </>
@@ -188,7 +185,7 @@ export function AssetCard({
               poster={asset.poster}
               controls
               className="block w-full bg-black"
-              style={{ aspectRatio: "16 / 9", maxHeight: compact ? 200 : 360 }}
+              style={{ aspectRatio: aspectCss, maxHeight: maxH }}
             />
             {asset.duration && (
               <span className="pointer-events-none absolute bottom-1.5 right-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
@@ -200,16 +197,13 @@ export function AssetCard({
         ) : showFullLoader ? (
           <GradientLoader
             label={loadingLabel}
-            aspect={asset.kind === "image" ? "9 / 16" : "16 / 9"}
-            maxHeight={compact ? (asset.kind === "image" ? 240 : 200) : asset.kind === "image" ? 420 : 360}
+            aspect={aspectCss}
+            maxHeight={maxH}
           />
         ) : (
           <div
             className="relative flex w-full flex-col items-center justify-center gap-2 overflow-hidden border border-status-failed/40 bg-[radial-gradient(ellipse_at_top,_color-mix(in_oklab,var(--status-failed)_10%,transparent)_0%,_transparent_60%)] p-4 text-center"
-            style={{
-              aspectRatio: asset.kind === "image" ? "9 / 16" : "16 / 9",
-              maxHeight: compact ? (asset.kind === "image" ? 240 : 200) : asset.kind === "image" ? 420 : 360,
-            }}
+            style={{ aspectRatio: aspectCss, maxHeight: maxH }}
           >
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-status-failed/15 text-status-failed">
               <RefreshCw className="h-4 w-4" />
