@@ -2138,7 +2138,7 @@ export const useSC = create<SCState>((set, get) => {
             } else if (ev === "directives") {
               // 由 AI 模型解析出来的"真指令"——回写 brief / script / 角色 / 场景
               try {
-                get().applyAgentPatch(data as Parameters<typeof get>[0] extends never ? unknown : unknown);
+                get().applyAgentPatch(data as AgentDirectives);
               } catch (e) {
                 console.warn("[chat-stream] applyAgentPatch failed", e);
               }
