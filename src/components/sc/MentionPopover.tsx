@@ -36,22 +36,29 @@ export function MentionPopover({ value, caret, anchorRef, onPick }: Props) {
       .filter((a) => a.status === "Ready" && a.url)
       .map((a) => ({
         key: a.id,
+        // Token inserted into textarea (short, machine-friendly).
+        insert: `@${a.id}`,
         label: `@${a.id}`,
         sub: a.caption ?? a.label,
         thumb: a.kind === "image" ? a.url : a.poster,
         kind: a.kind as "image" | "video",
       }));
-    const fromAttach = attachments.map((a) => ({
-      key: a.id,
-      label: a.ref ? `@${a.ref}` : a.name,
-      sub: a.source,
-      thumb: a.thumb,
-      kind: a.kind as "image" | "video",
-    }));
+    const fromAttach = attachments.map((a) => {
+      const friendly = a.displayName ?? a.name;
+      return {
+        key: a.id,
+        insert: friendly.replace(/\s+/g, ""), // 图片1 — no space, avoids `@` parsing snags
+        label: friendly,
+        sub: a.name,
+        thumb: a.thumb ?? (a.kind === "image" ? a.url : undefined),
+        kind: a.kind as "image" | "video",
+      };
+    });
     return [...fromAssets, ...fromAttach].filter(
       (x) => !q || x.label.toLowerCase().includes(q) || x.sub.toLowerCase().includes(q),
     );
   }, [query, assets, attachments]);
+
 
   useEffect(() => setActive(0), [query?.q]);
 
