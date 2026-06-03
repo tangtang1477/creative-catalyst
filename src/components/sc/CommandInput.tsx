@@ -239,11 +239,12 @@ function escapeRegExp(s: string): string {
 
 interface InlineRefProps {
   value: string;
-  attachments: ReturnType<typeof useSC>["attachments"];
-  assets: ReturnType<typeof useSC>["assets"];
+  attachments: import("@/lib/sc/types").Attachment[];
+  assets: import("@/lib/sc/types").Asset[];
   onRemoveAttachment: (id: string) => void;
   onStrip: (token: string) => void;
 }
+
 
 /**
  * 显示当前 prompt 中引用到的素材（@A01 资产 + 图片N/视频N/音频N 附件）的小缩略图行。
