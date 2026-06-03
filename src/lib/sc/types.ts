@@ -190,11 +190,14 @@ export interface Attachment {
   id: string;
   kind: "image" | "video" | "audio";
   name: string;
+  /** Friendly auto-numbered name like "图片 1 / 视频 2 / 音频 1". */
+  displayName?: string;
   url: string;
   thumb?: string;
   source: "upload" | "url" | "asset";
   ref?: string;
 }
+
 
 export interface StageSnapshot {
   status: StageStatus;
