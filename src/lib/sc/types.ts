@@ -175,7 +175,7 @@ export type Phase =
   | "done"
   | "failed";
 
-export type Gate = "script" | "wardrobe" | "keyframe" | "qc-fix" | null;
+export type Gate = "script" | "wardrobe" | "cast" | "keyframe" | "qc-fix" | "merge" | null;
 
 export type AutoMode = "auto" | "confirm";
 
