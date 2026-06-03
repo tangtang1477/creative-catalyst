@@ -2064,11 +2064,23 @@ export const useSC = create<SCState>((set, get) => {
     currentUserId: null,
     script: null,
     pendingScript: null,
+    hydrated: false,
 
 
     intakeSel: {},
     intakeCustoms: {},
     intakeOthers: null,
+
+    hydrateFromStorage: () => {
+      if (typeof window === "undefined") return;
+      const history = loadHistory().map((task) => normalizeTaskRecord(task));
+      set({
+        taskHistory: history,
+        viewMode: loadViewMode(),
+        autoMode: loadAutoMode(),
+        hydrated: true,
+      });
+    },
 
     setPrompt: (v) => set({ prompt: v }),
     setAutoMode: (m) => {
