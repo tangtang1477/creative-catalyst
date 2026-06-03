@@ -13,6 +13,21 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/projects/$projectId")({
   component: ProjectDetailPage,
+  errorComponent: ({ error, reset }) => {
+    console.error("[projects/detail] route error", error);
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background p-6 text-center text-foreground">
+        <div className="max-w-md space-y-3">
+          <h2 className="text-[16px] font-semibold">项目页加载失败</h2>
+          <p className="text-[12px] text-muted-foreground">{error?.message ?? "未知错误"}</p>
+          <div className="flex justify-center gap-2">
+            <button onClick={reset} className="rounded-full bg-accent px-4 py-1.5 text-[12px] text-accent-foreground">重试</button>
+            <Link to="/" className="rounded-full bg-surface-2 px-4 py-1.5 text-[12px]">返回首页</Link>
+          </div>
+        </div>
+      </div>
+    );
+  },
 });
 
 const KIND_ICON: Record<string, typeof Folder> = {
@@ -156,8 +171,18 @@ function ProjectDetailPage() {
   }, [taskHistory, project]);
 
   const handleOpenTask = (taskId: string) => {
-    restoreTask(taskId);
-    void navigate({ to: "/" });
+    try {
+      // Ensure the task is present in local taskHistory before restoring.
+      const exists = useSC.getState().taskHistory.some((t) => t.id === taskId);
+      if (!exists) {
+        console.warn("[projects/detail] open task: not in history, skip", taskId);
+        return;
+      }
+      restoreTask(taskId);
+      void navigate({ to: "/" });
+    } catch (e) {
+      console.error("[projects/detail] handleOpenTask failed", e);
+    }
   };
 
   const handleNewTask = () => {

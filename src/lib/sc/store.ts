@@ -2684,8 +2684,26 @@ export const useSC = create<SCState>((set, get) => {
     },
 
     restoreTask: (id) => {
-      const rec = get().taskHistory.find((t) => t.id === id);
-      if (!rec) return;
+      const found = get().taskHistory.find((t) => t.id === id);
+      if (!found) {
+        console.warn("[restoreTask] task not found in local history", id);
+        return;
+      }
+      // Defensive: legacy records persisted from older versions may be missing
+      // fields like assets / stageSnapshots — fill with safe defaults so the
+      // downstream render path never throws "Cannot read length of undefined".
+      const rec: TaskRecord = {
+        ...found,
+        assets: Array.isArray(found.assets) ? found.assets : [],
+        stageSummaries: found.stageSummaries ?? {},
+        stageSnapshots: found.stageSnapshots ?? {},
+        prompt: found.prompt ?? "",
+        title: found.title ?? "Untitled",
+        kind: found.kind ?? "oneoff",
+        status: found.status ?? "done",
+        brief: found.brief ?? null,
+        script: found.script ?? null,
+      };
       clearTimers();
       const stages = initialStages();
       // Prefer full snapshots (toolCalls + thoughts). Fall back to legacy
