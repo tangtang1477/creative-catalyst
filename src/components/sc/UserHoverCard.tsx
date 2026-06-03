@@ -29,6 +29,7 @@ const USER = {
 export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
   const { theme, setTheme, toggle } = useTheme();
   const openPricing = useCredits((s) => s.openPricing);
+  const creditsHydrated = useCredits((s) => s.hydrated);
   // 顶部进度条与外圈圆环同口径：账户余额 / 200，≥ 200 时 100%
   const pctRemain = useCredits(creditsSelectors.ringPercent);
   const remaining = useCredits(creditsSelectors.remaining);
@@ -106,9 +107,11 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
               <div
                 className="h-full rounded-full bg-accent transition-all duration-500"
                 style={{
-                  width: `${Math.round(pctRemain * 100)}%`,
+                  width: `${creditsHydrated ? Math.round(pctRemain * 100) : 0}%`,
                   background:
-                    remaining <= 20
+                    !creditsHydrated
+                      ? "var(--accent)"
+                      : remaining <= 20
                       ? "var(--credit-critical)"
                       : remaining <= 50
                         ? "var(--credit-low)"

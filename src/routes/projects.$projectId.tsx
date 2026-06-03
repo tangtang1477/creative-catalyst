@@ -11,6 +11,8 @@ import type { TaskRecord } from "@/lib/sc/types";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
+const EMPTY_TASKS: TaskRecord[] = [];
+
 export const Route = createFileRoute("/projects/$projectId")({
   component: ProjectDetailPage,
   errorComponent: ({ error, reset }) => {
@@ -49,6 +51,7 @@ function ProjectDetailPage() {
   const fetchProjects = useProjects((s) => s.fetchProjects);
   const setCurrentProject = useProjects((s) => s.setCurrentProject);
   const taskHistory = useSC((s) => s.taskHistory);
+  const workspaceHydrated = useSC((s) => s.hydrated);
   const restoreTask = useSC((s) => s.restoreTask);
   const reset = useSC((s) => s.reset);
 
@@ -164,11 +167,11 @@ function ProjectDetailPage() {
   }, [projectId, refreshKey]);
 
   const tasks = useMemo(() => {
-    if (!project) return [];
+    if (!project || !workspaceHydrated) return EMPTY_TASKS;
     return taskHistory
       .filter((t) => t.projectId === project.id || (!t.projectId && titleMatchesProject(t.title, project.name)))
       .sort((a, b) => b.updatedAt - a.updatedAt);
-  }, [taskHistory, project]);
+  }, [taskHistory, project, workspaceHydrated]);
 
   const handleOpenTask = (taskId: string) => {
     try {
@@ -246,7 +249,7 @@ function ProjectDetailPage() {
                         {project.name}
                       </h1>
                       <p className="mt-1 text-[12.5px] text-muted-foreground">
-                        类型：{project.kind} · 创建于 <span suppressHydrationWarning>{mounted ? new Date(project.created_at).toLocaleString("zh-CN") : ""}</span> · 共 {tasks.length} 个任务
+                        类型：{project.kind} · 创建于 <span suppressHydrationWarning>{mounted ? new Date(project.created_at).toLocaleString("zh-CN") : ""}</span> · 共 <span suppressHydrationWarning>{workspaceHydrated ? tasks.length : 0}</span> 个任务
                       </p>
                     </div>
                   </div>
