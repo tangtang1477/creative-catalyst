@@ -32,19 +32,23 @@ interface CreditsState {
 
 const KEY = "sc.credits.v1";
 
+const DEFAULT_TOTAL = 200;
+
 const load = (): { total: number; used: number; history: CreditEvent[] } => {
-  if (typeof window === "undefined") return { total: 100, used: 42, history: [] };
+  if (typeof window === "undefined") return { total: DEFAULT_TOTAL, used: 0, history: [] };
   try {
     const raw = window.localStorage.getItem(KEY);
-    if (!raw) return { total: 100, used: 42, history: [] };
+    if (!raw) return { total: DEFAULT_TOTAL, used: 0, history: [] };
     const j = JSON.parse(raw);
+    // Migration: legacy mock data had total=100/used=42. Force-upgrade to 200.
+    const total = (j.total ?? 0) < DEFAULT_TOTAL ? DEFAULT_TOTAL : j.total;
     return {
-      total: j.total ?? 100,
-      used: Math.min(j.used ?? 0, j.total ?? 100),
+      total,
+      used: Math.min(j.used ?? 0, total),
       history: Array.isArray(j.history) ? j.history.slice(-20) : [],
     };
   } catch {
-    return { total: 100, used: 42, history: [] };
+    return { total: DEFAULT_TOTAL, used: 0, history: [] };
   }
 };
 
@@ -74,8 +78,8 @@ function notifyConsume(stage: string, cost: number, remaining: number) {
   if (!existing) toastBuffer.set(stage, entry);
   entry.timer = setTimeout(() => {
     toastBuffer.delete(stage);
-    toast(`本次消耗 ${entry.cost} 积分`, {
-      description: `阶段 · ${stage}（剩余 ${Math.max(0, remaining)}）`,
+    toast(`本次消耗 ${entry.cost} 积分 · 剩余 ${Math.max(0, remaining)} 积分`, {
+      description: `阶段 · ${stage}`,
       duration: 2500,
     });
   }, 350);

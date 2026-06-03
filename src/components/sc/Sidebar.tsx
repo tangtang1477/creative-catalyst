@@ -211,10 +211,7 @@ export function Sidebar() {
               onClick={() => setProjectsOpen((v) => !v)}
               className="flex w-full items-center justify-between gap-2 px-2 pb-1 pt-2 text-[11px] font-medium text-muted-foreground hover:text-foreground"
             >
-              <span className="flex items-center gap-1.5">
-                <FolderPlus className="h-3.5 w-3.5" />
-                我的项目
-              </span>
+              <span>我的项目</span>
               <ChevronDown
                 className={cn(
                   "h-3 w-3 transition-transform duration-200",

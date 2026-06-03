@@ -211,5 +211,7 @@ export interface TaskRecord {
   /** Final failure reason (life stage error, if any). */
   failureReason?: string;
   brief?: Brief | null;
+  /** Project this task belongs to (set when task was started under a project). */
+  projectId?: string | null;
 }
 
