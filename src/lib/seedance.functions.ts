@@ -67,6 +67,49 @@ interface SeedanceEnvelope<T = unknown> {
   data?: T;
 }
 
+/**
+ * 将 Seedance / 上游 doubao 的错误码/消息归类为前端可识别的简短 code + 中文文案。
+ * 返回 `{ code, message }`：
+ * - `policy_real_person`: 参考图疑似真人
+ * - `policy_violation`: 提示词/参考违规
+ * - `quota_exceeded`: 上游配额/限流
+ * - `submit_failed`: 其他不可分类失败
+ */
+export function classifySeedanceError(raw: string | undefined | null): {
+  code: "policy_real_person" | "policy_violation" | "quota_exceeded" | "submit_failed";
+  message: string;
+  upstream: string;
+} {
+  const upstream = (raw ?? "").toString();
+  const lower = upstream.toLowerCase();
+  if (/inputimagesensitivecontentdetected|realperson|privacyinformation|real person/i.test(upstream)) {
+    return {
+      code: "policy_real_person",
+      message: "参考图疑似包含真实人物，已自动降级重试",
+      upstream,
+    };
+  }
+  if (/policyviolation|sensitivecontent|sensitive_content|content_policy|risk/i.test(lower)) {
+    return {
+      code: "policy_violation",
+      message: "提示词或参考图触发上游安全审核，请调整后重试",
+      upstream,
+    };
+  }
+  if (/quota|rate.?limit|limitexceeded|too many/i.test(lower)) {
+    return {
+      code: "quota_exceeded",
+      message: "上游配额已用尽或被限流，请稍后再试",
+      upstream,
+    };
+  }
+  return {
+    code: "submit_failed",
+    message: "视频生成失败，请稍后重试",
+    upstream,
+  };
+}
+
 async function callSeedance<T = unknown>(
   path: string,
   body: unknown,
