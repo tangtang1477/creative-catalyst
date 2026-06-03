@@ -1333,75 +1333,99 @@ export const useSC = create<SCState>((set, get) => {
         updateAsset(sa.id, { status: "Processing" });
         appendSummary("life", `提交 ${sa.id} · ${shot?.shot ?? "—"} · ${dur}s`);
 
-        try {
-          const refs = [...wardrobeRefs, keyUrl].slice(0, 6);
-          const { taskId: seedanceTaskId } = await submitVideoTask({
-            data: {
-              route: "reference-image-to-video",
-              payload: {
-                prompt: segPrompt,
-                image_urls: refs,
-                ratio: videoRatio,
-                duration: dur,
-              } as unknown as { prompt: string },
-            },
-          });
-          if (get().runId !== startedRunId) return false;
-          appendSummary("life", `${sa.id} Seedance task: ${seedanceTaskId}`);
+        const trySubmit = async (
+          mode: "refs" | "text-only",
+        ): Promise<{ ok: true; ossUrl: string } | { ok: false; code: string; message: string }> => {
+          try {
+            const submitArgs =
+              mode === "refs"
+                ? {
+                    route: "reference-image-to-video" as const,
+                    payload: {
+                      prompt: segPrompt,
+                      image_urls: [...wardrobeRefs, keyUrl].slice(0, 6),
+                      ratio: videoRatio,
+                      duration: dur,
+                    } as unknown as { prompt: string },
+                  }
+                : {
+                    route: "text-to-video" as const,
+                    payload: {
+                      prompt: `${segPrompt}\n(无真人参考，请按描述生成)`,
+                      ratio: videoRatio,
+                      duration: dur,
+                    } as unknown as { prompt: string },
+                  };
+            const { taskId: seedanceTaskId } = await submitVideoTask({ data: submitArgs });
+            if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
+            appendSummary("life", `${sa.id} Seedance task: ${seedanceTaskId}${mode === "text-only" ? "（已降级为纯文本）" : ""}`);
 
-          // Poll
-          const started = Date.now();
-          while (true) {
-            if (get().runId !== startedRunId) return false;
-            await new Promise((r) => setTimeout(r, 3000));
-            let r;
-            try {
-              r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
-            } catch (e) {
-              console.error(`[life] ${sa.id} poll error`, e);
-              continue;
+            const started = Date.now();
+            while (true) {
+              if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
+              await new Promise((r) => setTimeout(r, 3000));
+              let r;
+              try {
+                r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
+              } catch (e) {
+                console.error(`[life] ${sa.id} poll error`, e);
+                continue;
+              }
+              if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
+              if (r.status === "success" && r.ossUrl) {
+                return { ok: true, ossUrl: r.ossUrl };
+              }
+              if (r.status === "failed") {
+                return {
+                  ok: false,
+                  code: r.errorCode ?? "seedance_failed",
+                  message: r.errorMessage ?? "Seedance 渲染失败",
+                };
+              }
+              if (Date.now() - started > 5 * 60_000) {
+                return { ok: false, code: "timeout", message: "Seedance 轮询超时（5min）" };
+              }
+              updateAsset(sa.id, { status: "Processing" });
             }
-            if (get().runId !== startedRunId) return false;
-            if (r.status === "success" && r.ossUrl) {
-              updateAsset(sa.id, {
-                status: "Ready",
-                url: r.ossUrl,
-                poster: keyUrl,
-              });
-              consume("life", `Video ${sa.id} · seedance`, VIDEO_COST_PER_SEG, get().taskId);
-              appendSummary("life", `${sa.id} Ready`);
-              return true;
+          } catch (e) {
+            const raw = (e as Error).message ?? "";
+            // 解析 submitVideoTask 抛出的前缀 `[code] msg :: upstream`
+            const m = raw.match(/^\[(policy_real_person|policy_violation|quota_exceeded|submit_failed)\]\s*([^:]+)/);
+            if (m) {
+              return { ok: false, code: m[1], message: m[2].trim() };
             }
-            if (r.status === "failed") {
-              updateAsset(sa.id, {
-                status: "Failed",
-                errorMessage: "Seedance 渲染失败",
-                errorCode: "seedance_failed",
-              });
-              appendSummary("life", `${sa.id} 渲染失败（未扣积分）`);
-              return false;
-            }
-            if (Date.now() - started > 5 * 60_000) {
-              updateAsset(sa.id, {
-                status: "Failed",
-                errorMessage: "Seedance 轮询超时（5min）",
-                errorCode: "timeout",
-              });
-              appendSummary("life", `${sa.id} 轮询超时（未扣积分）`);
-              return false;
-            }
-            updateAsset(sa.id, { status: "Processing" });
+            return { ok: false, code: "submit_failed", message: raw };
           }
-        } catch (e) {
-          console.error(`[life] ${sa.id} submit failed`, e);
-          updateAsset(sa.id, {
-            status: "Failed",
-            errorMessage: (e as Error).message,
-            errorCode: "submit_failed",
-          });
-          appendSummary("life", `${sa.id} 提交失败：${(e as Error).message}（未扣积分）`);
-          return false;
+        };
+
+        // 第一次：带参考图
+        let r = await trySubmit("refs");
+        // 真人/违规自动降级一次：剔除人物参考改 text-to-video
+        if (!r.ok && (r.code === "policy_real_person" || r.code === "policy_violation")) {
+          appendSummary("life", `${sa.id} 触发上游安全审核，自动降级为纯文本重试…`);
+          updateAsset(sa.id, { status: "Processing", errorMessage: r.message, errorCode: r.code });
+          r = await trySubmit("text-only");
         }
+        if (r.ok) {
+          updateAsset(sa.id, {
+            status: "Ready",
+            url: r.ossUrl,
+            poster: keyUrl,
+            errorMessage: undefined,
+            errorCode: undefined,
+          });
+          consume("life", `Video ${sa.id} · seedance`, VIDEO_COST_PER_SEG, get().taskId);
+          appendSummary("life", `${sa.id} Ready`);
+          return true;
+        }
+        if (r.code === "cancelled") return false;
+        updateAsset(sa.id, {
+          status: "Failed",
+          errorMessage: r.message,
+          errorCode: r.code,
+        });
+        appendSummary("life", `${sa.id} 失败：${r.message}（未扣积分）`);
+        return false;
       });
 
       const results = await Promise.all(tasks);
