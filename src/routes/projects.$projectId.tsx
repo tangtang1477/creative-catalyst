@@ -250,7 +250,7 @@ function ProjectDetailPage() {
                       {tasks.map((t) => {
                         const imageCount = (t.assets ?? []).filter((a) => a.kind === "image").length;
                         const videoCount = (t.assets ?? []).filter((a) => a.kind === "video").length;
-                        const date = new Date(t.updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+                        const date = mounted ? new Date(t.updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
                         const statusLabel =
                           t.status === "done" ? "已完成"
                             : t.status === "failed" ? "失败"
