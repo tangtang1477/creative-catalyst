@@ -1,100 +1,84 @@
-## 目标
+# 三处修复
 
-1. Chatbox 里说"把这张图改成 X / 加点雨 / 换背景"必须真正调后端改图，结果落到该 asset 的新版本里。
-2. 在 AssetCard 上加一个 Lovart 同款的"图层编辑"入口（弹窗形式），可以挑选图层 / 圈选区域 + 写 prompt 真改图。
-3. 支持上传剧本文件（txt / md / docx / pdf）并解析成现有 `GeneratedScript` 结构，直接进入 structure 阶段；流程全部走真实后端。
+## 一、历史项目恢复时信息展示不全
+
+### 现状
+图 1 中右侧 Assets 已经成功拉回 S01/S02/S03 三个视频，但中间区域只剩一张 `Selected Brief · RESTORED` 卡，所有字段都是 "—"，且没有任何 prompt / 分镜 / 阶段摘要 / 聊天记录。
+
+原因：
+1. `backfillLegacyTasksForProject` 合成快照时写死 `brief: null / script: null / stageSummaries: {} / stageSnapshots: {}`，只塞了 assets。
+2. `restoreTask` 在 `rec.brief` 为空时回填了一个占位 brief（`adType: "Restored"`, format/visual/mode 全是 "—"），Workspace 又只要 `brief.adType` 非空就强制渲染那张「Selected Brief」卡。
+3. 中间区域没有兜底叙事，所以"历史归档/已生成 N 个镜头"这种信息完全没出现。
+
+### 修复方案
+
+**A. 让回填能带回更多真实信息**（`src/lib/tasks.functions.ts` 中的 `backfillLegacyTasksForProject`）
+- assets select 增加 `prompt, label, caption, poster` 等字段（meta 里有则一并读出）。
+- 取该组 assets 中第一条非空的 `prompt / meta.prompt / meta.scene_prompt` 作为 `snapshot.brief.prompt`，没有则用 `project.name`。
+- 写入 `snapshot.brief`：`{ prompt, adType: project.kind === "series" ? "Series" : "One-off", format: "—", visualSource: "—", mode: "Restored" }`，但加上 `legacyBackfill: true` 标记。
+- 合成 `snapshot.script`：把每个 asset 转成一条 shot（`{shot:'A01', duration:'—', scene: a.meta?.scene ?? '', prompt: a.prompt ?? '', motion:'—', elements:'—'}`），数量同 assets。
+- 合成 `snapshot.stageSummaries.life`：一行 "已从历史素材恢复 N 个镜头"；并补一行 "项目类型：{kind} · 创建于 {date}"。
+- 给 `snapshot.assets` 每条加上 `prompt / caption / poster`（如果库里有）。
+
+**B. 让 restoreTask 显示真实快照而不是占位**（`src/lib/sc/store.ts`）
+- 删除把 brief 兜底为 `adType: "Restored", format/visual/mode: "—"` 的逻辑：当 `rec.brief` 不存在时，brief 设为 `{ prompt: rec.prompt || rec.title, adType: "", ... }`（adType 为空 → Workspace 不会渲染那张 "—" 卡）。
+- 恢复后向 `chatLog` 追加一条 agent 提示："已从历史归档恢复 {assets.length} 个素材 · 项目 {projectName}。可以基于这些镜头继续生成下一集，或在右侧画廊里复用。"（含 "继续生成下一集 / 重新整理剧本" 两个 action chip，复用现有 action 机制）。
+- 同时把 `script` 真实塞回去，使 ScriptTable 可见。
+
+**C. Workspace 渲染兜底**（`src/components/sc/Workspace.tsx`）
+- "Selected Brief" 卡的条件改为：仅当 `brief.adType && brief.format !== "—"` 才渲染那张四行卡；对 legacyBackfill / 无 brief 的任务改为渲染一张"项目快照"卡（显示：项目名、创建时间、镜头数 N、最后更新时间），样式沿用现有 surface 卡。
+
+完成后图 1 应该能看到：项目快照卡 + script 表 + 阶段摘要（"已从历史素材恢复 3 个镜头"）+ 一条恢复提示对话。
 
 ---
 
-## 一、Chat 真改图（directives 扩展）
+## 二、AttachMenu 重新组织（`src/components/sc/AttachMenu.tsx`）
 
-现状：`/api/chat-stream` 已能 emit `<directives>` 给 `patch / rerun`，但**没有**"对某个素材按 prompt 直接改图"的指令；用户在 chat 说"把 A03 改成雨夜"只会触发文字回复或把它当 brief patch。
-
-改动：
-
-- `chat-stream.ts` system prompt 新增第三种指令 `imageEdits`：
-  ```json
-  { "imageEdits": [
-      { "assetId": "A03", "prompt": "把整体改成雨夜，加湿润反光", "refs": ["W01","P01"] }
-  ]}
-  ```
-  规则：用户指向**具体已生成的图片 / 关键帧 / 角色卡 / 服装卡**做局部修改时使用；
-  禁止与 `rerun` 同时输出；与 `patch` 可共存。
-- `store.ts › applyAgentPatch` 增加 `imageEdits` 分支：
-  - 对每条 `imageEdits[i]`：找到对应 asset → status 置 `Generating` → 调 `editImageWithRefs({prompt, imageUrls: [原图URL, ...refs解析为URL]})` → 上传 base64 → 作为该 asset 的新版本写入（沿用 `updateAsset` 的版本机制，原版本进入 `asset.versions`）。
-  - 异常时回退 `Failed` + 不扣积分（与现有 qc 修正一致）。
-  - 完成后向 chatLog 追加一条 agent 确认消息。
-- 上下文增强：`Workspace.tsx` 在调 `/api/chat-stream` 时把当前 `assets` 的 `{id, label, caption, kind, stageId, hasUrl}` 摘要并入 `context`，让模型能正确写 `assetId`。
-
-## 二、Lovart 同款图层编辑面板
-
-入口：`AssetCard` hover 工具栏新增 "编辑" 按钮（铅笔图标），点开 `LayerEditDialog`（新文件 `src/components/sc/LayerEditDialog.tsx`）。
-
-弹窗布局（左图 / 右控件）：
-
-```text
-┌──────────────────────┬─────────────────────┐
-│                      │  图层 (chip 多选)    │
-│   原图预览（可缩放）  │  □ 主体  □ 背景      │
-│   + 可选画笔涂抹 mask │  □ 文字  □ 光影      │
-│                      │                     │
-│                      │  参考素材 (从图库挑) │
-│                      │  [+W01] [+P01] …    │
-│                      │                     │
-│                      │  Prompt 输入框       │
-│                      │  [应用编辑]          │
-└──────────────────────┴─────────────────────┘
+### 当前结构
+```
+上传文件 · 图片/视频/音频
+上传剧本 · .txt/.md/.docx     ← 把单文件入口和它的快捷分类切开了
+[ 图片 ][ 视频 ][ 音频 ]
+粘贴 URL
 ```
 
-- MVP 不做像素级 mask 编辑（图层 chip + prompt 已能覆盖 80% 场景）；预留 `mask?: string` 字段供后续扩展。
-- 提交时调用新的 server fn `editAssetWithLayers`（`src/lib/image-edit.functions.ts` 内追加），内部沿用 `editImageWithRefs` 的 gateway 调用，但把图层 chip 拼到 prompt 头：
-  ```text
-  Edit ONLY the following layers: {主体, 光影}. Keep other layers unchanged.
-  User instruction: <prompt>
-  ```
-- 返回 base64 → `uploadBase64Image` → `useSC.addAssetVersion(assetId, url)`（如已有则复用，无则新增一个 store action：把当前 `url` 推入 `versions[]`，再把新 url 设为 `asset.url`）。
-- 编辑历史直接走现有 `AssetVersionSwitcher`，无需新组件。
+### 调整后
+```
+── 媒体 ───────────────────
+上传文件 · 图片/视频/音频
+[ 图片 ][ 视频 ][ 音频 ]
+粘贴 URL
+── 剧本 ───────────────────
+上传剧本 · .txt / .md / .docx / .pdf
+```
+- 用一条 `border-t border-border/60` 分隔，并各加 11px 的 section label（`媒体` / `剧本`）。
+- "上传剧本" 移到分隔线下面，避免它把"上传文件"和下方的图片/视频/音频快捷按钮割裂。
 
-## 三、上传剧本 + 真实后端解析
+---
 
-入口：
+## 三、剧本上传支持 PDF
 
-- `AttachMenu.tsx` 新增一行 "上传剧本（.txt / .md / .docx / .pdf）"。
-- `IntakeCard.tsx` 起步态也加一个 "我已经有剧本，直接导入" 链接，点开同一上传入口。
+### 后端：新增 `extractPdfText` server function（`src/lib/script-parse.functions.ts`）
+- 用 `unpdf`（Worker 兼容、内嵌 WASM、TanStack Start 上可用）解析。
+- 入参：`{ base64: string }`（≤ 10 MB）。
+- 输出：`{ text: string }`（拼接所有页文本，trim，截断到 60k 字符）。
+- 若 unpdf 抽到的文本为空（扫描件无内嵌文本层），回退调用 Lovable AI Gateway 的 `google/gemini-2.5-pro` 走 multimodal 把 PDF 当图像 OCR（PDF base64 + 系统提示"提取剧本文本，保留对白与场景描写"）。
 
-流程：
+### 前端（`AttachMenu.tsx`）
+- script `<input accept>` 追加 `.pdf,application/pdf`。
+- 文案改为 `上传剧本 · .txt / .md / .docx / .pdf`。
+- `onScriptFile` 分支：`name.endsWith(".pdf")` → `file.arrayBuffer()` → base64 → `extractPdfText({data:{base64}})` → 拿到 `text` 后走原有 `parseScriptText` 流程。
+- 增加 20 MB 大小校验和友好 toast。
 
-1. 文件先经 `uploadGenericFile` 上传到 storage（已存在）。
-2. 客户端：
-   - `.txt / .md`：直接 `await file.text()`。
-   - `.docx / .pdf`：丢给新 server fn `parseScriptFile({ url, mime })`，server 端 fetch 文件 → 抽文本：
-     - docx：`mammoth`（pure JS，Worker 兼容）。
-     - pdf：`pdf-parse` 或 `unpdf`（验证 Worker 兼容；若不行回退到 gateway 多模态：直接把 pdf URL 当 `image_url` 之一交给 gemini-2.5-pro 提取文字）。
-3. 拿到纯文本后调用新的 server fn `parseScriptText({ text, briefHint? })`：
-   - LLM=`google/gemini-2.5-flash`，沿用 `script.functions.ts` 里 `emit_script` 同一个 tool schema，**直接复用 `GeneratedScript` 结构**；system prompt 改成"从用户已写好的剧本里抽取结构，不要二次创作，shots 数量按原剧本真实分镜数（最多 12）"。
-4. 客户端：
-   - `useSC.importGeneratedScript(script)`（新 action）：写 `script` + 跳过 intake/structure 生成、直接进入 wardrobe 阶段，同时 `appendSummary('structure', '已导入用户剧本')`。
-   - 任务即时 `upsertTaskSnapshot` 落库。
+### 依赖
+- 安装 `unpdf`（纯 ESM，Cloudflare Workers 已验证可用）。无需 pdfjs/canvas/native binary。
 
-## 涉及文件
+---
 
-新增：
-- `src/components/sc/LayerEditDialog.tsx`
-- `src/lib/script-parse.functions.ts`（`parseScriptFile` + `parseScriptText`）
-
-修改：
-- `src/routes/api/chat-stream.ts`（directives schema 加 `imageEdits`；上下文加 asset 摘要）
-- `src/lib/sc/store.ts`（`applyAgentPatch` 增 `imageEdits` 分支；新 action `addAssetVersion`、`importGeneratedScript`；`/api/chat-stream` 调用处把 assets 摘要塞进 context）
-- `src/lib/sc/types.ts`（`AgentDirectives` 增 `imageEdits?: {assetId, prompt, refs?}[]`）
-- `src/lib/image-edit.functions.ts`（新增 `editAssetWithLayers`）
-- `src/components/sc/AssetCard.tsx`、`AssetActions.tsx`（hover 工具栏加"编辑"按钮 → 打开 `LayerEditDialog`）
-- `src/components/sc/AttachMenu.tsx`（加"上传剧本"行）
-- `src/components/sc/IntakeCard.tsx`（加"我已经有剧本"入口）
-
-依赖：可能新增 `mammoth`、`unpdf`（按 Worker 兼容性验证后再装）。
-
-## 不做的事
-
-- 不做像素级 mask 画笔（预留字段，留作 V2）。
-- 不动 seedance / qc / wardrobe 既有链路。
-- 不改数据库 schema（图层编辑结果复用 assets 表已有的 versions 机制；剧本导入复用 video_tasks.snapshot）。
+## 技术细节速查
+- `tasks.functions.ts`：扩展 select 列、生成 brief/script/stageSummaries，不改 RLS、不改表结构。
+- `store.ts` `restoreTask`：去掉 "Restored" 占位 brief；插入恢复对话；保持 set() 结构。
+- `Workspace.tsx`：拆分 "Selected Brief"（完整 brief）与 "项目快照"（legacy/无 brief）两种卡片渲染。
+- `AttachMenu.tsx`：仅调整布局 + accept；不动 onFiles 主链。
+- `script-parse.functions.ts`：新增 `extractPdfText`，复用现有 `parseScriptText`。
+- 不动 Supabase schema、不动 client.ts。

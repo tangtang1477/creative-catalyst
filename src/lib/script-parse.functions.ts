@@ -2,6 +2,79 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { GeneratedScript } from "@/lib/script.functions";
 
+/**
+ * 服务端 PDF 文本抽取：用 unpdf（Worker 兼容、内嵌 WASM）。
+ * 若抽到空字符串（扫描件 / 仅图像 PDF），回退用 Lovable AI Gateway 的
+ * Gemini multimodal 把整份 PDF 当成图像 OCR。
+ */
+const PdfInput = z.object({
+  base64: z.string().min(1).max(28_000_000), // ~20MB binary
+});
+
+export const extractPdfText = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => PdfInput.parse(input))
+  .handler(async ({ data }): Promise<{ text: string }> => {
+    const bin = Uint8Array.from(atob(data.base64), (c) => c.charCodeAt(0));
+
+    let text = "";
+    try {
+      const { extractText, getDocumentProxy } = await import("unpdf");
+      const pdf = await getDocumentProxy(bin);
+      const res = await extractText(pdf, { mergePages: true });
+      text = Array.isArray(res.text) ? res.text.join("\n") : (res.text ?? "");
+      text = text.trim();
+    } catch (e) {
+      console.warn("[extractPdfText] unpdf failed", e);
+    }
+
+    if (text.length > 20) {
+      return { text: text.slice(0, 60_000) };
+    }
+
+    // 回退：multimodal OCR
+    const key = process.env.LOVABLE_API_KEY;
+    if (!key) throw new Error("PDF 未含可抽取文本，且 LOVABLE_API_KEY 未配置，无法 OCR");
+
+    const res = await fetch(
+      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-pro",
+          messages: [
+            {
+              role: "system",
+              content:
+                "你是一名 OCR 助手。下面是一份剧本 PDF。请把全部正文文字按阅读顺序输出为纯文本，保留对白、场景描写与分段；不要二次创作。",
+            },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "请提取这份 PDF 的剧本文字。" },
+                {
+                  type: "image_url",
+                  image_url: { url: `data:application/pdf;base64,${data.base64}` },
+                },
+              ],
+            },
+          ],
+        }),
+      },
+    );
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(`OCR 回退失败 ${res.status}: ${t.slice(0, 200)}`);
+    }
+    const json = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const ocr = (json.choices?.[0]?.message?.content ?? "").trim();
+    if (!ocr) throw new Error("PDF 内容为空，未能提取到文本");
+    return { text: ocr.slice(0, 60_000) };
+  });
+
+
 const ParseInput = z.object({
   text: z.string().min(1).max(60000),
   briefHint: z.string().max(2000).optional(),

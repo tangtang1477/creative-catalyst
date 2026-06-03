@@ -112,7 +112,7 @@ export const backfillLegacyTasksForProject = createServerFn({ method: "POST" })
 
     const { data: assets, error: aErr } = await supabase
       .from("assets")
-      .select("id, url, kind, source, stage, created_at, meta")
+      .select("id, url, kind, source, stage, label, caption, created_at, meta, parent_asset_id, version")
       .eq("user_id", userId)
       .is("task_id", null)
       .gte("created_at", new Date(startMs).toISOString())
@@ -131,6 +131,18 @@ export const backfillLegacyTasksForProject = createServerFn({ method: "POST" })
       else last.push(a);
     }
 
+    const pickPrompt = (m: unknown): string => {
+      const meta = (m ?? {}) as Record<string, unknown>;
+      const cands = [meta.prompt, meta.scene_prompt, meta.user_prompt, meta.text];
+      for (const c of cands) if (typeof c === "string" && c.trim()) return c.trim();
+      return "";
+    };
+    const pickPoster = (m: unknown): string | undefined => {
+      const meta = (m ?? {}) as Record<string, unknown>;
+      const p = meta.poster ?? meta.thumbnail ?? meta.cover;
+      return typeof p === "string" ? p : undefined;
+    };
+
     let created = 0;
     let attached = 0;
     for (const g of groups) {
@@ -143,9 +155,42 @@ export const backfillLegacyTasksForProject = createServerFn({ method: "POST" })
         source: a.source ?? "seedance",
         stage: a.stage ?? "life",
         status: "Ready",
-        version: 1,
-        label: `S${String(i + 1).padStart(2, "0")}`,
+        version: a.version ?? 1,
+        label: a.label ?? `S${String(i + 1).padStart(2, "0")}`,
+        caption: a.caption ?? undefined,
+        poster: pickPoster(a.meta),
+        prompt: pickPrompt(a.meta) || undefined,
       }));
+
+      let firstPrompt = "";
+      for (const a of g) {
+        const p = pickPrompt(a.meta);
+        if (p) { firstPrompt = p; break; }
+      }
+      const briefPrompt = firstPrompt || project.name;
+
+      const synthScript = {
+        mood: "—",
+        cameraLanguage: "—",
+        structureSummary: [`从历史素材恢复 ${g.length} 个镜头`],
+        wardrobe: [],
+        shots: g.map((a, i) => ({
+          shot: `A${String(i + 1).padStart(2, "0")}`,
+          duration: "—",
+          motion: "—",
+          scene: ((a.meta as Record<string, unknown> | null)?.scene as string | undefined) ?? "—",
+          elements: "—",
+          prompt: pickPrompt(a.meta) || "—",
+        })),
+      };
+
+      const createdDate = new Date(firstTs).toLocaleDateString("zh-CN");
+      const stageSummaries: Record<string, string[]> = {
+        life: [
+          `已从历史素材恢复 ${g.length} 个镜头 · 项目「${project.name}」`,
+          `项目类型：${project.kind} · 首次创建：${createdDate}`,
+        ],
+      };
 
       const snapshot = {
         kind: project.kind === "series" ? "series" : "oneoff",
@@ -153,12 +198,20 @@ export const backfillLegacyTasksForProject = createServerFn({ method: "POST" })
         updatedAt: lastTs,
         status: "done",
         assets: snapshotAssets,
-        stageSummaries: {},
+        stageSummaries,
         stageSnapshots: {},
-        brief: null,
-        script: null,
+        brief: {
+          prompt: briefPrompt,
+          adType: project.kind === "series" ? "Series" : "One-off",
+          format: "—",
+          visualSource: "—",
+          mode: "Restored",
+        },
+        script: synthScript,
         failureReason: null,
         legacyBackfill: true,
+        projectName: project.name,
+        shotCount: g.length,
       };
 
       const { data: row, error: insErr } = await supabase
@@ -167,7 +220,7 @@ export const backfillLegacyTasksForProject = createServerFn({ method: "POST" })
           user_id: userId,
           project_id: project.id,
           title: project.name,
-          prompt: "",
+          prompt: briefPrompt,
           status: "completed",
           kind: project.kind === "series" ? "series" : "oneoff",
           snapshot: snapshot as unknown as never,

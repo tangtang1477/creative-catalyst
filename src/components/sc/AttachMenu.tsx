@@ -58,6 +58,10 @@ export function AttachMenu({ children, disabled }: { children: ReactNode; disabl
     try {
       let text = "";
       const name = file.name.toLowerCase();
+      if (file.size > 20 * 1024 * 1024) {
+        toast.error("剧本文件不能超过 20 MB");
+        return;
+      }
       if (name.endsWith(".docx")) {
         const mammothMod = (await import("mammoth/mammoth.browser")) as unknown as {
           extractRawText: (opts: { arrayBuffer: ArrayBuffer }) => Promise<{ value: string }>;
@@ -65,10 +69,19 @@ export function AttachMenu({ children, disabled }: { children: ReactNode; disabl
         const arrayBuffer = await file.arrayBuffer();
         const res = await mammothMod.extractRawText({ arrayBuffer });
         text = res.value ?? "";
+      } else if (name.endsWith(".pdf") || file.type === "application/pdf") {
+        const { extractPdfText } = await import("@/lib/script-parse.functions");
+        const buf = new Uint8Array(await file.arrayBuffer());
+        let bin = "";
+        for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+        const base64 = btoa(bin);
+        toast("正在提取 PDF 文本…");
+        const res = await extractPdfText({ data: { base64 } });
+        text = res.text ?? "";
       } else if (name.endsWith(".txt") || name.endsWith(".md") || file.type.startsWith("text")) {
         text = await file.text();
       } else {
-        toast.error("暂只支持 .txt / .md / .docx 剧本上传；.pdf 请先转换为文本");
+        toast.error("暂只支持 .txt / .md / .docx / .pdf 剧本上传");
         return;
       }
       const trimmed = text.trim();
@@ -211,19 +224,16 @@ export function AttachMenu({ children, disabled }: { children: ReactNode; disabl
         <input
           ref={scriptRef}
           type="file"
-          accept=".txt,.md,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          accept=".txt,.md,.docx,.pdf,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           className="hidden"
           onChange={(e) => onScriptFile(e.target.files)}
         />
+
+        <div className="px-2.5 pb-1 pt-0.5 text-[10.5px] uppercase tracking-wide text-muted-foreground">媒体</div>
         <Row
           icon={<Upload className="h-3.5 w-3.5" />}
           label="上传文件 · 图片/视频/音频"
           onClick={() => triggerFile("any")}
-        />
-        <Row
-          icon={scriptBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-          label={scriptBusy ? "正在解析剧本…" : "上传剧本 · .txt / .md / .docx"}
-          onClick={scriptBusy ? undefined : triggerScript}
         />
 
         <div className="grid grid-cols-3 gap-1 px-1.5 pt-1">
@@ -263,6 +273,15 @@ export function AttachMenu({ children, disabled }: { children: ReactNode; disabl
             onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), onUrl())}
             placeholder="粘贴图片/视频/音频 URL"
             className="min-w-0 flex-1 rounded-lg bg-surface-2 px-2 py-1.5 text-[12px] text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+        </div>
+
+        <div className="mt-1.5 border-t border-border/60 pt-1">
+          <div className="px-2.5 pb-1 pt-0.5 text-[10.5px] uppercase tracking-wide text-muted-foreground">剧本</div>
+          <Row
+            icon={scriptBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+            label={scriptBusy ? "正在解析剧本…" : "上传剧本 · .txt / .md / .docx / .pdf"}
+            onClick={scriptBusy ? undefined : triggerScript}
           />
         </div>
 

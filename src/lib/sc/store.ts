@@ -2681,14 +2681,24 @@ export const useSC = create<SCState>((set, get) => {
           if (rec.status === "failed" && sid === "life" && !failedStageId) failedStageId = sid;
         }
       }
-      const restoredBrief: Brief = rec.brief ?? {
-        prompt: rec.prompt,
-        adType: "Restored",
+      const hasRealBrief = !!rec.brief && !!(rec.brief as Brief).adType;
+      const restoredBrief: Brief = (rec.brief as Brief | undefined) ?? {
+        prompt: rec.prompt || rec.title || "",
+        adType: "",
         format: "—",
         visualSource: "—",
         mode: "—",
       };
       const chatLog: ChatMsg[] = [];
+      // 历史归档恢复：给出一句友好提示，避免中间区域只剩一张空卡。
+      if (!hasRealBrief && rec.assets.length > 0) {
+        chatLog.push({
+          id: `restore-${rec.id}-info`,
+          role: "agent",
+          ts: Date.now(),
+          text: `已从历史归档恢复 ${rec.assets.length} 个素材 · 项目「${rec.title}」。你可以基于这些镜头继续生成下一集，或在右侧画廊中复用素材。`,
+        });
+      }
       if (rec.status === "failed") {
         const stageLabel = failedStageId ? STAGE_LABEL[failedStageId] : "运行";
         const reason = rec.failureReason ?? "未知错误";

@@ -169,7 +169,7 @@ export function Workspace() {
                     </div>
                   )}
 
-                  {brief && brief.adType && (
+                  {brief && brief.adType && brief.format && brief.format !== "—" && (
                     <div className="rounded-2xl border border-border bg-surface px-3.5 py-3 text-[12.5px] [animation:stream-fade_320ms_ease-out_both]">
                       <div className="mb-1.5 flex items-center gap-2 font-medium">
                         <span>Selected Brief</span>
@@ -182,6 +182,25 @@ export function Workspace() {
                         <li>· Format: {brief.format}</li>
                         <li>· Visual: {brief.visualSource}</li>
                         <li>· Mode: {brief.mode}</li>
+                      </ul>
+                    </div>
+                  )}
+
+                  {brief && (!brief.adType || brief.format === "—") && assets.length > 0 && (
+                    <div className="rounded-2xl border border-border bg-surface px-3.5 py-3 text-[12.5px] [animation:stream-fade_320ms_ease-out_both]">
+                      <div className="mb-1.5 flex items-center gap-2 font-medium">
+                        <span>项目快照</span>
+                        <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[10.5px] font-mono uppercase tracking-wider text-accent">
+                          RESTORED
+                        </span>
+                      </div>
+                      <ul className="space-y-0.5 text-muted-foreground">
+                        <li>· 项目：{taskTitle || "—"}</li>
+                        <li>· 镜头数：{assets.filter((a) => a.kind === "video").length || assets.length}</li>
+                        <li>· 素材总数：{assets.length}（图片 {assets.filter((a) => a.kind === "image").length} · 视频 {assets.filter((a) => a.kind === "video").length}）</li>
+                        {brief.prompt && brief.prompt !== taskTitle && (
+                          <li className="line-clamp-2">· 原始 prompt：{brief.prompt}</li>
+                        )}
                       </ul>
                     </div>
                   )}
