@@ -2877,7 +2877,15 @@ export const useSC = create<SCState>((set, get) => {
       if (!dir || typeof dir !== "object") return;
       const patch = dir.patch ?? {};
       const rerun = Array.isArray(dir.rerun) ? dir.rerun : [];
-      if (!patch.brief && !patch.script && !patch.characters && !patch.scenes && !rerun.length) {
+      const imageEdits = Array.isArray(dir.imageEdits) ? dir.imageEdits : [];
+      if (
+        !patch.brief &&
+        !patch.script &&
+        !patch.characters &&
+        !patch.scenes &&
+        !rerun.length &&
+        !imageEdits.length
+      ) {
         return;
       }
       const changeBits: string[] = [];
@@ -2966,6 +2974,101 @@ export const useSC = create<SCState>((set, get) => {
           set((s) => ({ chatLog: [...s.chatLog, msg] }));
           break;
         }
+      }
+    },
+
+      // 5) imageEdits：对具体已生成图片做真改图（后端 Gemini Nano Banana）
+      if (imageEdits.length) {
+        void (async () => {
+          const { editImageWithRefs } = await import(
+            "@/lib/image-edit.functions"
+          );
+          for (const edit of imageEdits) {
+            const target = get().assets.find((a) => a.id === edit.assetId);
+            if (!target || !target.url || target.kind !== "image") {
+              const msg: ChatMsg = {
+                id: uid(),
+                role: "agent",
+                ts: Date.now(),
+                text: `跳过改图：找不到可编辑的图片 @${edit.assetId}`,
+                skill: { name: "chat-director", sub: "image-edit" },
+              };
+              set((s) => ({ chatLog: [...s.chatLog, msg] }));
+              continue;
+            }
+            const userId = get().currentUserId ?? null;
+            if (!userId) {
+              const msg: ChatMsg = {
+                id: uid(),
+                role: "agent",
+                ts: Date.now(),
+                text: "请先登录后再进行图片编辑。",
+                skill: { name: "chat-director", sub: "image-edit" },
+              };
+              set((s) => ({ chatLog: [...s.chatLog, msg] }));
+              continue;
+            }
+
+            // 收集参考图
+            const refUrls = (edit.refs ?? [])
+              .map((rid) => get().assets.find((a) => a.id === rid)?.url)
+              .filter((u): u is string => !!u && /^https?:\/\//.test(u))
+              .slice(0, 4);
+            const imageUrls = [target.url, ...refUrls].slice(0, 6);
+
+            // mark generating
+            set((s) => ({
+              assets: s.assets.map((a) =>
+                a.id === edit.assetId ? { ...a, status: "Generating" as const, errorMessage: undefined } : a,
+              ),
+            }));
+
+            try {
+              const fullPrompt =
+                `Edit the FIRST reference image while preserving its composition, framing and subject identity. ` +
+                `Subsequent images (if any) are identity / style references only.\n\n` +
+                `User instruction: ${edit.prompt}`;
+              const { b64 } = await editImageWithRefs({
+                data: { prompt: fullPrompt, imageUrls },
+              });
+              const url = await uploadBase64Image({
+                base64: b64,
+                userId,
+                taskId: get().taskId ?? undefined,
+              });
+              get().addAssetVersion(edit.assetId, url, `chat: ${edit.prompt.slice(0, 40)}`);
+              const ok: ChatMsg = {
+                id: uid(),
+                role: "agent",
+                ts: Date.now(),
+                text: `已改好 @${edit.assetId}（已保留旧版本到历史，可在卡片右下角切换）。`,
+                skill: { name: "chat-director", sub: "image-edit" },
+              };
+              set((s) => ({ chatLog: [...s.chatLog, ok] }));
+            } catch (e) {
+              console.error("[applyAgentPatch] imageEdits failed", edit, e);
+              set((s) => ({
+                assets: s.assets.map((a) =>
+                  a.id === edit.assetId
+                    ? {
+                        ...a,
+                        status: "Ready" as const,
+                        errorMessage: undefined,
+                      }
+                    : a,
+                ),
+              }));
+              const fail: ChatMsg = {
+                id: uid(),
+                role: "agent",
+                ts: Date.now(),
+                text: `改图失败 @${edit.assetId}：${(e as Error).message}（未扣积分，原图保留）`,
+                skill: { name: "chat-director", sub: "image-edit" },
+              };
+              set((s) => ({ chatLog: [...s.chatLog, fail] }));
+            }
+          }
+        })();
       }
     },
 
