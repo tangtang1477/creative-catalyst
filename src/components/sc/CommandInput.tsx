@@ -170,7 +170,7 @@ export function CommandInput({ placeholder, compact = false }: Props) {
         onRemoveAttachment={removeAttachment}
         onStrip={(token) => {
           const re = new RegExp(`\\s*${escapeRegExp(token)}\\s?`, "g");
-          setValue((prev) => prev.replace(re, " ").replace(/\s{2,}/g, " ").trimStart());
+          setValue((prev: string) => prev.replace(re, " ").replace(/\s{2,}/g, " ").trimStart());
         }}
       />
 
