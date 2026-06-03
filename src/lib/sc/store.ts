@@ -139,6 +139,9 @@ interface SCState {
   currentUserId: string | null;
   /** LLM-generated script for the current run (null until structure stage finishes) */
   script: GeneratedScript | null;
+  /** 用户上传的剧本（待解析），等待用户输入 prompt 时一起送后端解析 */
+  pendingScript: PendingScript | null;
+
 
   intakeSel: Record<string, string>;
   intakeCustoms: Record<string, string[]>;
