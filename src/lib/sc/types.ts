@@ -2,6 +2,7 @@ export type StageId =
   | "scene"
   | "structure"
   | "wardrobe"
+  | "cast"
   | "paint"
   | "qc"
   | "life"
@@ -11,6 +12,7 @@ export const STAGE_ORDER: StageId[] = [
   "scene",
   "structure",
   "wardrobe",
+  "cast",
   "paint",
   "qc",
   "life",
@@ -20,11 +22,12 @@ export const STAGE_ORDER: StageId[] = [
 export const STAGE_LABEL: Record<StageId, string> = {
   scene: "Building the scene",
   structure: "Structuring the film",
-  wardrobe: "Styling wardrobe & props",
-  paint: "Painting the frame",
-  qc: "Self-check & consistency",
-  life: "Bringing it to life",
-  details: "Adding the details",
+  wardrobe: "服化道（服装 & 道具）",
+  cast: "人物 & 场景素材",
+  paint: "关键帧",
+  qc: "AI 一致性检测",
+  life: "分镜视频片段",
+  details: "合成完整成片",
 };
 
 export type StageStatus =
