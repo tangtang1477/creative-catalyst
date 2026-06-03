@@ -702,10 +702,11 @@ export const useSC = create<SCState>((set, get) => {
       caption: c.caption,
       status: "Queued",
       stageId: "cast",
-      width: c.kind === "scene" ? 1920 : 768,
-      height: c.kind === "scene" ? 1080 : 1024,
-      aspectRatio: c.kind === "scene" ? "16:9" : "3:4",
+      width: c.kind === "scene" ? 1920 : 1280,
+      height: c.kind === "scene" ? 1080 : 960,
+      aspectRatio: c.kind === "scene" ? "16:9" : "4:3",
     }));
+
     set((s) => ({
       assets: [...s.assets, ...castAssets],
       rail: { ...s.rail, open: true, flashId: castSpec[0]?.id },
