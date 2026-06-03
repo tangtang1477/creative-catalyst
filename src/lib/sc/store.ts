@@ -2747,44 +2747,7 @@ export const useSC = create<SCState>((set, get) => {
         console.warn("[restoreTask] task not found in local history", id);
         return;
       }
-      // Defensive: legacy records persisted from older versions may be missing
-      // fields like assets / stageSnapshots — fill with safe defaults so the
-      // downstream render path never throws "Cannot read length of undefined".
-      const normalizedAssets: Asset[] = Array.isArray(found.assets)
-        ? found.assets.map((asset, index): Asset => ({
-            id: asset?.id ?? `restored-${found.id}-${index}`,
-            kind: asset?.kind === "video" ? "video" : "image",
-            label: asset?.label ?? asset?.id ?? `A${String(index + 1).padStart(2, "0")}`,
-            status: asset?.status ?? "Ready",
-            caption: asset?.caption,
-            url: asset?.url,
-            poster: asset?.poster,
-            width: asset?.width,
-            height: asset?.height,
-            aspectRatio: asset?.aspectRatio,
-            duration: asset?.duration,
-            stageId: asset?.stageId ?? ((asset as { stage?: StageId | undefined })?.stage ?? undefined),
-            episode: asset?.episode,
-            scene: asset?.scene,
-            errorMessage: asset?.errorMessage,
-            errorCode: asset?.errorCode,
-            versions: Array.isArray(asset?.versions) ? asset.versions : undefined,
-            segmentIndex: asset?.segmentIndex,
-            sourceShotId: asset?.sourceShotId,
-          }))
-        : [];
-      const rec: TaskRecord = {
-        ...found,
-        assets: normalizedAssets,
-        stageSummaries: found.stageSummaries ?? {},
-        stageSnapshots: found.stageSnapshots ?? {},
-        prompt: found.prompt ?? "",
-        title: found.title ?? "Untitled",
-        kind: found.kind ?? "oneoff",
-        status: found.status ?? "done",
-        brief: found.brief ?? null,
-        script: found.script ?? null,
-      };
+      const rec = normalizeTaskRecord(found);
       clearTimers();
       const stages = initialStages();
       // Prefer full snapshots (toolCalls + thoughts). Fall back to legacy
