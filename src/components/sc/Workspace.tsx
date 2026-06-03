@@ -421,4 +421,32 @@ function HomeProjectsRow() {
   );
 }
 
+/**
+ * 当用户点击某个项目，但项目尚无本地缓存内容时，在主页顶部显示项目上下文横幅，
+ * 提供明确反馈（避免"点了没反应"的错觉）。
+ */
+function ActiveProjectBanner() {
+  const currentProjectId = useProjects((s) => s.currentProjectId);
+  const projects = useProjects((s) => s.projects);
+  const proj = projects.find((p) => p.id === currentProjectId) ?? null;
+  if (!proj) return null;
+  const Icon = HOME_KIND_ICON[proj.kind] ?? FolderIcon;
+  return (
+    <div className="mb-4 flex items-center gap-3 rounded-2xl border border-accent/30 bg-[color-mix(in_oklab,var(--accent)_8%,var(--surface))] px-4 py-3 text-[12.5px] [animation:stream-fade_320ms_ease-out_both]">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="font-semibold text-foreground">
+          当前项目 · <span className="text-accent">{proj.name}</span>
+        </div>
+        <div className="text-[11.5px] text-muted-foreground">
+          该项目暂无本地历史内容。直接在下方输入需求即可开始第一次创作，素材会自动归档到本项目。
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 
