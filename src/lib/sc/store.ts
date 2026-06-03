@@ -669,12 +669,12 @@ export const useSC = create<SCState>((set, get) => {
     updateStage("cast", { status: "running", expanded: true });
     runTool("cast", "tool", "cast-and-scene-director · text-to-image", 1400, 0);
 
-    const script = get().script;
+    const script = get().script as (GeneratedScript & { characters?: Array<{ name?: string; caption?: string }>; scenes?: Array<{ name?: string; caption?: string }> }) | null;
     type CastSpec = { id: string; caption: string; kind: "character" | "scene" };
     const characterSpec: CastSpec[] = Array.isArray(script?.characters) && script!.characters!.length
-      ? script!.characters!.slice(0, 4).map((c, i) => ({
+      ? script!.characters!.slice(0, 4).map((c, i: number) => ({
           id: `C${String(i + 1).padStart(2, "0")}`,
-          caption: (c as { name?: string; caption?: string }).name ?? (c as { caption?: string }).caption ?? `角色 ${i + 1}`,
+          caption: c.name ?? c.caption ?? `角色 ${i + 1}`,
           kind: "character" as const,
         }))
       : [
@@ -682,9 +682,9 @@ export const useSC = create<SCState>((set, get) => {
           { id: "C02", caption: "配角", kind: "character" },
         ];
     const sceneSpec: CastSpec[] = Array.isArray(script?.scenes) && script!.scenes!.length
-      ? script!.scenes!.slice(0, 3).map((s, i) => ({
+      ? script!.scenes!.slice(0, 3).map((s, i: number) => ({
           id: `S${String(i + 1).padStart(2, "0")}`,
-          caption: (s as { name?: string; caption?: string }).name ?? (s as { caption?: string }).caption ?? `场景 ${i + 1}`,
+          caption: s.name ?? s.caption ?? `场景 ${i + 1}`,
           kind: "scene" as const,
         }))
       : [
