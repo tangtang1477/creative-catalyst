@@ -2127,7 +2127,7 @@ export const useSC = create<SCState>((set, get) => {
 
     approveScript: () => runWardrobe(),
     tweakScript: () => set({ phase: "intake", gate: null, softGate: null }),
-    approveWardrobe: () => runPaint(),
+    approveWardrobe: () => runCast(),
     tweakWardrobe: () => {
       closeGate();
       // simply re-run wardrobe
@@ -2136,6 +2136,15 @@ export const useSC = create<SCState>((set, get) => {
         stages: { ...s.stages, wardrobe: emptyStage() },
       }));
       runWardrobe();
+    },
+    approveCast: () => runPaint(),
+    tweakCast: () => {
+      closeGate();
+      set((s) => ({
+        assets: s.assets.filter((a) => a.stageId !== "cast"),
+        stages: { ...s.stages, cast: emptyStage() },
+      }));
+      runCast();
     },
     approveKeyframe: () => runQC(),
     regenerateKeyframe: () => {
@@ -2153,6 +2162,14 @@ export const useSC = create<SCState>((set, get) => {
       updateStage("qc", { status: "ready" });
       collapseAfter("qc", 1400);
       schedule(() => runLife(), 1100);
+    },
+    approveMerge: () => {
+      closeGate();
+      runDetails();
+    },
+    cancelMerge: () => {
+      closeGate();
+      appendSummary("life", "用户暂不合成完整成片 · 可在分镜列表中继续编辑");
     },
     cancelSoftGate: () => set({ softGate: null }),
 
