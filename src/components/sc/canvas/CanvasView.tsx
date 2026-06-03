@@ -216,11 +216,16 @@ export function CanvasView() {
                   ))}
                 </div>
               )}
-              {st.summary.length > 0 && (
-                <div className="mt-1 truncate text-[10.5px] text-muted-foreground">
-                  · {st.summary[st.summary.length - 1]}
-                </div>
-              )}
+              {st.summary.length > 0 && (() => {
+                const last = st.summary[st.summary.length - 1];
+                const text = typeof last === "string" ? last : last.text;
+                return (
+                  <div className="mt-1 truncate text-[10.5px] text-muted-foreground">
+                    · {text}
+                  </div>
+                );
+              })()}
+
             </div>
           );
         })}
