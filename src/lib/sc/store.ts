@@ -28,7 +28,7 @@ import { submitVideoTask, pollVideoTask } from "@/lib/seedance.functions";
 import { generateScript, type GeneratedScript } from "@/lib/script.functions";
 import { parseFormatDuration, parseFormatRatio, formatDurationLabel, clampSeedanceDuration } from "@/lib/sc/format-utils";
 import { useProjects } from "@/lib/sc/projects-store";
-import { upsertTaskSnapshot, listProjectTasks } from "@/lib/tasks.functions";
+import { upsertTaskSnapshot, listProjectTasks, backfillLegacyTasksForProject } from "@/lib/tasks.functions";
 
 /** Chat agent 解析出来的"真指令"。后端 chat-stream.ts 端的 schema 同步。 */
 export interface AgentDirectives {
