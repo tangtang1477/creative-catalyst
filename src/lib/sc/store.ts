@@ -153,6 +153,7 @@ interface SCState {
   restoreTask: (id: string) => void;
   deleteTask: (id: string) => void;
   enterProject: (projectId: string) => void;
+  applyAgentPatch: (dir: AgentDirectives) => void;
   retryStage: (id: StageId) => void;
   retryAsset: (assetId: string) => void;
   setActiveVersion: (assetId: string, versionIndex: number) => void;
