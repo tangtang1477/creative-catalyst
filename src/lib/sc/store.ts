@@ -474,7 +474,7 @@ export const useSC = create<SCState>((set, get) => {
       1300,
       () => {
         updateStage("scene", { status: "ready" });
-        consume("scene", "Scene · brief analysis", 1, get().taskId);
+        consume("scene", "Scene · brief analysis", 5, get().taskId);
         collapseAfter("scene", 1400);
         schedule(() => runStructure(), 1600);
       },
@@ -531,7 +531,7 @@ export const useSC = create<SCState>((set, get) => {
       }
 
       updateStage("structure", { status: "ready" });
-      consume("structure", "Script + storyboard", 3, get().taskId);
+      consume("structure", "Script + storyboard", 5, get().taskId);
       openGate("script", () => runWardrobe());
     })();
   };
@@ -625,7 +625,7 @@ export const useSC = create<SCState>((set, get) => {
           const url = await uploadBase64Image({ base64: b64, userId, taskId });
           if (get().runId !== startedRunId) return;
           updateAsset(w.id, { status: "Ready", url, errorMessage: undefined });
-          consume("wardrobe", `Wardrobe · ${w.id}`, 2, get().taskId);
+          consume("wardrobe", `Wardrobe · ${w.id}`, 5, get().taskId);
         } catch (e) {
           console.error("[wardrobe] failed", w.id, e);
           updateAsset(w.id, {
@@ -1036,7 +1036,7 @@ export const useSC = create<SCState>((set, get) => {
 
   const runLife = () => {
     closeGate();
-    const VIDEO_COST_PER_SEG = 30;
+    const VIDEO_COST_PER_SEG = 5;
     const briefFormat = get().brief?.format ?? "";
     const requestedDuration = parseFormatDuration(briefFormat);
     const videoRatio = parseFormatRatio(briefFormat);
@@ -1332,7 +1332,7 @@ export const useSC = create<SCState>((set, get) => {
           errorMessage: undefined,
           errorCode: undefined,
         });
-        consume("wardrobe", `Wardrobe · ${assetId} retry`, 2, get().taskId);
+        consume("wardrobe", `Wardrobe · ${assetId} retry`, 5, get().taskId);
         appendSummary("wardrobe", `${assetId} 重做完成`);
       } catch (e) {
         console.error("[wardrobe] single retry failed", assetId, e);
@@ -1428,7 +1428,7 @@ export const useSC = create<SCState>((set, get) => {
     const briefFormat = get().brief?.format ?? "";
     const videoRatio = parseFormatRatio(briefFormat);
     const briefPrompt = get().brief?.prompt ?? "";
-    const VIDEO_COST_PER_SEG = 30;
+    const VIDEO_COST_PER_SEG = 5;
 
     if (!canAfford(VIDEO_COST_PER_SEG)) {
       const tid = get().taskId ?? undefined;
@@ -1557,7 +1557,7 @@ export const useSC = create<SCState>((set, get) => {
     ];
     streamLines("details", checks, 500, 200, () => {
       updateStage("details", { status: "ready" });
-      consume("details", "Final QC pass", 2, get().taskId);
+      consume("details", "Final QC pass", 5, get().taskId);
       set({ phase: "done" });
       collapseAfter("details", 1600);
       persistCurrent("done");
