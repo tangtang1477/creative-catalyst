@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Image as ImageIcon,
   Film,
@@ -8,6 +8,8 @@ import {
   Mic,
   Play,
   Pause,
+  ChevronDown,
+  Check,
 } from "lucide-react";
 import type { Asset } from "@/lib/sc/types";
 import { StatusBadge } from "./StatusBadge";
@@ -19,10 +21,16 @@ import { GradientLoader } from "./GradientLoader";
 import { AssetVersionSwitcher } from "./AssetVersionSwitcher";
 import { GeneratingPill } from "./GeneratingPill";
 import { useCharacterVoices } from "@/lib/sc/character-voices-store";
-import { useVoices } from "@/lib/sc/voices-store";
+import { useVoices, type VoiceRow } from "@/lib/sc/voices-store";
 import { bindCharacterVoice, unbindCharacterVoice } from "@/lib/characters.functions";
-
-
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 interface Props {
   asset: Asset;
@@ -31,6 +39,37 @@ interface Props {
   selectable?: boolean;
   selected?: boolean;
   onToggle?: (id: string) => void;
+}
+
+// Stable hash for asset.id → pick stable default among candidates
+function hashStr(s: string) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+const FEMALE_HINTS = ["女", "姐", "妹", "母", "妻", "girl", "female", "woman", "lady", "laura", "anna", "lucy", "mary"];
+const MALE_HINTS = ["男", "兄", "弟", "父", "夫", "boy", "male", "man", "guy", "john", "tom", "mike"];
+
+function pickDefaultVoice(characterName: string, assetId: string, voices: VoiceRow[]): VoiceRow | undefined {
+  const ready = voices.filter((v) => v.status === "ready");
+  if (ready.length === 0) return undefined;
+  const presets = ready.filter((v) => v.source === "preset");
+  const pool = presets.length > 0 ? presets : ready;
+
+  const name = characterName.toLowerCase();
+  const isFemale = FEMALE_HINTS.some((k) => name.includes(k));
+  const isMale = !isFemale && MALE_HINTS.some((k) => name.includes(k));
+
+  const matchByGender = (v: VoiceRow) => {
+    const n = (v.name + " " + (v.description ?? "")).toLowerCase();
+    if (isFemale) return FEMALE_HINTS.some((k) => n.includes(k));
+    if (isMale) return MALE_HINTS.some((k) => n.includes(k));
+    return false;
+  };
+  const matched = pool.filter(matchByGender);
+  const candidates = matched.length > 0 ? matched : pool;
+  return candidates[hashStr(assetId) % candidates.length];
 }
 
 export function AssetCard({
@@ -48,7 +87,7 @@ export function AssetCard({
   const hasVersions = versionCount >= 2;
   const [loaded, setLoaded] = useState(false);
 
-  // —— Character ↔ voice badge (wardrobe W* 或 cast C*) ——
+  // —— Character ↔ voice (wardrobe W* 或 cast C*) ——
   const isCharacter =
     (asset.stageId === "wardrobe" && /^W/i.test(asset.id)) ||
     (asset.stageId === "cast" && /^C/i.test(asset.id));
@@ -70,10 +109,32 @@ export function AssetCard({
     if (isCharacter && !voicesLoaded) fetchVoices();
   }, [isCharacter, cvLoaded, voicesLoaded, cvFetch, fetchVoices]);
   const boundVoice = binding ? voices.find((v) => v.id === binding.voice_id) : undefined;
-  const voicePlaying = boundVoice && previewingId === boundVoice.id;
+
+  // —— Auto-bind a default voice once everything is loaded ——
+  const autoBindAttempted = useRef(false);
+  useEffect(() => {
+    if (!isCharacter) return;
+    if (!voicesLoaded || !cvLoaded) return;
+    if (binding) return;
+    if (autoBindAttempted.current) return;
+    if (voices.length === 0) return;
+    const pick = pickDefaultVoice(characterName, asset.id, voices);
+    if (!pick) return;
+    autoBindAttempted.current = true;
+    (async () => {
+      try {
+        await bindCharacterVoice({
+          data: { character_name: characterName, voice_id: pick.id },
+        });
+        await cvRefresh();
+      } catch (e) {
+        console.warn("[asset-card] auto-bind voice failed", e);
+      }
+    })();
+  }, [isCharacter, voicesLoaded, cvLoaded, binding, voices, characterName, asset.id, cvRefresh]);
 
   const handleChangeVoice = async (voiceId: string) => {
-    if (!voiceId) return;
+    if (!voiceId || voiceId === binding?.voice_id) return;
     try {
       if (binding) await unbindCharacterVoice({ data: { id: binding.id } });
       await bindCharacterVoice({
@@ -85,13 +146,11 @@ export function AssetCard({
     }
   };
 
-
   // Derive display aspect ratio: explicit asset.aspectRatio wins, else infer
   // from width/height, else fall back per kind/stage.
   const inferAspect = (): string => {
     if (asset.aspectRatio) return asset.aspectRatio.replace(":", " / ");
     if (asset.width && asset.height) {
-      // snap to supported ratios
       const r = asset.width / asset.height;
       const candidates: Array<[string, number]> = [
         ["16 / 9", 16 / 9],
@@ -108,12 +167,10 @@ export function AssetCard({
       }
       return best[0];
     }
-    // Stage-based defaults
     if (asset.stageId === "wardrobe") return "1 / 1";
     return asset.kind === "image" ? "9 / 16" : "16 / 9";
   };
   const aspectCss = inferAspect();
-  // tall portrait/vertical => use max-height to limit excessive height in card view
   const isTall = ["9 / 16", "3 / 4"].includes(aspectCss);
   const maxH = isTall ? (compact ? 240 : 420) : (compact ? 200 : 360);
 
@@ -148,6 +205,45 @@ export function AssetCard({
           ? "Recovering image"
           : "Generating image";
 
+  const readyVoices = voices.filter((v) => v.status === "ready");
+  const presetVoices = readyVoices.filter((v) => v.source === "preset");
+  const myVoices = readyVoices.filter((v) => v.source !== "preset");
+
+  const renderVoiceItem = (v: VoiceRow) => {
+    const isBound = v.id === binding?.voice_id;
+    const playing = previewingId === v.id;
+    return (
+      <DropdownMenuItem
+        key={v.id}
+        onSelect={(e) => {
+          e.preventDefault();
+          handleChangeVoice(v.id);
+        }}
+        className="flex items-center gap-2 pr-1 text-[11.5px]"
+      >
+        <Check className={cn("h-3 w-3 shrink-0", isBound ? "text-accent" : "opacity-0")} />
+        <span className="flex-1 truncate">{v.name}</span>
+        <button
+          type="button"
+          aria-label={playing ? "停止试听" : "试听音色"}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            playing ? stopPreview() : previewVoice(v.id);
+          }}
+          className={cn(
+            "inline-flex h-5 w-5 items-center justify-center rounded-md transition-colors",
+            playing
+              ? "bg-accent text-accent-foreground"
+              : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
+          )}
+        >
+          {playing ? <Pause className="h-2.5 w-2.5" /> : <Play className="h-2.5 w-2.5" />}
+        </button>
+      </DropdownMenuItem>
+    );
+  };
+
   return (
     <div
       className={cn(
@@ -157,30 +253,6 @@ export function AssetCard({
       )}
     >
       <div className="relative w-full">
-        {/* Character voice badge (top-left) */}
-        {isCharacter && boundVoice && (
-          <div className="absolute left-1.5 top-1.5 z-10 inline-flex items-center gap-1 rounded-full bg-black/70 px-1.5 py-0.5 text-[10.5px] text-white backdrop-blur-sm">
-            <Mic className="h-3 w-3 text-accent" />
-            <span className="max-w-[80px] truncate">{boundVoice.name}</span>
-            <button
-              type="button"
-              aria-label="preview voice"
-              onClick={(e) => {
-                e.stopPropagation();
-                voicePlaying ? stopPreview() : previewVoice(boundVoice.id);
-              }}
-              className={cn(
-                "ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors",
-                voicePlaying
-                  ? "bg-accent text-accent-foreground"
-                  : "bg-white/15 text-white hover:bg-white/25",
-              )}
-            >
-              {voicePlaying ? <Pause className="h-2.5 w-2.5" /> : <Play className="h-2.5 w-2.5" />}
-            </button>
-          </div>
-        )}
-
         {asset.kind === "image" && asset.url ? (
           <>
             <img
@@ -254,7 +326,6 @@ export function AssetCard({
           </div>
         )}
 
-
         <AssetActions
           asset={asset}
           selectable={selectable}
@@ -263,8 +334,6 @@ export function AssetCard({
         />
         <AssetVersionSwitcher asset={asset} variant="card" />
       </div>
-
-
 
       <div className="space-y-1.5 px-3 py-2.5">
         <div className="flex items-center justify-between gap-2">
@@ -323,52 +392,54 @@ export function AssetCard({
               <Download className="h-3 w-3" />
             </a>
           )}
-        </div>
-      </div>
 
-      {isCharacter && (
-        <div className="flex items-center gap-1.5 border-t border-border bg-surface-2/40 px-3 py-2">
-          <Mic className="h-3 w-3 shrink-0 text-accent" />
-          <select
-            value={binding?.voice_id ?? ""}
-            onChange={(e) => handleChangeVoice(e.target.value)}
-            disabled={!voicesLoaded || voices.length === 0}
-            className="h-6 min-w-0 flex-1 truncate rounded-md border border-border bg-background/40 px-1.5 text-[11px] text-foreground outline-none focus:border-accent/60"
-          >
-            <option value="" disabled>
-              {voicesLoaded ? "选择音色…" : "加载音色…"}
-            </option>
-            {voices
-              .filter((v) => v.status === "ready")
-              .map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.source === "preset" ? "预设 · " : "我的 · "}
-                  {v.name}
-                </option>
-              ))}
-          </select>
-          {boundVoice && (
-            <button
-              type="button"
-              aria-label="试听音色"
-              onClick={() =>
-                voicePlaying ? stopPreview() : previewVoice(boundVoice.id)
-              }
-              className={cn(
-                "inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors",
-                voicePlaying
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
-              )}
-            >
-              {voicePlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-            </button>
+          {isCharacter && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="ml-auto inline-flex h-6 max-w-[140px] items-center gap-1 rounded-md bg-background/60 px-2 text-[11px] text-foreground/90 transition-colors hover:bg-surface-2"
+                  title={boundVoice?.name ?? "选择音色"}
+                >
+                  <Mic className="h-3 w-3 shrink-0 text-accent" />
+                  <span className="min-w-0 truncate">
+                    {boundVoice
+                      ? `${boundVoice.source === "preset" ? "预设·" : "我的·"}${boundVoice.name}`
+                      : voicesLoaded
+                        ? "选择音色"
+                        : "加载中…"}
+                  </span>
+                  <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                {presetVoices.length > 0 && (
+                  <>
+                    <DropdownMenuLabel className="text-[10.5px] text-muted-foreground">
+                      预设音色
+                    </DropdownMenuLabel>
+                    {presetVoices.map(renderVoiceItem)}
+                  </>
+                )}
+                {myVoices.length > 0 && (
+                  <>
+                    {presetVoices.length > 0 && <DropdownMenuSeparator />}
+                    <DropdownMenuLabel className="text-[10.5px] text-muted-foreground">
+                      我的音色
+                    </DropdownMenuLabel>
+                    {myVoices.map(renderVoiceItem)}
+                  </>
+                )}
+                {readyVoices.length === 0 && (
+                  <div className="px-2 py-3 text-center text-[11px] text-muted-foreground">
+                    暂无可用音色
+                  </div>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
-
-
-
