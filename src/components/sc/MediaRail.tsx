@@ -294,6 +294,7 @@ export function MediaRail() {
           {filter === "audio" && audioTab === "library" ? (
             <VoiceLibraryGrid />
           ) : (
+            <>
           {assets.length === 0 ? (
             <div className="flex h-full items-center justify-center text-[12px] text-muted-foreground">
               等待生成…
