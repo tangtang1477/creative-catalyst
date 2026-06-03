@@ -2592,6 +2592,7 @@ export const useSC = create<SCState>((set, get) => {
               scene: ready(["剧集大纲已锁定"]),
               structure: ready(["每集分镜就绪"]),
               wardrobe: ready(["服装/道具就绪"]),
+              cast: ready(["人物/场景就绪"]),
               paint: ready(["关键帧批次完成"]),
               qc: ready(["一致性通过"]),
               life: ready(["全部成片完成"]),
