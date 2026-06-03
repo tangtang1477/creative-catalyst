@@ -1438,7 +1438,15 @@ export const useSC = create<SCState>((set, get) => {
         persistCurrent("running");
         openGate("merge", () => runDetails());
       } else if (okCount === 0) {
-        updateStage("life", { status: "failed", errorMessage: "全部视频段渲染失败，可在下方单独重做某一段" });
+        const policyHits = get().assets.filter(
+          (a) => a.stageId === "life" && (a.errorCode === "policy_real_person" || a.errorCode === "policy_violation"),
+        ).length;
+        const msg =
+          policyHits > 0
+            ? `${policyHits}/${segAssets.length} 段被上游安全审核拒绝（参考图疑似真人或违规），可在下方更换参考图后单独重做。`
+            : "全部视频段渲染失败，可在下方单独重做某一段";
+        updateStage("life", { status: "failed", errorMessage: msg });
+        appendSummary("life", msg);
         set({ phase: "failed" });
         persistCurrent("failed");
       } else {
