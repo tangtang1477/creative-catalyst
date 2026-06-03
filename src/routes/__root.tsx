@@ -13,6 +13,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { PricingDialog } from "@/components/sc/credits/PricingDialog";
 import { LowCreditToast } from "@/components/sc/credits/LowCreditToast";
 import { useCredits } from "@/lib/sc/credits-store";
+import { useSC } from "@/lib/sc/store";
 
 import appCss from "../styles.css?url";
 
@@ -117,10 +118,12 @@ function RootShell({ children }: { children: React.ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const hydrateCredits = useCredits((s) => s.hydrateFromStorage);
+  const hydrateWorkspace = useSC((s) => s.hydrateFromStorage);
 
   useEffect(() => {
+    hydrateWorkspace();
     hydrateCredits();
-  }, [hydrateCredits]);
+  }, [hydrateCredits, hydrateWorkspace]);
 
   return (
     <QueryClientProvider client={queryClient}>
