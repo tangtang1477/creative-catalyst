@@ -340,7 +340,15 @@ export function Sidebar() {
                         )}
                       />
                       <button
-                        onClick={() => !disabled && restoreTask(t.id)}
+                        onClick={() => {
+                          if (disabled) return;
+                          try {
+                            restoreTask(t.id);
+                            void navigate({ to: "/" });
+                          } catch (error) {
+                            console.error("[sidebar] restore task failed", error);
+                          }
+                        }}
                         disabled={disabled}
                         title={isRunning && !isActive ? "该任务正在运行，无法回放" : undefined}
                         className={cn(
