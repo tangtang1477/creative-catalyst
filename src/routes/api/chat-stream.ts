@@ -202,6 +202,12 @@ export const Route = createFileRoute("/api/chat-stream")({
           "",
           "（接着直接输出给用户的最终回复，中文，简洁专业，不超过 120 字，不要 markdown 标题，不要再出现 <thinking> 标签）",
           "",
+          "**指令协议（重要）**：如果用户的话**明确要求改动**当前 brief / 脚本 / 角色 / 场景（例如\"把女主换成男主\"\"场景改成雨夜地铁\"\"时长改成 30 秒\"），在回复正文之后追加一个 `<directives>...</directives>` JSON 块（不要 markdown 代码块），schema：",
+          '{"patch":{"brief":{"prompt"?:string,"adType"?:string,"format"?:string},"script":{"mood"?:string,"shots"?:[{"shot":string,"duration"?:string,"scene"?:string,"motion"?:string,"elements"?:string,"prompt"?:string}]},"characters":[{"id":string,"name"?:string,"look"?:string}],"scenes":[{"id":string,"name"?:string,"description"?:string}]},"rerun":["script"|"wardrobe"|"cast"|"paint"]}',
+          "- 只输出**真正需要改动**的字段，无须改动就**完全不要**输出 <directives> 标签。",
+          "- rerun 数组列出受影响、需要重跑的阶段。",
+          "- JSON 之外不要任何额外字符。",
+          "",
           "规则：每个 ## 小节只写 1-2 行；最终回复必须紧扣用户输入，禁止套用 YSL/巴黎/丝绒 等无关案例。",
           ctxLines.length ? "\n—— 当前任务上下文 ——\n" + ctxLines.join("\n") : "",
         ]
