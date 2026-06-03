@@ -2345,6 +2345,13 @@ export const useSC = create<SCState>((set, get) => {
         chatLog,
         rail: { open: rec.assets.length > 0 },
       }));
+      // Sync the active project so sidebar highlight + ProjectGuideCard follow.
+      void (async () => {
+        try {
+          const { useProjects } = await import("@/lib/sc/projects-store");
+          useProjects.getState().setCurrentProject(rec.projectId ?? null);
+        } catch { /* ignore */ }
+      })();
     },
 
 
