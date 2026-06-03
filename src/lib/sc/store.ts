@@ -561,6 +561,8 @@ export const useSC = create<SCState>((set, get) => {
     updateStage("structure", { status: "running", expanded: true });
     const tcId = startToolCall("structure", "tool", "video-script-writer · LLM");
     appendSummary("structure", "调用大模型生成本次剧本与分镜…");
+    appendRefThumbs("structure");
+
 
     const startedRunId = get().runId;
     const b = get().brief;
