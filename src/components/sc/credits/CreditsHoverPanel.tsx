@@ -1,21 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { useCredits, creditsSelectors, QUOTA } from "@/lib/sc/credits-store";
+import { useCredits, creditsSelectors } from "@/lib/sc/credits-store";
 
 export function CreditsHoverPanel({ onTopUp }: { onTopUp: () => void }) {
-  const total = useCredits((s) => s.total);
-  const used = useCredits((s) => s.used);
-  const accountRemaining = useCredits(creditsSelectors.remaining);
-  const quotaRemaining = useCredits(creditsSelectors.quotaRemaining);
+  const remaining = useCredits(creditsSelectors.remaining);
+  const ringPct = useCredits(creditsSelectors.ringPercent);
   const pulseId = useCredits((s) => s.pulseId);
   const history = useCredits((s) => s.history);
 
-  // 与圆环同口径的任务额度剩余（动画计数）
-  const [display, setDisplay] = useState(quotaRemaining);
-  const fromRef = useRef(quotaRemaining);
+  // 动画计数 — 跟踪账户余额
+  const [display, setDisplay] = useState(remaining);
+  const fromRef = useRef(remaining);
   useEffect(() => {
     const from = fromRef.current;
-    const to = quotaRemaining;
+    const to = remaining;
     if (from === to) return;
     const start = performance.now();
     const dur = 500;
@@ -29,11 +27,11 @@ export function CreditsHoverPanel({ onTopUp }: { onTopUp: () => void }) {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [quotaRemaining]);
+  }, [remaining]);
 
   const DOTS = 20;
-  // 圆点按"任务额度"占比绘制，与外圈圆环完全一致
-  const filled = Math.round((quotaRemaining / QUOTA) * DOTS);
+  // 圆点按圆环比例填充，余额 ≥ 200 时全部亮起
+  const filled = Math.round(ringPct * DOTS);
 
   const [flashDot, setFlashDot] = useState<number | null>(null);
   useEffect(() => {
@@ -49,12 +47,12 @@ export function CreditsHoverPanel({ onTopUp }: { onTopUp: () => void }) {
   return (
     <div className="mt-2 rounded-xl bg-surface-2/60 px-3 py-2.5">
       <div className="flex items-center justify-between text-[12px]">
-        <span className="font-medium">任务额度</span>
+        <span className="font-medium">账户余额</span>
         <button
           onClick={onTopUp}
           className="text-muted-foreground transition-colors hover:text-accent"
         >
-          <span className="tabular-nums">{display}</span> / {QUOTA} ›
+          <span className="tabular-nums">{display}</span> 积分 ›
         </button>
       </div>
       <div className="mt-2 flex gap-[3px]">
@@ -73,11 +71,6 @@ export function CreditsHoverPanel({ onTopUp }: { onTopUp: () => void }) {
           );
         })}
       </div>
-      {/* 账户余额（与任务额度区分） */}
-      <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>账户余额</span>
-        <span className="tabular-nums">{accountRemaining} 积分</span>
-      </div>
       {recent.length > 0 && (
         <div className="mt-2 space-y-1 border-t border-border/60 pt-2">
           {recent.map((e) => (
@@ -93,7 +86,6 @@ export function CreditsHoverPanel({ onTopUp }: { onTopUp: () => void }) {
           ))}
         </div>
       )}
-      <span className="sr-only">used {used} of total {total}</span>
     </div>
   );
 }

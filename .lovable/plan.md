@@ -1,56 +1,49 @@
-# 修复计划
-
 ## 目标
-1. 让头像外圈圆环与 hover 积分面板使用完全同一套口径，不再出现“圆环按 200、面板显示 3206”这种冲突。
-2. 修复“过去的项目不能点开查看内容”的问题，保证点击项目后能恢复该项目下最近一次任务内容。
 
-## 我会做什么
+1. **删除"任务额度（QUOTA=200）"概念**：积分体系只有"账户余额"一个口径。
+2. **圆环逻辑重定义**：账户余额 ≥ 200 → 蓝色圆环 100% 闭合；账户余额 < 200 → 按 `余额 / 200` 比例显示蓝色弧。
+3. **修复"充值不到账"**：现状下圆环和面板都被 QUOTA=200 封顶，充值后视觉上毫无变化，给用户造成"没到账"的错觉。移除封顶后，余额变化能直接体现在数字和圆环上。
 
-### 1. 统一积分口径
-- 把当前积分展示拆成两层语义：
-  - **工作流积分环**：只表示当前产品内的 200 积分任务额度，圆环闭合/耗尽只跟这 200 的余额占比有关。
-  - **账户总积分**：hover 面板中的 `3206 left` 继续表示账户总余额，但不会再拿它去驱动这个 200 积分圆环。
-- 让 `CreditRing`、头像 hover 顶部进度条、消耗提示文案都读取同一个“任务额度余额”字段。
-- 在 hover 面板里明确区分：
-  - `任务额度剩余 X / 200`
-  - `账户总积分 3206`
-- 清掉现在这种“同一个区域里同时混用 total=200 和 backend total=3206”的状态覆盖问题。
+## 调整范围
 
-### 2. 修正积分 store 的数据源覆盖问题
-- 检查并调整 `credits-store` 的同步逻辑，避免后端返回的账户总积分直接覆盖本地 200 总额度。
-- 将“任务额度”与“账户总积分”改成独立字段，避免 `syncFromBackend / consume / topUp` 后把圆环基准值从 200 改成 3206。
-- 保证所有消费提示都显示同一口径：本次消耗 5，当前任务额度剩余多少。
+### 1. `src/lib/sc/credits-store.ts`
+- 导出常量改名：`QUOTA` → `RING_FULL_AT = 200`（仅用于圆环视觉满格阈值，不再参与任何"已用/封顶"计算）。
+- 删除 `quotaUsed` / `quotaRemaining` / `quotaPercent` / `remainingPercent` 等带 quota 字眼的 selector。
+- 保留 / 新增：
+  - `remaining(s) = max(0, s.total - s.used)` —— 唯一余额口径
+  - `ringPercent(s) = min(1, remaining / RING_FULL_AT)` —— 圆环填充比例
+- `consume` 内的低额度提示阈值改为基于真实剩余余额（如 `remaining === 0` 或 `remaining <= 20`），不再用 quota 比例。
+- `notifyConsume` toast 文案改为 `本次消耗 X 积分 · 账户余额 Y 积分`。
+- `topUp` 成功 toast 文案改为 `充值成功 · 到账 N 积分 · 账户余额 Y 积分`，去掉"任务额度"行。
+- `load()` 仍以 200 作为新用户初始 `total`，但不再把 `total` 视为上限——后端同步回来的真实 total（如 3206）会正常覆盖且生效。
 
-### 3. 修复项目点击无法恢复内容
-- 保留现在按 `projectId` 匹配任务的方向，但补上旧数据兼容：
-  - 旧任务历史里没有 `projectId` 的，增加回填/迁移策略。
-  - 点击项目时，不只按当前内存列表找，还会按历史任务中与该项目关联的记录恢复最近一条。
-- 修正 `enterProject` 的恢复逻辑，避免出现：项目已高亮，但 workspace 被 `reset()` 成空白的情况。
-- 同步检查首页项目入口与侧边栏项目入口，两处点击行为保持一致。
+### 2. `src/components/sc/credits/CreditRing.tsx`
+- 改为读取 `remaining` 与 `ringPercent`。
+- `dash = c * ringPercent`，余额 ≥ 200 时圆环完整闭合。
+- 颜色阈值改为基于真实余额：`remaining <= 20` critical、`remaining <= 50` low，其余 accent。
+- `title` 文案：`账户余额 X 积分`，去掉"任务额度"。
 
-### 4. 验证结果
-- 验证点击任一已有项目后，主工作区能恢复该项目对应内容。
-- 验证积分变动后：
-  - 外圈圆环
-  - hover 顶部条
-  - hover 明细文案
-  - 扣分 toast
-  这四处数值与比例完全一致。
+### 3. `src/components/sc/credits/CreditsHoverPanel.tsx`
+- 顶部行标题由"任务额度"改为"账户余额"，右侧显示 `{remaining} 积分 ›`（不再写 `/200`）。
+- 删除独立的"账户余额"小行（已合并到顶部）。
+- 20 个圆点条改为按 `ringPercent` 填充（余额 ≥ 200 时全亮）。
+- 动画计数 `display` 跟踪 `remaining`。
 
-## 技术细节
-- 重点文件：
-  - `src/lib/sc/credits-store.ts`
-  - `src/components/sc/credits/CreditRing.tsx`
-  - `src/components/sc/UserHoverCard.tsx`
-  - `src/components/sc/credits/CreditsHoverPanel.tsx`
-  - `src/lib/sc/store.ts`
-  - `src/components/sc/Sidebar.tsx`
-  - `src/components/sc/Workspace.tsx`
-- 预计做法：
-  - 在积分 store 中拆分“任务额度”和“账户余额”两个字段。
-  - 在项目恢复逻辑中增加旧历史兼容和最近任务恢复策略。
+### 4. `src/components/sc/UserHoverCard.tsx`
+- 顶部细进度条改用 `ringPercent`（与圆环一致），余额 ≥ 200 时 100%。
+- 阈值色同上（基于真实 remaining）。
 
-## 预期结果
-- 圆环只反映 200 额度，不再被 3000+ 账户余额冲掉。
-- hover 信息与圆环完全一致。
-- 过去的项目可以正常点开并看到对应内容。
+### 5. `src/components/sc/credits/LowCreditToast.tsx`
+- `pct` / 文案改成基于真实余额（如 `余额仅剩 X 积分`），删除 quota 相关字段。
+
+## 不在范围内
+- 不动后端 `credits.functions.ts`、`credit_ledger` 表（充值实际是到账的，问题只是 UI 被 200 封顶；后端继续按 `200 + topup` 计算 total）。
+- 不动 `consume` 调用点（仍是每次 5 积分）。
+- 不动项目侧逻辑（本轮只处理积分 UI 口径）。
+
+## 验收
+- 新用户：total=200, used=0 → 圆环 100%，面板显示 `200 积分`。
+- 消耗 5 积分 → 圆环仍 100%（195/200 比例几乎满），面板 `195 积分`，toast `本次消耗 5 积分 · 账户余额 195 积分`。
+- 余额降到 150 → 圆环显示 75% 弧。
+- 余额降到 20 → 圆环 10% 弧 + critical 红色 + 自动弹低额度提示。
+- 充值 +800 → 余额变 820，圆环立即回满 100%，面板显示 `820 积分`，toast `充值成功 · 到账 800 积分 · 账户余额 820 积分`。

@@ -6,15 +6,12 @@ export function LowCreditToast() {
   const open = useCredits((s) => s.lowOpen);
   const closeLow = useCredits((s) => s.closeLow);
   const openPricing = useCredits((s) => s.openPricing);
-  const used = useCredits((s) => s.used);
-  const total = useCredits((s) => s.total);
   const remaining = useCredits(creditsSelectors.remaining);
   const taskId = useSC((s) => s.taskId);
 
   if (!open) return null;
-  const pct = Math.round((used / total) * 100);
   const message =
-    remaining > 0 ? `Over ${pct}% already used` : `仅剩 ${remaining} · 无法继续渲染`;
+    remaining > 0 ? `账户余额仅剩 ${remaining} 积分` : `账户余额已耗尽 · 无法继续渲染`;
 
   return (
     <LowCreditPill

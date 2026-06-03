@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useCredits, QUOTA } from "@/lib/sc/credits-store";
+import { useCredits, creditsSelectors } from "@/lib/sc/credits-store";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -10,24 +10,21 @@ interface Props {
 }
 
 /**
- * 圆环只反映"任务额度"（QUOTA = 200），与账户余额（含充值）完全解耦。
- *   - 已用 0     → 圆环闭合
- *   - 已用 ≥200 → 圆环耗尽
+ * 圆环只反映账户余额：
+ *   - 余额 ≥ 200 → 100% 闭合
+ *   - 余额 < 200 → 按 余额 / 200 比例展示
  */
 export function CreditRing({ size = 32, stroke = 2, children, className }: Props) {
-  const used = useCredits((s) => s.used);
-  const total = useCredits((s) => s.total);
+  const remaining = useCredits(creditsSelectors.remaining);
+  const ringPct = useCredits(creditsSelectors.ringPercent);
   const pulseId = useCredits((s) => s.pulseId);
 
-  const quotaUsed = Math.min(QUOTA, used);
-  const quotaRemaining = Math.max(0, QUOTA - quotaUsed);
-  const remainPct = QUOTA > 0 ? quotaRemaining / QUOTA : 0;
-  const isLow = remainPct <= 0.5 && remainPct > 0.2;
-  const isCritical = remainPct <= 0.2;
+  const isCritical = remaining <= 20;
+  const isLow = !isCritical && remaining <= 50;
 
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
-  const dash = c * remainPct;
+  const dash = c * ringPct;
 
   const color = isCritical
     ? "var(--credit-critical)"
@@ -43,8 +40,7 @@ export function CreditRing({ size = 32, stroke = 2, children, className }: Props
     return () => window.clearTimeout(t);
   }, [pulseId]);
 
-  const accountRemaining = Math.max(0, total - used);
-  const title = `任务额度 ${quotaRemaining} / ${QUOTA}（已消耗 ${quotaUsed}）· 账户余额 ${accountRemaining}`;
+  const title = `账户余额 ${remaining} 积分`;
 
   return (
     <span

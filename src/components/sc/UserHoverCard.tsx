@@ -29,8 +29,9 @@ const USER = {
 export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
   const { theme, setTheme, toggle } = useTheme();
   const openPricing = useCredits((s) => s.openPricing);
-  // 顶部进度条与外圈圆环共享"任务额度"口径，账户余额单独在面板内展示
-  const pctRemain = useCredits(creditsSelectors.quotaPercent);
+  // 顶部进度条与外圈圆环同口径：账户余额 / 200，≥ 200 时 100%
+  const pctRemain = useCredits(creditsSelectors.ringPercent);
+  const remaining = useCredits(creditsSelectors.remaining);
 
 
   return (
@@ -97,9 +98,9 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
                 style={{
                   width: `${Math.round(pctRemain * 100)}%`,
                   background:
-                    pctRemain <= 0.1
+                    remaining <= 20
                       ? "var(--credit-critical)"
-                      : pctRemain <= 0.2
+                      : remaining <= 50
                         ? "var(--credit-low)"
                         : "var(--accent)",
                 }}
