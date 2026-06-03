@@ -232,6 +232,26 @@ const newId = () => {
   return `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 };
 
+/** Normalize titles/project names for loose comparison (collapse whitespace, trim, truncate). */
+const normalizeTitle = (s: string | null | undefined): string =>
+  (s ?? "")
+    .replace(/[…\u2026]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .slice(0, 60);
+
+/** Loose match: title (possibly truncated) belongs to project name. */
+const titleMatchesProject = (title: string | null | undefined, projectName: string | null | undefined): boolean => {
+  const a = normalizeTitle(title);
+  const b = normalizeTitle(projectName);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (b.startsWith(a) && a.length >= 6) return true;
+  if (a.startsWith(b) && b.length >= 6) return true;
+  return false;
+};
+
 const loadHistory = (): TaskRecord[] => {
   if (typeof window === "undefined") return [];
   try {
