@@ -146,6 +146,7 @@ interface SCState {
   forceState: (s: string) => void;
   restoreTask: (id: string) => void;
   deleteTask: (id: string) => void;
+  enterProject: (projectId: string) => void;
   retryStage: (id: StageId) => void;
   retryAsset: (assetId: string) => void;
   setActiveVersion: (assetId: string, versionIndex: number) => void;
