@@ -182,10 +182,14 @@ interface SCState {
   retryStage: (id: StageId) => void;
   retryAsset: (assetId: string) => void;
   setActiveVersion: (assetId: string, versionIndex: number) => void;
+  /** 把当前 url 推进 versions 历史，再把新 url 设为 active；用于图层编辑 / chat 真改图。 */
+  addAssetVersion: (assetId: string, newUrl: string, note?: string) => void;
   openVersionDrawer: (assetId: string) => void;
   closeVersionDrawer: () => void;
   openPreview: (assetId: string) => void;
   closePreview: () => void;
+  /** 用户上传剧本后由后端 parseScriptText 返回的结构，直接灌进 store 并跳过 structure 生成。 */
+  importGeneratedScript: (script: GeneratedScript) => void;
 
 
 
