@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { SCButton } from "./Button";
 import { Collapse } from "./Collapse";
 import { BatchEditDialog } from "./BatchEditDialog";
+import { VoiceLibraryGrid } from "./VoiceLibraryGrid";
 
 type ViewMode = "grid" | "list";
 type Filter = "all" | "image" | "video" | "audio";
