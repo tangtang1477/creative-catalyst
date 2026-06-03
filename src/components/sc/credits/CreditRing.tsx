@@ -47,6 +47,7 @@ export function CreditRing({ size = 32, stroke = 2, children, className }: Props
       className={cn("relative inline-flex items-center justify-center", className)}
       style={{ width: size, height: size }}
       aria-label={title}
+      suppressHydrationWarning
     >
       <svg
         className={cn(
