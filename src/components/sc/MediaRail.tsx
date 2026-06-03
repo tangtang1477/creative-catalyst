@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { SCButton } from "./Button";
 import { Collapse } from "./Collapse";
 import { BatchEditDialog } from "./BatchEditDialog";
+import { VoiceLibraryGrid } from "./VoiceLibraryGrid";
 
 type ViewMode = "grid" | "list";
 type Filter = "all" | "image" | "video" | "audio";
@@ -49,6 +50,7 @@ export function MediaRail() {
   const [imgOpen, setImgOpen] = useState(true);
   // (Single-group list view; vidOpen retained as no-op for backwards compat)
   const [filter, setFilter] = useState<Filter>("all");
+  const [audioTab, setAudioTab] = useState<"task" | "library">("task");
   const [batchOpen, setBatchOpen] = useState(false);
   const [view, setView] = useState<ViewMode>(loadView);
   const [width, setWidth] = useState<number>(loadWidth);
@@ -262,8 +264,37 @@ export function MediaRail() {
 
         {/* (Inline toolbar removed — floating bar below replaces it) */}
 
+        {/* Audio tabs (segmented) */}
+        {filter === "audio" && (
+          <div className="flex shrink-0 items-center gap-1 border-b border-border px-3 py-1.5">
+            {(
+              [
+                { id: "task" as const, label: "任务音频" },
+                { id: "library" as const, label: "音色库" },
+              ]
+            ).map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setAudioTab(t.id)}
+                className={cn(
+                  "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] transition-colors",
+                  audioTab === t.id
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-3">
+          {filter === "audio" && audioTab === "library" ? (
+            <VoiceLibraryGrid />
+          ) : (
+            <>
           {assets.length === 0 ? (
             <div className="flex h-full items-center justify-center text-[12px] text-muted-foreground">
               等待生成…
@@ -341,6 +372,8 @@ export function MediaRail() {
                 </div>
               </Group>
             </div>
+          )}
+            </>
           )}
 
         </div>

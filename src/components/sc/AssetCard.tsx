@@ -394,49 +394,74 @@ export function AssetCard({
           )}
 
           {isCharacter && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <div className="ml-auto inline-flex h-7 items-center gap-0.5 rounded-full border border-border/60 bg-surface-2/70 pl-2 pr-0.5 text-[11px] text-foreground/90 transition-colors hover:bg-surface-2">
+              <Mic className="h-3 w-3 shrink-0 text-accent" />
+              <span className="min-w-0 max-w-[88px] truncate">
+                {boundVoice
+                  ? `${boundVoice.source === "preset" ? "预设·" : "我的·"}${boundVoice.name}`
+                  : voicesLoaded
+                    ? "选择音色"
+                    : "加载中…"}
+              </span>
+              {boundVoice && (
                 <button
                   type="button"
-                  className="ml-auto inline-flex h-6 max-w-[140px] items-center gap-1 rounded-md bg-background/60 px-2 text-[11px] text-foreground/90 transition-colors hover:bg-surface-2"
-                  title={boundVoice?.name ?? "选择音色"}
+                  aria-label={previewingId === boundVoice.id ? "停止试听" : "试听音色"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    previewingId === boundVoice.id ? stopPreview() : previewVoice(boundVoice.id);
+                  }}
+                  className={cn(
+                    "inline-flex h-5 w-5 items-center justify-center rounded-full transition-colors",
+                    previewingId === boundVoice.id
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground hover:bg-background/80 hover:text-foreground",
+                  )}
                 >
-                  <Mic className="h-3 w-3 shrink-0 text-accent" />
-                  <span className="min-w-0 truncate">
-                    {boundVoice
-                      ? `${boundVoice.source === "preset" ? "预设·" : "我的·"}${boundVoice.name}`
-                      : voicesLoaded
-                        ? "选择音色"
-                        : "加载中…"}
-                  </span>
-                  <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
+                  {previewingId === boundVoice.id ? (
+                    <Pause className="h-2.5 w-2.5" />
+                  ) : (
+                    <Play className="h-2.5 w-2.5" />
+                  )}
                 </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-60">
-                {presetVoices.length > 0 && (
-                  <>
-                    <DropdownMenuLabel className="text-[10.5px] text-muted-foreground">
-                      预设音色
-                    </DropdownMenuLabel>
-                    {presetVoices.map(renderVoiceItem)}
-                  </>
-                )}
-                {myVoices.length > 0 && (
-                  <>
-                    {presetVoices.length > 0 && <DropdownMenuSeparator />}
-                    <DropdownMenuLabel className="text-[10.5px] text-muted-foreground">
-                      我的音色
-                    </DropdownMenuLabel>
-                    {myVoices.map(renderVoiceItem)}
-                  </>
-                )}
-                {readyVoices.length === 0 && (
-                  <div className="px-2 py-3 text-center text-[11px] text-muted-foreground">
-                    暂无可用音色
-                  </div>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="切换音色"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground"
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  {presetVoices.length > 0 && (
+                    <>
+                      <DropdownMenuLabel className="text-[10px] text-muted-foreground">
+                        预设音色
+                      </DropdownMenuLabel>
+                      {presetVoices.map(renderVoiceItem)}
+                    </>
+                  )}
+                  {myVoices.length > 0 && (
+                    <>
+                      {presetVoices.length > 0 && <DropdownMenuSeparator />}
+                      <DropdownMenuLabel className="text-[10px] text-muted-foreground">
+                        我的音色
+                      </DropdownMenuLabel>
+                      {myVoices.map(renderVoiceItem)}
+                    </>
+                  )}
+                  {readyVoices.length === 0 && (
+                    <div className="px-2 py-3 text-center text-[11px] text-muted-foreground">
+                      暂无可用音色
+                    </div>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           )}
         </div>
       </div>
