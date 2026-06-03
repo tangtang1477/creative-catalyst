@@ -39,6 +39,8 @@ function ProjectDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   const project = projects.find((p) => p.id === projectId);
   const Icon = project ? KIND_ICON[project.kind] ?? Folder : Folder;
@@ -219,7 +221,7 @@ function ProjectDetailPage() {
                         {project.name}
                       </h1>
                       <p className="mt-1 text-[12.5px] text-muted-foreground">
-                        类型：{project.kind} · 创建于 {new Date(project.created_at).toLocaleString("zh-CN")} · 共 {tasks.length} 个任务
+                        类型：{project.kind} · 创建于 <span suppressHydrationWarning>{mounted ? new Date(project.created_at).toLocaleString("zh-CN") : ""}</span> · 共 {tasks.length} 个任务
                       </p>
                     </div>
                   </div>
@@ -248,7 +250,7 @@ function ProjectDetailPage() {
                       {tasks.map((t) => {
                         const imageCount = (t.assets ?? []).filter((a) => a.kind === "image").length;
                         const videoCount = (t.assets ?? []).filter((a) => a.kind === "video").length;
-                        const date = new Date(t.updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+                        const date = mounted ? new Date(t.updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
                         const statusLabel =
                           t.status === "done" ? "已完成"
                             : t.status === "failed" ? "失败"
@@ -287,7 +289,7 @@ function ProjectDetailPage() {
                                   </div>
                                 )}
                                 <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-                                  <span>{date}</span>
+                                  <span suppressHydrationWarning>{date}</span>
                                   <span>· 图片 {imageCount}</span>
                                   <span>· 视频 {videoCount}</span>
                                   <span>· 共 {t.assets?.length ?? 0} 个素材</span>
