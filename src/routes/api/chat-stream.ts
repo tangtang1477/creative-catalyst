@@ -476,8 +476,25 @@ export const Route = createFileRoute("/api/chat-stream")({
                 }
               }
 
-              phaseDone(3, replyAcc.slice(0, 80));
-              emit("done", { text: replyAcc });
+              // 把可能滞留的 reply tail flush 出去
+              flushReplyTail();
+
+              // 解析 directives 块（如果有）并 emit
+              const dirMatch = fullText.match(/<directives>([\s\S]*?)<\/directives>/);
+              if (dirMatch) {
+                const rawJson = dirMatch[1].trim();
+                try {
+                  const parsedDir = JSON.parse(rawJson);
+                  emit("directives", parsedDir);
+                } catch (e) {
+                  console.warn("[chat-stream] directives JSON parse failed", e);
+                }
+              }
+
+              // replyAcc 用于 summary，去掉 directives 块
+              const cleanReply = replyAcc.replace(/<directives>[\s\S]*?<\/directives>/g, "").trim();
+              phaseDone(3, cleanReply.slice(0, 80));
+              emit("done", { text: cleanReply });
               controller.close();
             } catch (err) {
               emit("error", {
