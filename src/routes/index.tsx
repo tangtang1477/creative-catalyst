@@ -5,6 +5,7 @@ import { Workspace } from "@/components/sc/Workspace";
 import { MediaRail } from "@/components/sc/MediaRail";
 import { DotGridBackground } from "@/components/sc/DotGridBackground";
 import { useSC } from "@/lib/sc/store";
+import { useCredits } from "@/lib/sc/credits-store";
 import { useTheme } from "@/hooks/use-theme";
 
 export const Route = createFileRoute("/")({
