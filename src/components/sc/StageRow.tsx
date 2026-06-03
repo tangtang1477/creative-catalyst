@@ -151,21 +151,37 @@ export function StageRow({
           {state.thoughts.map((th) => (
             <ThinkingBlock key={th.id} thought={th} />
           ))}
-          {state.summary.map((s, i) => (
-            <div
-              key={`${i}-${s.slice(0, 8)}`}
-              className="text-[12.5px] leading-relaxed text-muted-foreground [animation:stream-fade_320ms_ease-out_both]"
-            >
-              {s}
-            </div>
-          ))}
+          {state.summary.map((s, i) => {
+            const text = typeof s === "string" ? s : s.text;
+            const thumbs = typeof s === "string" ? [] : s.thumbs;
+            return (
+              <div
+                key={`${i}-${text.slice(0, 8)}`}
+                className="flex flex-wrap items-center gap-1.5 text-[12.5px] leading-relaxed text-muted-foreground [animation:stream-fade_320ms_ease-out_both]"
+              >
+                <span>{text}</span>
+                {thumbs.map((u, j) => (
+                  <img
+                    key={j}
+                    src={u}
+                    alt=""
+                    className="h-5 w-5 shrink-0 rounded-md object-cover ring-1 ring-border"
+                  />
+                ))}
+              </div>
+            );
+          })}
         </div>
       ) : (
         state.summary.length > 0 && (
           <div className="truncate pl-7 text-[12px] text-muted-foreground">
-            {state.summary[state.summary.length - 1]}
+            {(() => {
+              const last = state.summary[state.summary.length - 1];
+              return typeof last === "string" ? last : last.text;
+            })()}
           </div>
         )
+
       )}
 
       {(expanded || keepChildrenWhenCollapsed) && children && (
