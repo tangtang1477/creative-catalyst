@@ -221,7 +221,7 @@ function ProjectDetailPage() {
                         {project.name}
                       </h1>
                       <p className="mt-1 text-[12.5px] text-muted-foreground">
-                        类型：{project.kind} · 创建于 {new Date(project.created_at).toLocaleString("zh-CN")} · 共 {tasks.length} 个任务
+                        类型：{project.kind} · 创建于 <span suppressHydrationWarning>{mounted ? new Date(project.created_at).toLocaleString("zh-CN") : ""}</span> · 共 {tasks.length} 个任务
                       </p>
                     </div>
                   </div>
