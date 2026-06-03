@@ -751,6 +751,8 @@ export const useSC = create<SCState>((set, get) => {
     closeGate();
     updateStage("cast", { status: "running", expanded: true });
     runTool("cast", "tool", "cast-and-scene-director · text-to-image", 1400, 0);
+    appendRefThumbs("cast");
+
 
     const script = get().script as (GeneratedScript & { characters?: Array<{ name?: string; caption?: string }>; scenes?: Array<{ name?: string; caption?: string }> }) | null;
     type CastSpec = { id: string; caption: string; kind: "character" | "scene" };
