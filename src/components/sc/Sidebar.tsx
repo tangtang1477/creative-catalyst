@@ -90,11 +90,21 @@ export function Sidebar() {
   const fetchProjects = useProjects((s) => s.fetchProjects);
   const openCreateProject = useProjects((s) => s.openCreate);
   const currentProjectId = useProjects((s) => s.currentProjectId);
+  const removeProject = useProjects((s) => s.remove);
 
   const enterProject = useSC((s) => s.enterProject);
 
   const handleSelectProject = (id: string) => {
     enterProject(id);
+  };
+
+  const handleDeleteProject = async (id: string, name: string) => {
+    if (!window.confirm(`确定删除项目「${name}」吗？该项目下的任务记录会解除关联，但不会被删除。`)) return;
+    try {
+      await removeProject(id);
+    } catch (e) {
+      window.alert(`删除失败：${(e as Error).message}`);
+    }
   };
 
   useEffect(() => {
@@ -242,20 +252,41 @@ export function Sidebar() {
                     const color = KIND_COLOR[p.kind] ?? "text-muted-foreground";
                     const isCurrent = currentProjectId === p.id;
                     return (
-                      <button
+                      <div
                         key={p.id}
-                        type="button"
-                        onClick={() => handleSelectProject(p.id)}
                         className={cn(
-                          "group flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-[12px] transition-colors",
+                          "group relative flex items-center gap-1 rounded-lg pl-0 pr-1 transition-colors",
                           isCurrent
-                            ? "bg-accent/12 text-foreground ring-1 ring-accent/40"
-                            : "text-muted-foreground hover:bg-surface-2/60 hover:text-foreground",
+                            ? "bg-accent/12 ring-1 ring-accent/40"
+                            : "hover:bg-surface-2/60",
                         )}
                       >
-                        <Icon className={cn("h-3.5 w-3.5 shrink-0", color)} />
-                        <span className="truncate">{p.name}</span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectProject(p.id)}
+                          className={cn(
+                            "flex h-7 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left text-[12px] transition-colors",
+                            isCurrent
+                              ? "text-foreground"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          <Icon className={cn("h-3.5 w-3.5 shrink-0", color)} />
+                          <span className="truncate">{p.name}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteProject(p.id, p.name);
+                          }}
+                          aria-label="delete project"
+                          title="删除项目"
+                          className="invisible h-6 w-6 shrink-0 rounded-md text-muted-foreground hover:bg-surface-2 hover:text-status-failed group-hover:visible"
+                        >
+                          <Trash2 className="mx-auto h-3 w-3" />
+                        </button>
+                      </div>
                     );
                   })
                 )}

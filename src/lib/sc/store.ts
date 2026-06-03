@@ -550,16 +550,20 @@ export const useSC = create<SCState>((set, get) => {
       300,
     );
 
-    const wardrobeAssets: Asset[] = wardrobeSpec.map((w) => ({
-      id: w.id,
-      kind: "image",
-      label: w.id,
-      caption: w.caption,
-      status: "Queued",
-      stageId: "wardrobe",
-      width: 768,
-      height: w.id === "P01" ? 768 : 1024,
-    }));
+    const wardrobeAssets: Asset[] = wardrobeSpec.map((w) => {
+      const isProp = /^P/i.test(w.id);
+      return {
+        id: w.id,
+        kind: "image",
+        label: w.id,
+        caption: w.caption,
+        status: "Queued",
+        stageId: "wardrobe",
+        width: isProp ? 1024 : 768,
+        height: isProp ? 1024 : 1024,
+        aspectRatio: isProp ? "1:1" : "3:4",
+      };
+    });
     set((s) => ({
       assets: [...s.assets, ...wardrobeAssets],
       rail: { ...s.rail, open: true, flashId: wardrobeSpec[0]?.id },
@@ -591,19 +595,27 @@ export const useSC = create<SCState>((set, get) => {
         if (get().runId !== startedRunId) return;
         updateAsset(w.id, { status: "Generating", errorMessage: undefined });
         const isProp = /^P/i.test(w.id);
-        const isHero = /^W0*1$/i.test(w.id);
-        const role = isProp
-          ? "key prop / object hero shot, centered, studio lighting, neutral background"
-          : isHero
-            ? "main character / hero subject portrait, full body, neutral background, reference sheet style"
-            : "secondary character / supporting subject portrait, full body, neutral background, reference sheet style";
+        // Wardrobe/Prop reference shots: NOT cinematic keyframes. Strict product/
+        // costume photography brief, white seamless background, no environment,
+        // no narrative.
+        const subjectBrief = isProp
+          ? `Hero product / prop: ${w.caption}. Single object centered, isolated on pure white seamless backdrop. Studio softbox lighting, soft shadow under the object only. E-commerce product photography. No human, no hands, no environment, no story.`
+          : `Costume / character reference: ${w.caption}. Front-facing reference sheet style on plain neutral grey backdrop, full-body or 3/4 figure, even studio lighting. Focus on the outfit, hair, accessories. No background scene, no props beyond what is worn, no cinematic mood, no narrative action.`;
         const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
         const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
+        // Attach uploaded reference images (item 3) so the model conditions on them.
+        const refs = get().attachments
+          .filter((a) => a.kind === "image" && /^https?:\/\//.test(a.url))
+          .map((a) => a.url);
+        const refLine = refs.length
+          ? `\n\nUser provided reference images (strictly follow the style / clothing / props shown): ${refs.join(" ")}`
+          : "";
         const fullPrompt = [
-          styleFragment ? `Style: ${styleFragment}.` : "",
-          `Reference asset ${w.id} for the short film. Subject: ${w.caption}.`,
-          `Style direction: ${role}.`,
-          `User brief (must reflect the actual subject, do NOT invent unrelated brands or scenes): ${briefPrompt}`,
+          styleFragment ? `Visual style: ${styleFragment}.` : "",
+          `This is a WARDROBE / PROP REFERENCE asset (id ${w.id}) for a short film — it MUST be a clean reference image, NOT a keyframe or cinematic scene.`,
+          subjectBrief,
+          `Project brief (context only — do NOT render the story here, only the wardrobe/prop): ${briefPrompt}`,
+          `NEGATIVE: no scene, no environment, no cinematic shot, no keyframe, no story moment, no extra characters, no text, no watermark.${refLine}`,
         ].filter(Boolean).join("\n\n");
         try {
           const b64 = await streamGenerateImage({
