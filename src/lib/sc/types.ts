@@ -87,6 +87,8 @@ export interface AssetVersion {
   note?: string;
 }
 
+export type AssetAspect = "16:9" | "9:16" | "1:1" | "3:4" | "4:3";
+
 export interface Asset {
   id: string;
   kind: "image" | "video";
@@ -97,6 +99,8 @@ export interface Asset {
   poster?: string;
   width?: number;
   height?: number;
+  /** Display aspect ratio for the asset container. */
+  aspectRatio?: AssetAspect;
   duration?: string;
   stageId?: StageId;
   episode?: number;
