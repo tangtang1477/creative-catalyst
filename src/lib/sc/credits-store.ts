@@ -10,7 +10,9 @@ export interface CreditEvent {
 }
 
 interface CreditsState {
+  /** 账户总积分（含充值）。仅用于 hover 面板的账户余额展示。 */
   total: number;
+  /** 已消耗积分。 */
   used: number;
   history: CreditEvent[];
   pricingOpen: boolean;
@@ -32,7 +34,13 @@ interface CreditsState {
 
 const KEY = "sc.credits.v1";
 
-const DEFAULT_TOTAL = 200;
+/**
+ * 任务额度（固定 200）：圆环 / 进度条都按这 200 计算。
+ * 账户总积分（total，可能含充值）单独展示在 hover 面板，不参与圆环闭合判断。
+ */
+export const QUOTA = 200;
+
+const DEFAULT_TOTAL = QUOTA;
 
 const load = (): { total: number; used: number; history: CreditEvent[] } => {
   if (typeof window === "undefined") return { total: DEFAULT_TOTAL, used: 0, history: [] };
@@ -40,11 +48,10 @@ const load = (): { total: number; used: number; history: CreditEvent[] } => {
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return { total: DEFAULT_TOTAL, used: 0, history: [] };
     const j = JSON.parse(raw);
-    // Migration: legacy mock data had total=100/used=42. Force-upgrade to 200.
-    const total = (j.total ?? 0) < DEFAULT_TOTAL ? DEFAULT_TOTAL : j.total;
+    const total = typeof j.total === "number" && j.total >= DEFAULT_TOTAL ? j.total : DEFAULT_TOTAL;
     return {
       total,
-      used: Math.min(j.used ?? 0, total),
+      used: Math.max(0, j.used ?? 0),
       history: Array.isArray(j.history) ? j.history.slice(-20) : [],
     };
   } catch {
@@ -67,7 +74,7 @@ const persist = (s: { total: number; used: number; history: CreditEvent[] }) => 
 // Per-stage debounce so batch generators (8 keyframes in a row) don't
 // produce 8 stacked toasts. We aggregate the cost within 350ms.
 const toastBuffer = new Map<string, { cost: number; timer: ReturnType<typeof setTimeout> }>();
-function notifyConsume(stage: string, cost: number, remaining: number) {
+function notifyConsume(stage: string, cost: number, quotaRemaining: number) {
   if (typeof window === "undefined") return;
   const existing = toastBuffer.get(stage);
   if (existing) {
@@ -78,7 +85,7 @@ function notifyConsume(stage: string, cost: number, remaining: number) {
   if (!existing) toastBuffer.set(stage, entry);
   entry.timer = setTimeout(() => {
     toastBuffer.delete(stage);
-    toast(`本次消耗 ${entry.cost} 积分 · 剩余 ${Math.max(0, remaining)} 积分`, {
+    toast(`本次消耗 ${entry.cost} 积分 · 任务额度剩余 ${Math.max(0, quotaRemaining)} / ${QUOTA}`, {
       description: `阶段 · ${stage}`,
       duration: 2500,
     });
@@ -100,10 +107,11 @@ export const useCredits = create<CreditsState>((set, get) => {
 
     consume: (stage, label, cost, taskId) => {
       if (cost <= 0) return;
-      let snapshotRemaining = 0;
+      let quotaRemainingSnap = 0;
       set((s) => {
-        const used = Math.min(s.total, s.used + cost);
-        snapshotRemaining = Math.max(0, s.total - used);
+        const used = s.used + cost;
+        const quotaUsed = Math.min(QUOTA, used);
+        quotaRemainingSnap = Math.max(0, QUOTA - quotaUsed);
         const history = [
           ...s.history,
           { ts: Date.now(), stage, label, cost, taskId: taskId ?? null },
@@ -111,15 +119,15 @@ export const useCredits = create<CreditsState>((set, get) => {
         persist({ total: s.total, used, history });
         return { used, history, pulseId: s.pulseId + 1 };
       });
-      notifyConsume(stage, cost, snapshotRemaining);
-      // Auto-trigger low-credit prompt
-      const tTotal = get().total;
-      if (snapshotRemaining === 0) {
+      notifyConsume(stage, cost, quotaRemainingSnap);
+      // Auto-trigger low-credit prompt — 基于任务额度比例
+      if (quotaRemainingSnap === 0) {
         set({ lowOpen: true, lowDismissedFor: null });
-      } else if (tTotal > 0 && snapshotRemaining / tTotal <= 0.1) {
+      } else if (quotaRemainingSnap / QUOTA <= 0.1) {
         if (!taskId || get().lowDismissedFor !== taskId) set({ lowOpen: true });
       }
-      // Backend ledger insert (best-effort)
+      // Backend ledger insert (best-effort)。注意：后端 total 含充值，仅作为账户余额来源，
+      // 不会再覆盖本地任务额度逻辑。
       void (async () => {
         try {
           const { consumeCredits } = await import("@/lib/credits.functions");
@@ -128,8 +136,9 @@ export const useCredits = create<CreditsState>((set, get) => {
           });
           set({ used: r.used, total: r.total, synced: true });
           persist({ total: r.total, used: r.used, history: get().history });
-          if (r.remaining === 0) set({ lowOpen: true, lowDismissedFor: null });
-          else if (r.total > 0 && r.remaining / r.total <= 0.1) {
+          const qRemain = Math.max(0, QUOTA - Math.min(QUOTA, r.used));
+          if (qRemain === 0) set({ lowOpen: true, lowDismissedFor: null });
+          else if (qRemain / QUOTA <= 0.1) {
             if (!taskId || get().lowDismissedFor !== taskId) set({ lowOpen: true });
           }
         } catch (err) {
@@ -149,7 +158,6 @@ export const useCredits = create<CreditsState>((set, get) => {
       try {
         const { topUpCredits, getCreditsBalance } = await import("@/lib/credits.functions");
         const r = await topUpCredits({ data: { amount: n, tier } });
-        // Re-sync to be safe (covers race with concurrent consume rows).
         let used = r.used, total = r.total, remaining = r.remaining;
         try {
           const b = await getCreditsBalance();
@@ -158,7 +166,7 @@ export const useCredits = create<CreditsState>((set, get) => {
         set({ used, total, synced: true, toppingUp: false, pulseId: get().pulseId + 1 });
         persist({ total, used, history: get().history });
         toast.success(`充值成功 · 到账 ${n} 积分`, {
-          description: `当前余额 ${Math.max(0, remaining)} · 总额度 ${total}`,
+          description: `账户余额 ${Math.max(0, remaining)} · 任务额度 ${Math.max(0, QUOTA - Math.min(QUOTA, used))} / ${QUOTA}`,
           duration: 3000,
         });
       } catch (err) {
@@ -171,7 +179,7 @@ export const useCredits = create<CreditsState>((set, get) => {
     resetUsed: () =>
       set((s) => {
         persist({ total: s.total, used: 0, history: [] });
-        return { used: 0, history: [] };
+        return { used: 0, history: [], pulseId: s.pulseId + 1 };
       }),
     canAfford: (cost) => get().total - get().used >= cost,
     openPricing: () => set({ pricingOpen: true }),
@@ -197,8 +205,17 @@ export const useCredits = create<CreditsState>((set, get) => {
 });
 
 export const creditsSelectors = {
+  /** 账户余额（含充值），用于 hover 面板的"账户余额"行。 */
   remaining: (s: CreditsState) => Math.max(0, s.total - s.used),
-  percent: (s: CreditsState) => Math.min(100, Math.round((s.used / s.total) * 100)),
+  /** 任务额度内已用积分（封顶 200）。 */
+  quotaUsed: (s: CreditsState) => Math.min(QUOTA, s.used),
+  /** 任务额度剩余（0 - 200）。驱动圆环 / 进度条 / 圆点。 */
+  quotaRemaining: (s: CreditsState) => Math.max(0, QUOTA - Math.min(QUOTA, s.used)),
+  /** 任务额度剩余百分比 0..1。 */
+  quotaPercent: (s: CreditsState) =>
+    Math.max(0, Math.min(1, (QUOTA - Math.min(QUOTA, s.used)) / QUOTA)),
+  /** 已消耗百分比（0..100）— 旧接口保留兼容。 */
+  percent: (s: CreditsState) => Math.min(100, Math.round((Math.min(QUOTA, s.used) / QUOTA) * 100)),
   remainingPercent: (s: CreditsState) =>
-    Math.max(0, Math.min(100, Math.round(((s.total - s.used) / s.total) * 100))),
+    Math.round(Math.max(0, Math.min(1, (QUOTA - Math.min(QUOTA, s.used)) / QUOTA)) * 100),
 };

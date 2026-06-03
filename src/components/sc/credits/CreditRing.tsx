@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useCredits } from "@/lib/sc/credits-store";
+import { useCredits, QUOTA } from "@/lib/sc/credits-store";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -10,18 +10,18 @@ interface Props {
 }
 
 /**
- * SVG ring rendered around an avatar/trigger showing REMAINING credits.
- * Ring starts full and shrinks clockwise as credits are spent.
- * Turns amber at ≤50% remaining and red+pulse at ≤20% remaining.
- * Briefly flashes whenever credits change (consume/topUp bump pulseId).
+ * 圆环只反映"任务额度"（QUOTA = 200），与账户余额（含充值）完全解耦。
+ *   - 已用 0     → 圆环闭合
+ *   - 已用 ≥200 → 圆环耗尽
  */
 export function CreditRing({ size = 32, stroke = 2, children, className }: Props) {
   const used = useCredits((s) => s.used);
   const total = useCredits((s) => s.total);
   const pulseId = useCredits((s) => s.pulseId);
 
-  const remaining = Math.max(0, total - used);
-  const remainPct = total > 0 ? Math.max(0, Math.min(1, remaining / total)) : 0;
+  const quotaUsed = Math.min(QUOTA, used);
+  const quotaRemaining = Math.max(0, QUOTA - quotaUsed);
+  const remainPct = QUOTA > 0 ? quotaRemaining / QUOTA : 0;
   const isLow = remainPct <= 0.5 && remainPct > 0.2;
   const isCritical = remainPct <= 0.2;
 
@@ -35,7 +35,6 @@ export function CreditRing({ size = 32, stroke = 2, children, className }: Props
       ? "var(--credit-low)"
       : "var(--accent)";
 
-  // Flash whenever credits change
   const [flash, setFlash] = useState(false);
   useEffect(() => {
     if (pulseId === 0) return;
@@ -44,7 +43,8 @@ export function CreditRing({ size = 32, stroke = 2, children, className }: Props
     return () => window.clearTimeout(t);
   }, [pulseId]);
 
-  const title = `剩余 ${remaining} / 总额度 ${total}（已消耗 ${used}）· 圆环耗尽代表积分用完`;
+  const accountRemaining = Math.max(0, total - used);
+  const title = `任务额度 ${quotaRemaining} / ${QUOTA}（已消耗 ${quotaUsed}）· 账户余额 ${accountRemaining}`;
 
   return (
     <span

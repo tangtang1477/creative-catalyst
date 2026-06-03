@@ -29,9 +29,9 @@ const USER = {
 export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
   const { theme, setTheme, toggle } = useTheme();
   const openPricing = useCredits((s) => s.openPricing);
-  const remaining = useCredits(creditsSelectors.remaining);
-  const total = useCredits((s) => s.total);
-  const pctRemain = total > 0 ? remaining / total : 0;
+  // 顶部进度条与外圈圆环共享"任务额度"口径，账户余额单独在面板内展示
+  const pctRemain = useCredits(creditsSelectors.quotaPercent);
+
 
   return (
     <HoverCard openDelay={120} closeDelay={120}>
