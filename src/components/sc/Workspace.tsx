@@ -235,6 +235,23 @@ export function Workspace() {
                       );
                     }
 
+                    if (id === "cast") {
+                      const castAssets = assets.filter((a) => a.stageId === "cast");
+                      return (
+                        <StageBoundary key={id} stageId={id}>
+                          <StageRow id={id} state={st} keepChildrenWhenCollapsed>
+                            {castAssets.length > 0 && (
+                              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                {castAssets.map((a) => (
+                                  <AssetCard key={a.id} asset={a} compact />
+                                ))}
+                              </div>
+                            )}
+                          </StageRow>
+                        </StageBoundary>
+                      );
+                    }
+
                     if (id === "paint") {
                       return (
                         <StageBoundary key={id} stageId={id}>
