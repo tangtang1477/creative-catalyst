@@ -438,14 +438,15 @@ function HomeProjectsRow() {
   const projects = useProjects((s) => s.projects);
   const loaded = useProjects((s) => s.loaded);
   const openCreate = useProjects((s) => s.openCreate);
-  const enterProject = useSC((s) => s.enterProject);
+  const navigate = useNavigate();
 
   if (!loaded) return null;
   const recent = projects.slice(0, 3);
 
   const onPick = (id: string) => {
-    enterProject(id);
+    void navigate({ to: "/projects/$projectId", params: { projectId: id } });
   };
+
 
   return (
     <div className="mt-6 flex flex-wrap items-center gap-2">
