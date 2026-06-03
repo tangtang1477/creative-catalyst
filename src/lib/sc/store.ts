@@ -20,6 +20,7 @@ import {
   STAGE_LABEL,
 } from "./types";
 import { SAMPLE_KEYFRAME, SAMPLE_VIDEO, SERIES_DEMO, STORYBOARD_ROWS, KEYFRAME_PROMPT_DETAIL } from "./samples";
+import type { PendingScript } from "./types";
 import { inferTaskTitle } from "./intake-engine";
 import { useCredits } from "./credits-store";
 import { supabase } from "@/integrations/supabase/client";
