@@ -1098,7 +1098,7 @@ export const useSC = create<SCState>((set, get) => {
     const briefPrompt = get().brief?.prompt ?? "";
 
     void (async () => {
-      // Collect wardrobe reference URLs (W01/W02/P01) for character/prop locking.
+      // Collect wardrobe + cast reference URLs (W/P + C/S) for character/prop/scene locking.
       const wardrobeRefs = get()
         .assets.filter(
           (a) =>
@@ -1107,6 +1107,15 @@ export const useSC = create<SCState>((set, get) => {
             /^https?:\/\//.test(a.url),
         )
         .map((a) => a.url as string);
+      const castRefs = get()
+        .assets.filter(
+          (a) =>
+            a.stageId === "cast" &&
+            a.url &&
+            /^https?:\/\//.test(a.url),
+        )
+        .map((a) => a.url as string);
+
 
       for (const issue of issues) {
         if (get().runId !== startedRunId) return;
