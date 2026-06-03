@@ -2975,7 +2975,6 @@ export const useSC = create<SCState>((set, get) => {
           break;
         }
       }
-    },
 
       // 5) imageEdits：对具体已生成图片做真改图（后端 Gemini Nano Banana）
       if (imageEdits.length) {
