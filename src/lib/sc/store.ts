@@ -3245,6 +3245,11 @@ export const useSC = create<SCState>((set, get) => {
       }));
     },
 
+    setPendingScript: (s) => set({ pendingScript: s }),
+    clearPendingScript: () => set({ pendingScript: null }),
+
+
+
 
     openVersionDrawer: (assetId) => set({ versionDrawerAssetId: assetId }),
     closeVersionDrawer: () => set({ versionDrawerAssetId: null }),
