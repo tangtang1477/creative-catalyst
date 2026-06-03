@@ -932,6 +932,8 @@ export const useSC = create<SCState>((set, get) => {
     updateStage("paint", { status: "running", expanded: true });
     runTool("paint", "skill", "ai-video-studio · keyframe-painter", 800, 0);
     runTool("paint", "tool", "text-to-image · streaming", 1200, 900);
+    appendRefThumbs("paint");
+
 
     const scriptForThought = get().script;
     const wardrobeIds = get()
