@@ -1400,7 +1400,7 @@ export const useSC = create<SCState>((set, get) => {
         appendSummary("life", `全部 ${okCount} 段 Ready · 合计 ≈ ${totalSeconds}s`);
         collapseAfter("life", 1800);
         persistCurrent("running");
-        schedule(() => runDetails(), 1600);
+        openGate("merge", () => runDetails());
       } else if (okCount === 0) {
         updateStage("life", { status: "failed", errorMessage: "全部视频段渲染失败，可在下方单独重做某一段" });
         set({ phase: "failed" });
