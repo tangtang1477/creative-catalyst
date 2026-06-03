@@ -1,67 +1,72 @@
-# 素材卡片（AssetCard）布局重构
+## 目标
 
-针对图示的角色素材卡（W01 Laura）做四件事：解决 hover 冲突、默认自动匹配音色、删除底部音色行、把音色控件收成与下载键并排的 pill，并让试听按钮出现在下拉选项里。
+1. AssetCard 角色卡上的音色 pill 调整样式，并在 pill 里增加快捷"试听"键；下拉菜单变窄一些。
+2. Gallery（MediaRail）当 filter=audio 时显示两个 Tab：
+   - **当前任务音频**：现有的音频 asset 列表（保持原有 AssetCard 列表渲染）。
+   - **音色库**：图文卡片网格，每个音色对应 1:1 虚拟形象图片 + 名称 + 试听按钮。
 
-## 1. 修复左上角按钮重叠
+仅前端 UI 调整，不动后端业务逻辑。
 
-- 删除 `AssetCard.tsx` 左上角的"音色 badge + 试听小按钮"整块（约第 138-160 行的 `isCharacter && boundVoice && (...)`）。
-- 这样 `AssetActions` 的多选 checkbox / hover 工具按钮就不再与音色按钮重叠。
-- `AssetThumbCard` 不涉及音色，无需改动。
+---
 
-## 2. 默认自动匹配一个音色（无需用户先选）
+## 1. 音色 pill 与下拉框（src/components/sc/AssetCard.tsx）
 
-在 `AssetCard.tsx` 中新增"自动绑定"副作用：
+Pill（DropdownMenuTrigger）样式：
+- 高度由 `h-6` 提到 `h-7`，圆角统一为 `rounded-full`，背景 `bg-surface-2/70 hover:bg-surface-2`，外层加 `border border-border/60`。
+- 内部布局：`[Mic 图标] [名称] [▶/⏸ 小按钮（试听当前绑定音色）] [ChevronDown]`，名称用 `max-w-[88px] truncate`。
+- 新增的内嵌"试听"按钮独立 `<button>`，`onClick` 调 `e.stopPropagation()` + `e.preventDefault()`，避免触发 Trigger 打开下拉；播放/停止逻辑复用现有 `previewVoice / stopPreview / previewingId`。
 
-- 仅当 `isCharacter && voicesLoaded && cvLoaded && !binding && voices.length > 0` 时触发一次。
-- 选择规则（按优先级）：
-  1. `voices.filter(v => v.status === "ready")` 中按角色名做轻量匹配——若 `characterName` 含"女/Laura/姐/母/妻"等女性关键词，优先 `lang` 一致且名称含"女/Female"的预设；男性同理。
-  2. 否则取 `source === "preset"` 且 `status === "ready"` 的第一个。
-  3. 用素材 id 哈希（`hash(asset.id) % candidates.length`）做稳定选择，避免每张卡都选同一个。
-- 命中后调用 `bindCharacterVoice({ character_name, voice_id })` + `cvRefresh()`；失败静默 `console.warn`。
-- 用 `useRef` 防止重复绑定（StrictMode 双调用 / 重渲染）。
+DropdownMenuContent：
+- 宽度从 `w-60` 减到 `w-44`，`text-[11px]`，item 内部图标统一 `h-2.5 w-2.5`，整体更紧凑。
+- 内部每项的试听按钮保留现有 `Play/Pause`，不变。
 
-> 这样进入卡片就已经显示一个默认音色，用户只在想换时才打开下拉。
+无其他逻辑改动；自动匹配音色 / 切换音色逻辑不动。
 
-## 3. 删除卡片底部音色行 + 收成下载键旁的 pill
+---
 
-**删除：** `AssetCard.tsx` 底部 `{isCharacter && (<div className="...border-t...">...select+试听...</div>)}` 整块。
+## 2. Gallery 音频区 Tabs（src/components/sc/MediaRail.tsx）
 
-**新增：** 把音色控件做成一个紧凑 pill，插入到现有"预览 / v2 / 下载"按钮行（`<div className="flex items-center gap-1 pt-1">`）的**下载键右侧**：
+在现有 `filter === "audio"` 渲染路径上方插入两个 Tab：
+- 默认 Tab："**任务音频**"（视图 = 当前 audios 列表，沿用 grid/list 渲染）。
+- 第二 Tab："**音色库**"（视图 = `<VoiceLibraryGrid />` 新组件）。
 
-```
-[🔍 预览] [v2] [⬇ 下载] [🎙 预设·Laura ▾]
-```
+实现：新增本地 state `audioTab: "task" | "library"`，渲染条件 `filter === "audio"` 时优先展示一行 segmented Tabs（pill 风格，复用 filter chips 视觉），然后根据 tab 切换内容。其余 filter 路径不受影响。
 
-Pill 结构（仅 `isCharacter` 时渲染）：
+---
 
-- 触发器：使用 shadcn `DropdownMenu`（项目已用），按钮 `h-6 px-2 rounded-md bg-surface-2 hover:bg-surface-2/80 text-[11px]`，左侧 `Mic` 图标，中间截断显示 `boundVoice?.name ?? "选择音色"`，右侧 `ChevronDown`。
-- 整张卡因此少一行 + 不再有底部 border，视觉上自然变窄/更紧凑。
+## 3. 新组件 `VoiceLibraryGrid`（新文件 src/components/sc/VoiceLibraryGrid.tsx）
 
-**下拉项（DropdownMenuItem）布局：**
+数据源：复用 `useVoices()`（已经存在的 voices-store），自动 `fetchVoices()`，状态过滤 `status === "ready"`。
 
-```
-[预设·Laura .................] [▶/⏸]
-[预设·Sora ..................] [▶/⏸]
-[我的·克隆音1 ...............] [▶/⏸]
-```
+布局：`grid grid-cols-2 gap-2`，每个卡片：
+- 顶部 1:1 头像（`aspect-square rounded-xl overflow-hidden`），通过 `voiceAvatar(voice)` 解析：
+  - 预设音色（source=preset）→ 用预生成的 12 张图片资源，按 `name` 映射；
+  - 克隆音色（source=cloned）→ fallback 渐变背景 + 首字母大写居中显示。
+- 中部：`voice.name`（粗体）+ 角标（预设 / 我的）。
+- 底部：圆形 ▶/⏸ 试听按钮，状态对接 `previewingId`。
 
-- 每项右侧带一个独立的 ▶/⏸ 按钮，`onClick` 时 `e.stopPropagation() + e.preventDefault()`，调用 `previewVoice(v.id)` / `stopPreview()`，**不**关闭菜单也不触发选择。
-- 点击项主体区域才执行 `handleChangeVoice(v.id)` 并关闭菜单。
-- 当前已绑定项左侧显示 `Check` 图标。
-- 列表只列 `status === "ready"` 的 voices；预设和我的分组（`DropdownMenuLabel` + `DropdownMenuSeparator`）。
+复用现有 `preview / stopPreview`，无新增 server 调用。
 
-## 4. 清理
+### 头像资源
 
-- `AssetCard.tsx` 移除已不用的 `Play / Pause` 直接渲染逻辑（仍需 import，用于下拉项里的试听按钮）。
-- 不再需要 `<select>` 原生元素。
-- `AssetActions` / `AssetVersionSwitcher` 不动。
+在 `src/assets/voices/` 下用 `imagegen` 生成 12 张 512×512 1:1 头像（与 12 个预设音色一一对应：Alice/Brian/Callum/Charlie/George/Jessica/Laura/Liam/Lily/Matilda/River/Sarah），写一个 `voice-avatars.ts` 做 `Record<voiceName, importedAssetUrl>` 映射；克隆音色直接走 fallback。风格统一：极简插画 / 柔和渐变背景 / 半身人像，与产品深色 UI 协调。
 
-## 涉及文件
+---
 
-- `src/components/sc/AssetCard.tsx`（唯一改动文件）
+## 4. 其余不动
 
-## 不在本次范围
+- `VoiceLibraryPanel`、`CharacterVoiceBinding`、`voices-store`、`characters.functions.ts`、其它路由与状态均不修改。
+- 自动绑定默认音色、绑定切换逻辑保持上一次实现。
 
-- 缩略图卡 `AssetThumbCard`（无音色 UI）。
-- `CharacterVoiceBinding` / `VoiceLibraryPanel` 等其他面板。
-- 自动匹配的"性别/语言/年龄"高级推断——本期只做关键词 + 稳定哈希，后续可以再加。
+---
+
+## 文件清单
+
+新增：
+- src/components/sc/VoiceLibraryGrid.tsx
+- src/components/sc/voice-avatars.ts
+- src/assets/voices/{alice,brian,callum,charlie,george,jessica,laura,liam,lily,matilda,river,sarah}.jpg（imagegen 生成）
+
+修改：
+- src/components/sc/AssetCard.tsx（pill 样式 + 内嵌试听键 + 下拉宽度）
+- src/components/sc/MediaRail.tsx（audio 过滤下加 Tabs + 引用新组件）
