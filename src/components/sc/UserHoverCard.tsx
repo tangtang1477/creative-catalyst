@@ -33,6 +33,16 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
   const pctRemain = useCredits(creditsSelectors.ringPercent);
   const remaining = useCredits(creditsSelectors.remaining);
 
+  const handleBoost = () => {
+    const st = useCredits.getState();
+    if (!st.canAfford(2000)) {
+      st.openPricing();
+      return;
+    }
+    st.consume("boost", "Boost speed · 加速渲染", 2000);
+  };
+
+
 
   return (
     <HoverCard openDelay={120} closeDelay={120}>
