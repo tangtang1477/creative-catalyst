@@ -2343,6 +2343,35 @@ export const useSC = create<SCState>((set, get) => {
       saveHistory(next);
     },
 
+    enterProject: (projectId) => {
+      const { phase } = get();
+      if (phase === "running" || phase === "thinking") {
+        if (typeof window !== "undefined" &&
+            !window.confirm("当前任务进行中，确认切换项目？已生成的内容会保留在 Tasks。")) {
+          return;
+        }
+      }
+      void (async () => {
+        try {
+          const { useProjects } = await import("@/lib/sc/projects-store");
+          const ps = useProjects.getState();
+          if (!ps.loaded) await ps.fetchProjects();
+          const fresh = useProjects.getState();
+          fresh.setCurrentProject(projectId);
+          const proj = fresh.projects.find((p) => p.id === projectId);
+          if (!proj) return;
+          const match = get().taskHistory.find((t) => t.title === proj.name);
+          if (match) {
+            get().restoreTask(match.id);
+          } else {
+            get().reset({ fromUserAction: true });
+          }
+        } catch (e) {
+          console.warn("[enterProject] failed", e);
+        }
+      })();
+    },
+
     retryStage: (id) => {
       // 重做前同步刷新一次最新登录态，避免点了重试还报「未登录」
       void supabase.auth.getUser().then(({ data }) => {
