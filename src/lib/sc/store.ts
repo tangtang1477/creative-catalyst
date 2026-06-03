@@ -2613,22 +2613,53 @@ export const useSC = create<SCState>((set, get) => {
           const ps = useProjects.getState();
           if (!ps.loaded) await ps.fetchProjects();
           const fresh = useProjects.getState();
-          // 立即设置 currentProjectId，UI 同步响应（侧边栏高亮 + 空态横幅）
           fresh.setCurrentProject(projectId);
           const proj = fresh.projects.find((p) => p.id === projectId);
           if (!proj) return;
-          // 按 projectId 命中（新任务）；旧任务按 title 兜底
+
+          // 拉远端任务快照并合并入本地 taskHistory（远端为准）。
+          try {
+            const { tasks: remote } = await listProjectTasks({ data: { projectId } });
+            if (Array.isArray(remote) && remote.length) {
+              const local = get().taskHistory;
+              const byId = new Map<string, TaskRecord>(local.map((t) => [t.id, t]));
+              for (const r of remote) {
+                const snap = (r.snapshot ?? {}) as Partial<TaskRecord> & { status?: TaskRecord["status"] };
+                const rec: TaskRecord = {
+                  id: r.id,
+                  title: r.title ?? "Untitled",
+                  prompt: r.prompt ?? "",
+                  createdAt: snap.createdAt ?? Date.parse(r.created_at ?? "") || Date.now(),
+                  updatedAt: snap.updatedAt ?? Date.parse(r.updated_at ?? "") || Date.now(),
+                  status: snap.status ?? "done",
+                  kind: snap.kind ?? "oneoff",
+                  assets: snap.assets ?? [],
+                  stageSummaries: snap.stageSummaries ?? {},
+                  stageSnapshots: snap.stageSnapshots ?? {},
+                  script: snap.script ?? null,
+                  failureReason: snap.failureReason ?? undefined,
+                  brief: snap.brief ?? null,
+                  projectId: r.project_id ?? projectId,
+                };
+                byId.set(rec.id, rec);
+              }
+              const merged = Array.from(byId.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+              set({ taskHistory: merged });
+              saveHistory(merged);
+            }
+          } catch (e) {
+            console.warn("[enterProject] remote fetch failed", e);
+          }
+
+          // 命中：projectId 优先；其次 title 兜底
           const history = get().taskHistory;
           const match =
             history.find((t) => t.projectId === projectId) ??
             history.find((t) => t.title === proj.name);
           if (match) {
             get().restoreTask(match.id);
-            // restoreTask 内部会写 rec.projectId（可能为 null），保险再覆盖一次
             useProjects.getState().setCurrentProject(projectId);
           } else {
-            // 无本地历史：回到 empty 主页，currentProjectId 已设置 →
-            // 主页会显示"当前项目：xxx · 暂无历史，开始第一次创作"横幅
             get().reset({ fromUserAction: true });
             useProjects.getState().setCurrentProject(projectId);
           }
