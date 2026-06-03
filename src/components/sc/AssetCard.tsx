@@ -48,12 +48,16 @@ export function AssetCard({
   const hasVersions = versionCount >= 2;
   const [loaded, setLoaded] = useState(false);
 
-  // —— Character ↔ voice badge (only on wardrobe W* characters) ——
-  const isCharacter = asset.stageId === "wardrobe" && /^W/i.test(asset.id);
+  // —— Character ↔ voice badge (wardrobe W* 或 cast C*) ——
+  const isCharacter =
+    (asset.stageId === "wardrobe" && /^W/i.test(asset.id)) ||
+    (asset.stageId === "cast" && /^C/i.test(asset.id));
+  const characterName = asset.caption ?? asset.id;
   const cvFetch = useCharacterVoices((s) => s.fetch);
+  const cvRefresh = useCharacterVoices((s) => s.refresh);
   const cvLoaded = useCharacterVoices((s) => s.loaded);
   const binding = useCharacterVoices((s) =>
-    isCharacter ? s.voiceForName(asset.caption ?? asset.id) : undefined,
+    isCharacter ? s.voiceForName(characterName) : undefined,
   );
   const voices = useVoices((s) => s.voices);
   const voicesLoaded = useVoices((s) => s.loaded);
@@ -67,6 +71,20 @@ export function AssetCard({
   }, [isCharacter, cvLoaded, voicesLoaded, cvFetch, fetchVoices]);
   const boundVoice = binding ? voices.find((v) => v.id === binding.voice_id) : undefined;
   const voicePlaying = boundVoice && previewingId === boundVoice.id;
+
+  const handleChangeVoice = async (voiceId: string) => {
+    if (!voiceId) return;
+    try {
+      if (binding) await unbindCharacterVoice({ data: { id: binding.id } });
+      await bindCharacterVoice({
+        data: { character_name: characterName, voice_id: voiceId },
+      });
+      await cvRefresh();
+    } catch (e) {
+      console.warn("[asset-card] change voice failed", e);
+    }
+  };
+
 
   // Derive display aspect ratio: explicit asset.aspectRatio wins, else infer
   // from width/height, else fall back per kind/stage.
