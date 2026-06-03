@@ -1646,7 +1646,7 @@ export const useSC = create<SCState>((set, get) => {
             if (allLife.every((a) => a.status === "Ready")) {
               updateStage("life", { status: "ready", errorMessage: undefined });
               persistCurrent("running");
-              schedule(() => runDetails(), 1200);
+              openGate("merge", () => runDetails());
             }
             return;
           }
