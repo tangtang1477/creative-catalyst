@@ -20,6 +20,8 @@ import { AssetVersionSwitcher } from "./AssetVersionSwitcher";
 import { GeneratingPill } from "./GeneratingPill";
 import { useCharacterVoices } from "@/lib/sc/character-voices-store";
 import { useVoices } from "@/lib/sc/voices-store";
+import { bindCharacterVoice, unbindCharacterVoice } from "@/lib/characters.functions";
+
 
 
 interface Props {
