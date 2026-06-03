@@ -205,7 +205,10 @@ export const Route = createFileRoute("/api/chat-stream")({
           "**指令协议（重要）**：如果用户的话**明确要求改动**当前 brief / 脚本 / 角色 / 场景（例如\"把女主换成男主\"\"场景改成雨夜地铁\"\"时长改成 30 秒\"），在回复正文之后追加一个 `<directives>...</directives>` JSON 块（不要 markdown 代码块），schema：",
           '{"patch":{"brief":{"prompt"?:string,"adType"?:string,"format"?:string},"script":{"mood"?:string,"shots"?:[{"shot":string,"duration"?:string,"scene"?:string,"motion"?:string,"elements"?:string,"prompt"?:string}]},"characters":[{"id":string,"name"?:string,"look"?:string}],"scenes":[{"id":string,"name"?:string,"description"?:string}]},"rerun":["script"|"wardrobe"|"cast"|"paint"]}',
           "- 只输出**真正需要改动**的字段，无须改动就**完全不要**输出 <directives> 标签。",
-          "- rerun 数组列出受影响、需要重跑的阶段。",
+          "- rerun 数组只能用于「用户明确说要**重新生成 / 重画 / 重做**某阶段」的场景。",
+          "- 用户说「合并/拆分/调整时长/改时长/微调/再润色/把 A0X 改成…/把 brief.format 改成 30s 9:16」这类**局部 patch**，必须**只输出 patch**，rerun **留空数组或不输出**——否则会清空用户已生成的关键帧 / 视频片段。",
+          "- 不要为同一改动同时输出 brief.format 微调和 rerun:[\"script\"]。format / shots 字段微调由前端直接应用，不需要重跑 script 阶段。",
+          "- 仅当用户说「重新分镜 / 整套服装重画 / 角色重做 / 关键帧重出」这种破坏性请求时，才允许出现对应 rerun。",
           "- JSON 之外不要任何额外字符。",
           "",
           "规则：每个 ## 小节只写 1-2 行；最终回复必须紧扣用户输入，禁止套用 YSL/巴黎/丝绒 等无关案例。",
@@ -313,8 +316,8 @@ export const Route = createFileRoute("/api/chat-stream")({
                 directivesOpen = true;
                 return;
               }
-              // 保留最后 12 个字符在 tail，避免 "<direct" 跨 chunk 漏判
-              const SAFE = 12;
+              // 保留最后 SAFE 个字符在 tail，避免 "<directives" 跨 chunk 漏判
+              const SAFE = 16; // len("<directives>") + 4 安全余量
               if (combined.length > SAFE) {
                 const visible = combined.slice(0, combined.length - SAFE);
                 emit("token", { text: visible });

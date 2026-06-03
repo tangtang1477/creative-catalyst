@@ -2768,7 +2768,8 @@ export const useSC = create<SCState>((set, get) => {
       if (patch.characters?.length) changeBits.push("角色");
       if (patch.scenes?.length) changeBits.push("场景");
       void import("sonner").then(({ toast }) => {
-        toast(`AI 指令已应用：${changeBits.join(" / ") || "—"}${rerun.length ? ` · 重跑 ${rerun.join("/")}` : ""}`);
+        const bits = changeBits.join(" / ") || "—";
+        toast(rerun.length ? `AI 指令已应用：${bits}（含 ${rerun.length} 个待确认重跑）` : `AI 指令已应用：${bits}`);
       }).catch(() => {});
       if (patch.brief && get().brief) {
         const merged = { ...get().brief!, ...patch.brief } as Brief;
@@ -2798,21 +2799,54 @@ export const useSC = create<SCState>((set, get) => {
         }
       }
 
-      // 4) rerun：按 stage 顺序触发对应阶段重跑
-      const order: Record<string, () => void> = {
-        script: () => get().retryStage("structure"),
-        wardrobe: () => get().retryStage("wardrobe"),
-        cast: () => get().retryStage("cast"),
-        paint: () => get().retryStage("paint"),
+      // 4) rerun：仅在「下游确实没有 Ready 产物」时直接 retryStage；
+      //    若会清掉已生成的关键帧 / 视频片段，改为给用户一个确认 chip，
+      //    避免 chat 一句"合并成同一集"就把全部成片冲掉。
+      const rerunToStage: Record<string, StageId> = {
+        script: "structure",
+        wardrobe: "wardrobe",
+        cast: "cast",
+        paint: "paint",
+      };
+      // STAGE_ORDER 索引大于触发阶段的都是下游
+      const downstreamHasReady = (sid: StageId): { ready: boolean; count: number } => {
+        const idx = STAGE_ORDER.indexOf(sid);
+        const downstream = new Set(STAGE_ORDER.slice(idx + 1));
+        const hits = get().assets.filter(
+          (a) => a.stageId && downstream.has(a.stageId) && a.status === "Ready",
+        );
+        return { ready: hits.length > 0, count: hits.length };
       };
       const seen = new Set<string>();
       for (const r of rerun) {
         if (seen.has(r)) continue;
         seen.add(r);
-        const fn = order[r];
-        if (fn) {
-          try { fn(); break; /* 触发最早的那个 stage，后续 stage 会因 rerun 链路重跑 */ }
-          catch (e) { console.warn("[applyAgentPatch] rerun failed", r, e); }
+        const stageId = rerunToStage[r];
+        if (!stageId) continue;
+        const { ready, count } = downstreamHasReady(stageId);
+        if (!ready) {
+          try {
+            get().retryStage(stageId);
+            break;
+          } catch (e) {
+            console.warn("[applyAgentPatch] rerun failed", r, e);
+          }
+        } else {
+          // 破坏性：附加一条 agent 消息 + 确认 chip，patch 已应用，等用户主动点击才重跑
+          const msg: ChatMsg = {
+            id: uid(),
+            role: "agent",
+            ts: Date.now(),
+            text:
+              `已应用本次改动。要按 AI 的建议重跑「${STAGE_LABEL[stageId]}」吗？` +
+              `这会清空当前已生成的 ${count} 个下游片段。`,
+            actions: [
+              { label: `重跑 ${STAGE_LABEL[stageId]}`, kind: "retry-stage" as const, stageId },
+            ],
+            skill: { name: "chat-director", sub: "等待确认" },
+          };
+          set((s) => ({ chatLog: [...s.chatLog, msg] }));
+          break;
         }
       }
     },
