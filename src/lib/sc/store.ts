@@ -289,13 +289,27 @@ export const useSC = create<SCState>((set, get) => {
       stages: { ...s.stages, [id]: { ...s.stages[id], ...patch } },
     }));
 
-  const appendSummary = (id: StageId, line: string) =>
-    set((s) => ({
-      stages: {
-        ...s.stages,
-        [id]: { ...s.stages[id], summary: [...s.stages[id].summary, line] },
-      },
-    }));
+  const appendSummary = (id: StageId, line: string, thumbs?: string[]) =>
+    set((s) => {
+      const entry: SummaryLine =
+        thumbs && thumbs.length ? { text: line, thumbs } : line;
+      return {
+        stages: {
+          ...s.stages,
+          [id]: { ...s.stages[id], summary: [...s.stages[id].summary, entry] },
+        },
+      };
+    });
+
+  /** Append a "参考图：" line to a stage if the user uploaded reference images. */
+  const appendRefThumbs = (id: StageId) => {
+    const refs = get().attachments;
+    const imgRefs = refs
+      .filter((a) => a.kind === "image" && a.url)
+      .map((a) => a.thumb ?? a.url);
+    if (imgRefs.length) appendSummary(id, "参考图：", imgRefs);
+  };
+
 
   const startToolCall = (stageId: StageId, kind: ToolCall["kind"], label: string) => {
     const id = uid();
