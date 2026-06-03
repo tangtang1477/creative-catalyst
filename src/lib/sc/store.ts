@@ -421,6 +421,16 @@ export const useSC = create<SCState>((set, get) => {
         failureReason = st.summary[st.summary.length - 1] ?? `${STAGE_LABEL[sid]} 失败`;
       }
     }
+    // Read currently active project (if any) so this task is linked back to it.
+    let currentProjectId: string | null = null;
+    try {
+      // Lazy-require to avoid circular dep at module init
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { useProjects } = require("@/lib/sc/projects-store");
+      currentProjectId = useProjects.getState().currentProjectId ?? null;
+    } catch {
+      currentProjectId = existing?.projectId ?? null;
+    }
     const record: TaskRecord = {
       id: taskId,
       title: taskTitle,
@@ -435,6 +445,7 @@ export const useSC = create<SCState>((set, get) => {
       script: script ?? existing?.script,
       failureReason: failureReason ?? existing?.failureReason,
       brief,
+      projectId: currentProjectId ?? existing?.projectId ?? null,
     };
     const next = [record, ...taskHistory.filter((t) => t.id !== taskId)];
     set({ taskHistory: next });
@@ -2360,7 +2371,11 @@ export const useSC = create<SCState>((set, get) => {
           fresh.setCurrentProject(projectId);
           const proj = fresh.projects.find((p) => p.id === projectId);
           if (!proj) return;
-          const match = get().taskHistory.find((t) => t.title === proj.name);
+          // Match by stored projectId (reliable). Fall back to title for old records.
+          const history = get().taskHistory;
+          const match =
+            history.find((t) => t.projectId === projectId) ??
+            history.find((t) => t.title === proj.name);
           if (match) {
             get().restoreTask(match.id);
           } else {
