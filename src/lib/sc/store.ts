@@ -49,6 +49,8 @@ export interface AgentDirectives {
     scenes?: Array<{ id: string; name?: string; description?: string }>;
   };
   rerun?: Array<"script" | "wardrobe" | "cast" | "paint">;
+  /** 用户对某张已生成图片说"改成…"时，由模型产出的真改图指令。 */
+  imageEdits?: Array<{ assetId: string; prompt: string; refs?: string[] }>;
 }
 
 
