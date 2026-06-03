@@ -325,8 +325,50 @@ export function AssetCard({
           )}
         </div>
       </div>
+
+      {isCharacter && (
+        <div className="flex items-center gap-1.5 border-t border-border bg-surface-2/40 px-3 py-2">
+          <Mic className="h-3 w-3 shrink-0 text-accent" />
+          <select
+            value={binding?.voice_id ?? ""}
+            onChange={(e) => handleChangeVoice(e.target.value)}
+            disabled={!voicesLoaded || voices.length === 0}
+            className="h-6 min-w-0 flex-1 truncate rounded-md border border-border bg-background/40 px-1.5 text-[11px] text-foreground outline-none focus:border-accent/60"
+          >
+            <option value="" disabled>
+              {voicesLoaded ? "选择音色…" : "加载音色…"}
+            </option>
+            {voices
+              .filter((v) => v.status === "ready")
+              .map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.source === "preset" ? "预设 · " : "我的 · "}
+                  {v.name}
+                </option>
+              ))}
+          </select>
+          {boundVoice && (
+            <button
+              type="button"
+              aria-label="试听音色"
+              onClick={() =>
+                voicePlaying ? stopPreview() : previewVoice(boundVoice.id)
+              }
+              className={cn(
+                "inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors",
+                voicePlaying
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
+              )}
+            >
+              {voicePlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
+
 
 
