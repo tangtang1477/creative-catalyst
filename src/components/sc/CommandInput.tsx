@@ -34,7 +34,11 @@ export function CommandInput({ placeholder, compact = false }: Props) {
     resolveIntakeOthers,
     cancelIntakeOthers,
     chatMessage,
+    attachments,
+    assets,
+    removeAttachment,
   } = useSC();
+
   const [value, setValue] = useState(prompt ?? "");
   const [caret, setCaret] = useState(0);
   const taRef = useRef<HTMLTextAreaElement>(null);
