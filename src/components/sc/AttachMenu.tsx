@@ -5,10 +5,10 @@ import { useSC } from "@/lib/sc/store";
 import { useVoices } from "@/lib/sc/voices-store";
 import { uploadGenericFile } from "@/lib/upload-image";
 import { supabase } from "@/integrations/supabase/client";
-import { parseScriptText } from "@/lib/script-parse.functions";
 import type { Attachment } from "@/lib/sc/types";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+
 
 const aid = () => `att_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
