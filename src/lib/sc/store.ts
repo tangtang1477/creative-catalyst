@@ -1132,8 +1132,9 @@ export const useSC = create<SCState>((set, get) => {
               originalShot?.url && /^https?:\/\//.test(originalShot.url)
                 ? originalShot.url
                 : undefined;
-            const refs = [...wardrobeRefs];
+            const refs = [...castRefs, ...wardrobeRefs];
             if (originalUrl) refs.push(originalUrl);
+
 
             const editPrompt = [
               `Re-render keyframe ${issue.shotId} for a short film while strictly preserving character identity and key prop appearance from the reference images (W01 hero, W02 supporting, P01 key prop).`,
