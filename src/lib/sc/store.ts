@@ -1765,6 +1765,7 @@ export const useSC = create<SCState>((set, get) => {
         const { taskId: seedanceTaskId } = await submitVideoTask({
           data: {
             route: "reference-image-to-video",
+            videoTaskId: get().taskId ?? null,
             payload: {
               prompt: segPrompt,
               image_urls: refs,
