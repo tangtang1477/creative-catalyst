@@ -2882,7 +2882,7 @@ export const useSC = create<SCState>((set, get) => {
               const looseTitleMatch = !r.project_id && titleMatchesProject(r.title, proj.name);
               const inferProjectId =
                 r.project_id ?? (looseTitleMatch ? projectId : (byId.get(r.id)?.projectId ?? null));
-              const rec: TaskRecord = {
+              const rec = normalizeTaskRecord({
                 id: r.id,
                 title: r.title ?? "Untitled",
                 prompt: r.prompt ?? "",
@@ -2897,7 +2897,7 @@ export const useSC = create<SCState>((set, get) => {
                 failureReason: snap.failureReason ?? undefined,
                 brief: snap.brief ?? null,
                 projectId: inferProjectId,
-              };
+              });
               byId.set(rec.id, rec);
               if (inferProjectId === projectId) {
                 remoteLooseMatches.push({ id: r.id, title: r.title ?? undefined, project_id: r.project_id });
