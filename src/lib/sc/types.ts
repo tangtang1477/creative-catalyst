@@ -198,7 +198,7 @@ export interface Attachment {
 
 export interface StageSnapshot {
   status: StageStatus;
-  summary: string[];
+  summary: SummaryLine[];
   toolCalls: ToolCall[];
   thoughts: Thought[];
 }
@@ -213,7 +213,8 @@ export interface TaskRecord {
   kind: TaskKind;
   assets: Asset[];
   /** Legacy lightweight per-stage summary (read-only fallback for old records). */
-  stageSummaries?: Partial<Record<StageId, string[]>>;
+  stageSummaries?: Partial<Record<StageId, SummaryLine[]>>;
+
   /** Full per-stage snapshot for playback (summary + toolCalls + thoughts). */
   stageSnapshots?: Partial<Record<StageId, StageSnapshot>>;
   /** LLM script captured at run time so playback can re-render tables. */
