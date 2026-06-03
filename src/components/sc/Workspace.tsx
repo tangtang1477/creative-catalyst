@@ -380,15 +380,13 @@ function HomeProjectsRow() {
   const projects = useProjects((s) => s.projects);
   const loaded = useProjects((s) => s.loaded);
   const openCreate = useProjects((s) => s.openCreate);
-  const setCurrentProject = useProjects((s) => s.setCurrentProject);
-  const reset = useSC((s) => s.reset);
+  const enterProject = useSC((s) => s.enterProject);
 
   if (!loaded) return null;
   const recent = projects.slice(0, 3);
 
   const onPick = (id: string) => {
-    setCurrentProject(id);
-    reset({ fromUserAction: true });
+    enterProject(id);
   };
 
   return (

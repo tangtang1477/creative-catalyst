@@ -151,7 +151,7 @@ export const useCredits = create<CreditsState>((set, get) => {
           const b = await getCreditsBalance();
           used = b.used; total = b.total; remaining = b.remaining;
         } catch { /* ignore */ }
-        set({ used, total, synced: true, toppingUp: false });
+        set({ used, total, synced: true, toppingUp: false, pulseId: get().pulseId + 1 });
         persist({ total, used, history: get().history });
         toast.success(`充值成功 · 到账 ${n} 积分`, {
           description: `当前余额 ${Math.max(0, remaining)} · 总额度 ${total}`,

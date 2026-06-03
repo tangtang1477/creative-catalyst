@@ -146,6 +146,7 @@ interface SCState {
   forceState: (s: string) => void;
   restoreTask: (id: string) => void;
   deleteTask: (id: string) => void;
+  enterProject: (projectId: string) => void;
   retryStage: (id: StageId) => void;
   retryAsset: (assetId: string) => void;
   setActiveVersion: (assetId: string, versionIndex: number) => void;
@@ -2340,6 +2341,35 @@ export const useSC = create<SCState>((set, get) => {
       const next = get().taskHistory.filter((t) => t.id !== id);
       set({ taskHistory: next });
       saveHistory(next);
+    },
+
+    enterProject: (projectId) => {
+      const { phase } = get();
+      if (phase === "running" || phase === "thinking") {
+        if (typeof window !== "undefined" &&
+            !window.confirm("当前任务进行中，确认切换项目？已生成的内容会保留在 Tasks。")) {
+          return;
+        }
+      }
+      void (async () => {
+        try {
+          const { useProjects } = await import("@/lib/sc/projects-store");
+          const ps = useProjects.getState();
+          if (!ps.loaded) await ps.fetchProjects();
+          const fresh = useProjects.getState();
+          fresh.setCurrentProject(projectId);
+          const proj = fresh.projects.find((p) => p.id === projectId);
+          if (!proj) return;
+          const match = get().taskHistory.find((t) => t.title === proj.name);
+          if (match) {
+            get().restoreTask(match.id);
+          } else {
+            get().reset({ fromUserAction: true });
+          }
+        } catch (e) {
+          console.warn("[enterProject] failed", e);
+        }
+      })();
     },
 
     retryStage: (id) => {
