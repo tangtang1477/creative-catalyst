@@ -202,6 +202,12 @@ export const Route = createFileRoute("/api/chat-stream")({
           "",
           "（接着直接输出给用户的最终回复，中文，简洁专业，不超过 120 字，不要 markdown 标题，不要再出现 <thinking> 标签）",
           "",
+          "**指令协议（重要）**：如果用户的话**明确要求改动**当前 brief / 脚本 / 角色 / 场景（例如\"把女主换成男主\"\"场景改成雨夜地铁\"\"时长改成 30 秒\"），在回复正文之后追加一个 `<directives>...</directives>` JSON 块（不要 markdown 代码块），schema：",
+          '{"patch":{"brief":{"prompt"?:string,"adType"?:string,"format"?:string},"script":{"mood"?:string,"shots"?:[{"shot":string,"duration"?:string,"scene"?:string,"motion"?:string,"elements"?:string,"prompt"?:string}]},"characters":[{"id":string,"name"?:string,"look"?:string}],"scenes":[{"id":string,"name"?:string,"description"?:string}]},"rerun":["script"|"wardrobe"|"cast"|"paint"]}',
+          "- 只输出**真正需要改动**的字段，无须改动就**完全不要**输出 <directives> 标签。",
+          "- rerun 数组列出受影响、需要重跑的阶段。",
+          "- JSON 之外不要任何额外字符。",
+          "",
           "规则：每个 ## 小节只写 1-2 行；最终回复必须紧扣用户输入，禁止套用 YSL/巴黎/丝绒 等无关案例。",
           ctxLines.length ? "\n—— 当前任务上下文 ——\n" + ctxLines.join("\n") : "",
         ]
@@ -287,6 +293,45 @@ export const Route = createFileRoute("/api/chat-stream")({
             let sectionBuf = "";
             let lastSectionFlushIdx = -1;
             let replyAcc = "";
+            // directives 抑制：reply 阶段一旦看到 <directives>，后续 token 不再 emit
+            let replyTail = "";
+            let directivesOpen = false;
+
+            const emitReplyToken = (chunk: string) => {
+              if (!chunk) return;
+              if (directivesOpen) {
+                replyAcc += chunk;
+                return;
+              }
+              const combined = replyTail + chunk;
+              const openIdx = combined.indexOf("<directives>");
+              if (openIdx >= 0) {
+                const visible = combined.slice(0, openIdx);
+                if (visible) emit("token", { text: visible });
+                replyTail = "";
+                replyAcc += combined; // 保留全量含 tag，后处理解析
+                directivesOpen = true;
+                return;
+              }
+              // 保留最后 12 个字符在 tail，避免 "<direct" 跨 chunk 漏判
+              const SAFE = 12;
+              if (combined.length > SAFE) {
+                const visible = combined.slice(0, combined.length - SAFE);
+                emit("token", { text: visible });
+                replyAcc += visible;
+                replyTail = combined.slice(combined.length - SAFE);
+              } else {
+                replyTail = combined;
+              }
+            };
+
+            const flushReplyTail = () => {
+              if (!directivesOpen && replyTail) {
+                emit("token", { text: replyTail });
+                replyAcc += replyTail;
+                replyTail = "";
+              }
+            };
 
             const flushSection = (idx: number) => {
               if (idx <= lastSectionFlushIdx) return;
@@ -326,8 +371,7 @@ export const Route = createFileRoute("/api/chat-stream")({
                     return;
                   } else {
                     // 已经离开 thinking → 全部是 reply token
-                    replyAcc += remaining;
-                    emit("token", { text: remaining });
+                    emitReplyToken(remaining);
                     return;
                   }
                 }
@@ -432,8 +476,25 @@ export const Route = createFileRoute("/api/chat-stream")({
                 }
               }
 
-              phaseDone(3, replyAcc.slice(0, 80));
-              emit("done", { text: replyAcc });
+              // 把可能滞留的 reply tail flush 出去
+              flushReplyTail();
+
+              // 解析 directives 块（如果有）并 emit
+              const dirMatch = fullText.match(/<directives>([\s\S]*?)<\/directives>/);
+              if (dirMatch) {
+                const rawJson = dirMatch[1].trim();
+                try {
+                  const parsedDir = JSON.parse(rawJson);
+                  emit("directives", parsedDir);
+                } catch (e) {
+                  console.warn("[chat-stream] directives JSON parse failed", e);
+                }
+              }
+
+              // replyAcc 用于 summary，去掉 directives 块
+              const cleanReply = replyAcc.replace(/<directives>[\s\S]*?<\/directives>/g, "").trim();
+              phaseDone(3, cleanReply.slice(0, 80));
+              emit("done", { text: cleanReply });
               controller.close();
             } catch (err) {
               emit("error", {

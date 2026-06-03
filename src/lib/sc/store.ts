@@ -26,6 +26,28 @@ import { submitVideoTask, pollVideoTask } from "@/lib/seedance.functions";
 import { generateScript, type GeneratedScript } from "@/lib/script.functions";
 import { parseFormatDuration, parseFormatRatio, formatDurationLabel, clampSeedanceDuration } from "@/lib/sc/format-utils";
 import { useProjects } from "@/lib/sc/projects-store";
+import { upsertTaskSnapshot, listProjectTasks } from "@/lib/tasks.functions";
+
+/** Chat agent 解析出来的"真指令"。后端 chat-stream.ts 端的 schema 同步。 */
+export interface AgentDirectives {
+  patch?: {
+    brief?: { prompt?: string; adType?: string; format?: string };
+    script?: {
+      mood?: string;
+      shots?: Array<{
+        shot?: string;
+        duration?: string;
+        scene?: string;
+        motion?: string;
+        elements?: string;
+        prompt?: string;
+      }>;
+    };
+    characters?: Array<{ id: string; name?: string; look?: string }>;
+    scenes?: Array<{ id: string; name?: string; description?: string }>;
+  };
+  rerun?: Array<"script" | "wardrobe" | "cast" | "paint">;
+}
 
 
 const consume = (stage: string, label: string, cost: number, taskId?: string | null) =>
@@ -152,6 +174,7 @@ interface SCState {
   restoreTask: (id: string) => void;
   deleteTask: (id: string) => void;
   enterProject: (projectId: string) => void;
+  applyAgentPatch: (dir: AgentDirectives) => void;
   retryStage: (id: StageId) => void;
   retryAsset: (assetId: string) => void;
   setActiveVersion: (assetId: string, versionIndex: number) => void;
@@ -199,8 +222,13 @@ const initialStages = (): Record<StageId, StageState> =>
 const isSeriesPrompt = (text: string) =>
   /(剧集|系列|连续剧|episode|series|第\s*\d+\s*集|EP\s*\d)/i.test(text);
 
-const newId = () =>
-  `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+const UUID_RE_TASK = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const newId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+};
 
 const loadHistory = (): TaskRecord[] => {
   if (typeof window === "undefined") return [];
@@ -447,6 +475,39 @@ export const useSC = create<SCState>((set, get) => {
     const next = [record, ...taskHistory.filter((t) => t.id !== taskId)];
     set({ taskHistory: next });
     saveHistory(next);
+    // Fire-and-forget remote sync (only when id is a real UUID)
+    if (UUID_RE_TASK.test(record.id)) {
+      const remoteStatus: "running" | "ready" | "failed" | "completed" =
+        record.status === "done"
+          ? "completed"
+          : record.status === "failed"
+            ? "failed"
+            : record.status === "interrupted"
+              ? "failed"
+              : "running";
+      const snapshot = {
+        kind: record.kind,
+        assets: record.assets,
+        stageSummaries: record.stageSummaries ?? {},
+        stageSnapshots: record.stageSnapshots ?? {},
+        script: record.script ?? null,
+        failureReason: record.failureReason ?? null,
+        brief: record.brief ?? null,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        status: record.status,
+      };
+      void upsertTaskSnapshot({
+        data: {
+          taskId: record.id,
+          projectId: record.projectId ?? null,
+          title: record.title || "Untitled",
+          status: remoteStatus,
+          prompt: record.prompt ?? "",
+          snapshot,
+        },
+      }).catch((e) => console.warn("[persistCurrent] remote sync failed", e));
+    }
   };
 
 
@@ -1333,75 +1394,99 @@ export const useSC = create<SCState>((set, get) => {
         updateAsset(sa.id, { status: "Processing" });
         appendSummary("life", `提交 ${sa.id} · ${shot?.shot ?? "—"} · ${dur}s`);
 
-        try {
-          const refs = [...wardrobeRefs, keyUrl].slice(0, 6);
-          const { taskId: seedanceTaskId } = await submitVideoTask({
-            data: {
-              route: "reference-image-to-video",
-              payload: {
-                prompt: segPrompt,
-                image_urls: refs,
-                ratio: videoRatio,
-                duration: dur,
-              } as unknown as { prompt: string },
-            },
-          });
-          if (get().runId !== startedRunId) return false;
-          appendSummary("life", `${sa.id} Seedance task: ${seedanceTaskId}`);
+        const trySubmit = async (
+          mode: "refs" | "text-only",
+        ): Promise<{ ok: true; ossUrl: string } | { ok: false; code: string; message: string }> => {
+          try {
+            const submitArgs =
+              mode === "refs"
+                ? {
+                    route: "reference-image-to-video" as const,
+                    payload: {
+                      prompt: segPrompt,
+                      image_urls: [...wardrobeRefs, keyUrl].slice(0, 6),
+                      ratio: videoRatio,
+                      duration: dur,
+                    } as unknown as { prompt: string },
+                  }
+                : {
+                    route: "text-to-video" as const,
+                    payload: {
+                      prompt: `${segPrompt}\n(无真人参考，请按描述生成)`,
+                      ratio: videoRatio,
+                      duration: dur,
+                    } as unknown as { prompt: string },
+                  };
+            const { taskId: seedanceTaskId } = await submitVideoTask({ data: submitArgs });
+            if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
+            appendSummary("life", `${sa.id} Seedance task: ${seedanceTaskId}${mode === "text-only" ? "（已降级为纯文本）" : ""}`);
 
-          // Poll
-          const started = Date.now();
-          while (true) {
-            if (get().runId !== startedRunId) return false;
-            await new Promise((r) => setTimeout(r, 3000));
-            let r;
-            try {
-              r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
-            } catch (e) {
-              console.error(`[life] ${sa.id} poll error`, e);
-              continue;
+            const started = Date.now();
+            while (true) {
+              if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
+              await new Promise((r) => setTimeout(r, 3000));
+              let r;
+              try {
+                r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
+              } catch (e) {
+                console.error(`[life] ${sa.id} poll error`, e);
+                continue;
+              }
+              if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
+              if (r.status === "success" && r.ossUrl) {
+                return { ok: true, ossUrl: r.ossUrl };
+              }
+              if (r.status === "failed") {
+                return {
+                  ok: false,
+                  code: r.errorCode ?? "seedance_failed",
+                  message: r.errorMessage ?? "Seedance 渲染失败",
+                };
+              }
+              if (Date.now() - started > 5 * 60_000) {
+                return { ok: false, code: "timeout", message: "Seedance 轮询超时（5min）" };
+              }
+              updateAsset(sa.id, { status: "Processing" });
             }
-            if (get().runId !== startedRunId) return false;
-            if (r.status === "success" && r.ossUrl) {
-              updateAsset(sa.id, {
-                status: "Ready",
-                url: r.ossUrl,
-                poster: keyUrl,
-              });
-              consume("life", `Video ${sa.id} · seedance`, VIDEO_COST_PER_SEG, get().taskId);
-              appendSummary("life", `${sa.id} Ready`);
-              return true;
+          } catch (e) {
+            const raw = (e as Error).message ?? "";
+            // 解析 submitVideoTask 抛出的前缀 `[code] msg :: upstream`
+            const m = raw.match(/^\[(policy_real_person|policy_violation|quota_exceeded|submit_failed)\]\s*([^:]+)/);
+            if (m) {
+              return { ok: false, code: m[1], message: m[2].trim() };
             }
-            if (r.status === "failed") {
-              updateAsset(sa.id, {
-                status: "Failed",
-                errorMessage: "Seedance 渲染失败",
-                errorCode: "seedance_failed",
-              });
-              appendSummary("life", `${sa.id} 渲染失败（未扣积分）`);
-              return false;
-            }
-            if (Date.now() - started > 5 * 60_000) {
-              updateAsset(sa.id, {
-                status: "Failed",
-                errorMessage: "Seedance 轮询超时（5min）",
-                errorCode: "timeout",
-              });
-              appendSummary("life", `${sa.id} 轮询超时（未扣积分）`);
-              return false;
-            }
-            updateAsset(sa.id, { status: "Processing" });
+            return { ok: false, code: "submit_failed", message: raw };
           }
-        } catch (e) {
-          console.error(`[life] ${sa.id} submit failed`, e);
-          updateAsset(sa.id, {
-            status: "Failed",
-            errorMessage: (e as Error).message,
-            errorCode: "submit_failed",
-          });
-          appendSummary("life", `${sa.id} 提交失败：${(e as Error).message}（未扣积分）`);
-          return false;
+        };
+
+        // 第一次：带参考图
+        let r = await trySubmit("refs");
+        // 真人/违规自动降级一次：剔除人物参考改 text-to-video
+        if (!r.ok && (r.code === "policy_real_person" || r.code === "policy_violation")) {
+          appendSummary("life", `${sa.id} 触发上游安全审核，自动降级为纯文本重试…`);
+          updateAsset(sa.id, { status: "Processing", errorMessage: r.message, errorCode: r.code });
+          r = await trySubmit("text-only");
         }
+        if (r.ok) {
+          updateAsset(sa.id, {
+            status: "Ready",
+            url: r.ossUrl,
+            poster: keyUrl,
+            errorMessage: undefined,
+            errorCode: undefined,
+          });
+          consume("life", `Video ${sa.id} · seedance`, VIDEO_COST_PER_SEG, get().taskId);
+          appendSummary("life", `${sa.id} Ready`);
+          return true;
+        }
+        if (r.code === "cancelled") return false;
+        updateAsset(sa.id, {
+          status: "Failed",
+          errorMessage: r.message,
+          errorCode: r.code,
+        });
+        appendSummary("life", `${sa.id} 失败：${r.message}（未扣积分）`);
+        return false;
       });
 
       const results = await Promise.all(tasks);
@@ -1414,7 +1499,15 @@ export const useSC = create<SCState>((set, get) => {
         persistCurrent("running");
         openGate("merge", () => runDetails());
       } else if (okCount === 0) {
-        updateStage("life", { status: "failed", errorMessage: "全部视频段渲染失败，可在下方单独重做某一段" });
+        const policyHits = get().assets.filter(
+          (a) => a.stageId === "life" && (a.errorCode === "policy_real_person" || a.errorCode === "policy_violation"),
+        ).length;
+        const msg =
+          policyHits > 0
+            ? `${policyHits}/${segAssets.length} 段被上游安全审核拒绝（参考图疑似真人或违规），可在下方更换参考图后单独重做。`
+            : "全部视频段渲染失败，可在下方单独重做某一段";
+        updateStage("life", { status: "failed", errorMessage: msg });
+        appendSummary("life", msg);
         set({ phase: "failed" });
         persistCurrent("failed");
       } else {
@@ -2064,6 +2157,13 @@ export const useSC = create<SCState>((set, get) => {
                 ),
                 text: m.text || d.text || "AI 没有返回内容，请换种说法再试一次。",
               }));
+            } else if (ev === "directives") {
+              // 由 AI 模型解析出来的"真指令"——回写 brief / script / 角色 / 场景
+              try {
+                get().applyAgentPatch(data as AgentDirectives);
+              } catch (e) {
+                console.warn("[chat-stream] applyAgentPatch failed", e);
+              }
             } else if (ev === "error") {
               failWith(d.message ?? "stream_failed");
             }
@@ -2542,22 +2642,53 @@ export const useSC = create<SCState>((set, get) => {
           const ps = useProjects.getState();
           if (!ps.loaded) await ps.fetchProjects();
           const fresh = useProjects.getState();
-          // 立即设置 currentProjectId，UI 同步响应（侧边栏高亮 + 空态横幅）
           fresh.setCurrentProject(projectId);
           const proj = fresh.projects.find((p) => p.id === projectId);
           if (!proj) return;
-          // 按 projectId 命中（新任务）；旧任务按 title 兜底
+
+          // 拉远端任务快照并合并入本地 taskHistory（远端为准）。
+          try {
+            const { tasks: remote } = await listProjectTasks({ data: { projectId } });
+            if (Array.isArray(remote) && remote.length) {
+              const local = get().taskHistory;
+              const byId = new Map<string, TaskRecord>(local.map((t) => [t.id, t]));
+              for (const r of remote) {
+                const snap = (r.snapshot ?? {}) as Partial<TaskRecord> & { status?: TaskRecord["status"] };
+                const rec: TaskRecord = {
+                  id: r.id,
+                  title: r.title ?? "Untitled",
+                  prompt: r.prompt ?? "",
+                  createdAt: snap.createdAt ?? (Date.parse(r.created_at ?? "") || Date.now()),
+                  updatedAt: snap.updatedAt ?? (Date.parse(r.updated_at ?? "") || Date.now()),
+                  status: snap.status ?? "done",
+                  kind: snap.kind ?? "oneoff",
+                  assets: snap.assets ?? [],
+                  stageSummaries: snap.stageSummaries ?? {},
+                  stageSnapshots: snap.stageSnapshots ?? {},
+                  script: snap.script ?? null,
+                  failureReason: snap.failureReason ?? undefined,
+                  brief: snap.brief ?? null,
+                  projectId: r.project_id ?? projectId,
+                };
+                byId.set(rec.id, rec);
+              }
+              const merged = Array.from(byId.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+              set({ taskHistory: merged });
+              saveHistory(merged);
+            }
+          } catch (e) {
+            console.warn("[enterProject] remote fetch failed", e);
+          }
+
+          // 命中：projectId 优先；其次 title 兜底
           const history = get().taskHistory;
           const match =
             history.find((t) => t.projectId === projectId) ??
             history.find((t) => t.title === proj.name);
           if (match) {
             get().restoreTask(match.id);
-            // restoreTask 内部会写 rec.projectId（可能为 null），保险再覆盖一次
             useProjects.getState().setCurrentProject(projectId);
           } else {
-            // 无本地历史：回到 empty 主页，currentProjectId 已设置 →
-            // 主页会显示"当前项目：xxx · 暂无历史，开始第一次创作"横幅
             get().reset({ fromUserAction: true });
             useProjects.getState().setCurrentProject(projectId);
           }
@@ -2565,6 +2696,68 @@ export const useSC = create<SCState>((set, get) => {
           console.warn("[enterProject] failed", e);
         }
       })();
+    },
+
+    applyAgentPatch: (dir) => {
+      if (!dir || typeof dir !== "object") return;
+      const patch = dir.patch ?? {};
+      const rerun = Array.isArray(dir.rerun) ? dir.rerun : [];
+      if (!patch.brief && !patch.script && !patch.characters && !patch.scenes && !rerun.length) {
+        return;
+      }
+      const changeBits: string[] = [];
+      if (patch.brief) changeBits.push("brief");
+      if (patch.script) changeBits.push("脚本");
+      if (patch.characters?.length) changeBits.push("角色");
+      if (patch.scenes?.length) changeBits.push("场景");
+      void import("sonner").then(({ toast }) => {
+        toast(`AI 指令已应用：${changeBits.join(" / ") || "—"}${rerun.length ? ` · 重跑 ${rerun.join("/")}` : ""}`);
+      }).catch(() => {});
+      if (patch.brief && get().brief) {
+        const merged = { ...get().brief!, ...patch.brief } as Brief;
+        set({ brief: merged });
+      } else if (patch.brief && !get().brief) {
+        set({ brief: patch.brief as unknown as Brief });
+      }
+
+      // 2) script 浅合并（保留未覆盖字段）
+      if (patch.script) {
+        const cur = (get().script as Record<string, unknown> | null) ?? {};
+        const next = { ...cur, ...patch.script };
+        set({ script: next as unknown as never });
+      }
+
+      // 3) characters / scenes 暂时写入 brief.meta 以便后续 cast/paint 阶段取用
+      if ((patch.characters && patch.characters.length) || (patch.scenes && patch.scenes.length)) {
+        const curBrief = get().brief;
+        if (curBrief) {
+          const meta = ((curBrief as unknown as { meta?: Record<string, unknown> }).meta ?? {}) as Record<string, unknown>;
+          const nextMeta = {
+            ...meta,
+            ...(patch.characters ? { characters: patch.characters } : {}),
+            ...(patch.scenes ? { scenes: patch.scenes } : {}),
+          };
+          set({ brief: { ...curBrief, meta: nextMeta } as unknown as Brief });
+        }
+      }
+
+      // 4) rerun：按 stage 顺序触发对应阶段重跑
+      const order: Record<string, () => void> = {
+        script: () => get().retryStage("structure"),
+        wardrobe: () => get().retryStage("wardrobe"),
+        cast: () => get().retryStage("cast"),
+        paint: () => get().retryStage("paint"),
+      };
+      const seen = new Set<string>();
+      for (const r of rerun) {
+        if (seen.has(r)) continue;
+        seen.add(r);
+        const fn = order[r];
+        if (fn) {
+          try { fn(); break; /* 触发最早的那个 stage，后续 stage 会因 rerun 链路重跑 */ }
+          catch (e) { console.warn("[applyAgentPatch] rerun failed", r, e); }
+        }
+      }
     },
 
     retryStage: (id) => {
