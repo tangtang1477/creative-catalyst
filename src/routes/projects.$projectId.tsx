@@ -289,7 +289,7 @@ function ProjectDetailPage() {
                                   </div>
                                 )}
                                 <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-                                  <span>{date}</span>
+                                  <span suppressHydrationWarning>{date}</span>
                                   <span>· 图片 {imageCount}</span>
                                   <span>· 视频 {videoCount}</span>
                                   <span>· 共 {t.assets?.length ?? 0} 个素材</span>
