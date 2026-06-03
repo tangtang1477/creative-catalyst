@@ -373,6 +373,8 @@ export function MediaRail() {
               </Group>
             </div>
           )}
+            </>
+          )}
 
         </div>
 
