@@ -153,6 +153,7 @@ export function AssetActions({
         <Plus className="h-3 w-3" />
         {variant === "card" && <span>Add to task</span>}
       </button>
+      <LayerEditDialog asset={asset} open={editorOpen} onClose={() => setEditorOpen(false)} />
     </div>
   );
 }
