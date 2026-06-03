@@ -702,10 +702,11 @@ export const useSC = create<SCState>((set, get) => {
       caption: c.caption,
       status: "Queued",
       stageId: "cast",
-      width: c.kind === "scene" ? 1920 : 768,
-      height: c.kind === "scene" ? 1080 : 1024,
-      aspectRatio: c.kind === "scene" ? "16:9" : "3:4",
+      width: c.kind === "scene" ? 1920 : 1280,
+      height: c.kind === "scene" ? 1080 : 960,
+      aspectRatio: c.kind === "scene" ? "16:9" : "4:3",
     }));
+
     set((s) => ({
       assets: [...s.assets, ...castAssets],
       rail: { ...s.rail, open: true, flashId: castSpec[0]?.id },
@@ -748,8 +749,9 @@ export const useSC = create<SCState>((set, get) => {
           ? `\n\nReferences (lock visual identity / wardrobe / style): ${refUrls.join(" ")}`
           : "";
         const subject = c.kind === "character"
-          ? `Character reference portrait: ${c.caption}. Cinematic close-up, neutral environment, consistent identity that can be re-used across keyframes. Wearing the wardrobe shown in the reference images.`
+          ? `Character TURNAROUND reference sheet: ${c.caption}. Show the SAME character in THREE views inside ONE single image, evenly spaced left-to-right on a clean neutral grey backdrop: (1) front view, (2) 3/4 side view, (3) back view. Full-body figure in each view, identical outfit, hairstyle, accessories, and proportions. Even soft studio lighting, no shadows beyond the figure, no extra characters, no environment, no text labels. This sheet is used to lock identity for downstream keyframes. Wearing the wardrobe shown in the reference images.`
           : `Scene reference plate: ${c.caption}. Wide establishing shot of the location, no characters, cinematic lighting, hero environment plate to be re-used across keyframes.`;
+
         const fullPrompt = [
           styleFragment ? `Visual style: ${styleFragment}.` : "",
           `This is a ${c.kind === "character" ? "CHARACTER" : "SCENE"} REFERENCE asset (id ${c.id}) — it must be a reusable production reference, not a story keyframe.`,
@@ -1096,7 +1098,7 @@ export const useSC = create<SCState>((set, get) => {
     const briefPrompt = get().brief?.prompt ?? "";
 
     void (async () => {
-      // Collect wardrobe reference URLs (W01/W02/P01) for character/prop locking.
+      // Collect wardrobe + cast reference URLs (W/P + C/S) for character/prop/scene locking.
       const wardrobeRefs = get()
         .assets.filter(
           (a) =>
@@ -1105,6 +1107,15 @@ export const useSC = create<SCState>((set, get) => {
             /^https?:\/\//.test(a.url),
         )
         .map((a) => a.url as string);
+      const castRefs = get()
+        .assets.filter(
+          (a) =>
+            a.stageId === "cast" &&
+            a.url &&
+            /^https?:\/\//.test(a.url),
+        )
+        .map((a) => a.url as string);
+
 
       for (const issue of issues) {
         if (get().runId !== startedRunId) return;
@@ -1121,8 +1132,9 @@ export const useSC = create<SCState>((set, get) => {
               originalShot?.url && /^https?:\/\//.test(originalShot.url)
                 ? originalShot.url
                 : undefined;
-            const refs = [...wardrobeRefs];
+            const refs = [...castRefs, ...wardrobeRefs];
             if (originalUrl) refs.push(originalUrl);
+
 
             const editPrompt = [
               `Re-render keyframe ${issue.shotId} for a short film while strictly preserving character identity and key prop appearance from the reference images (W01 hero, W02 supporting, P01 key prop).`,

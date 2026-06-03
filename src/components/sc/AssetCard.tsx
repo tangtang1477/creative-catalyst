@@ -20,6 +20,8 @@ import { AssetVersionSwitcher } from "./AssetVersionSwitcher";
 import { GeneratingPill } from "./GeneratingPill";
 import { useCharacterVoices } from "@/lib/sc/character-voices-store";
 import { useVoices } from "@/lib/sc/voices-store";
+import { bindCharacterVoice, unbindCharacterVoice } from "@/lib/characters.functions";
+
 
 
 interface Props {
@@ -46,12 +48,16 @@ export function AssetCard({
   const hasVersions = versionCount >= 2;
   const [loaded, setLoaded] = useState(false);
 
-  // —— Character ↔ voice badge (only on wardrobe W* characters) ——
-  const isCharacter = asset.stageId === "wardrobe" && /^W/i.test(asset.id);
+  // —— Character ↔ voice badge (wardrobe W* 或 cast C*) ——
+  const isCharacter =
+    (asset.stageId === "wardrobe" && /^W/i.test(asset.id)) ||
+    (asset.stageId === "cast" && /^C/i.test(asset.id));
+  const characterName = asset.caption ?? asset.id;
   const cvFetch = useCharacterVoices((s) => s.fetch);
+  const cvRefresh = useCharacterVoices((s) => s.refresh);
   const cvLoaded = useCharacterVoices((s) => s.loaded);
   const binding = useCharacterVoices((s) =>
-    isCharacter ? s.voiceForName(asset.caption ?? asset.id) : undefined,
+    isCharacter ? s.voiceForName(characterName) : undefined,
   );
   const voices = useVoices((s) => s.voices);
   const voicesLoaded = useVoices((s) => s.loaded);
@@ -65,6 +71,20 @@ export function AssetCard({
   }, [isCharacter, cvLoaded, voicesLoaded, cvFetch, fetchVoices]);
   const boundVoice = binding ? voices.find((v) => v.id === binding.voice_id) : undefined;
   const voicePlaying = boundVoice && previewingId === boundVoice.id;
+
+  const handleChangeVoice = async (voiceId: string) => {
+    if (!voiceId) return;
+    try {
+      if (binding) await unbindCharacterVoice({ data: { id: binding.id } });
+      await bindCharacterVoice({
+        data: { character_name: characterName, voice_id: voiceId },
+      });
+      await cvRefresh();
+    } catch (e) {
+      console.warn("[asset-card] change voice failed", e);
+    }
+  };
+
 
   // Derive display aspect ratio: explicit asset.aspectRatio wins, else infer
   // from width/height, else fall back per kind/stage.
@@ -305,8 +325,50 @@ export function AssetCard({
           )}
         </div>
       </div>
+
+      {isCharacter && (
+        <div className="flex items-center gap-1.5 border-t border-border bg-surface-2/40 px-3 py-2">
+          <Mic className="h-3 w-3 shrink-0 text-accent" />
+          <select
+            value={binding?.voice_id ?? ""}
+            onChange={(e) => handleChangeVoice(e.target.value)}
+            disabled={!voicesLoaded || voices.length === 0}
+            className="h-6 min-w-0 flex-1 truncate rounded-md border border-border bg-background/40 px-1.5 text-[11px] text-foreground outline-none focus:border-accent/60"
+          >
+            <option value="" disabled>
+              {voicesLoaded ? "选择音色…" : "加载音色…"}
+            </option>
+            {voices
+              .filter((v) => v.status === "ready")
+              .map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.source === "preset" ? "预设 · " : "我的 · "}
+                  {v.name}
+                </option>
+              ))}
+          </select>
+          {boundVoice && (
+            <button
+              type="button"
+              aria-label="试听音色"
+              onClick={() =>
+                voicePlaying ? stopPreview() : previewVoice(boundVoice.id)
+              }
+              className={cn(
+                "inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors",
+                voicePlaying
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
+              )}
+            >
+              {voicePlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
+
 
 
