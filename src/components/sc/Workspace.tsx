@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { useSC, titleMatchesProject } from "@/lib/sc/store";
+
 import { CommandInput } from "./CommandInput";
 import { SuggestionChips } from "./SuggestionChips";
 import { IntakeCard } from "./IntakeCard";
