@@ -316,8 +316,8 @@ export const Route = createFileRoute("/api/chat-stream")({
                 directivesOpen = true;
                 return;
               }
-              // 保留最后 12 个字符在 tail，避免 "<direct" 跨 chunk 漏判
-              const SAFE = 12;
+              // 保留最后 SAFE 个字符在 tail，避免 "<directives" 跨 chunk 漏判
+              const SAFE = 16; // len("<directives>") + 4 安全余量
               if (combined.length > SAFE) {
                 const visible = combined.slice(0, combined.length - SAFE);
                 emit("token", { text: visible });
