@@ -156,11 +156,11 @@ export const submitVideoTask = createServerFn({ method: "POST" })
     );
 
     if (envelope.code !== 0 || !envelope.data?.task_id) {
-      throw new Error(
-        envelope.message ||
-          envelope.data?.error ||
-          "Seedance returned no task_id",
+      const cls = classifySeedanceError(
+        envelope.message || (envelope.data as { error?: string } | undefined)?.error,
       );
+      // 前缀格式：`[CODE] 中文文案 :: <upstream raw>`，store 端用前缀解析。
+      throw new Error(`[${cls.code}] ${cls.message} :: ${cls.upstream.slice(0, 400)}`);
     }
 
     const taskId = envelope.data.task_id;
