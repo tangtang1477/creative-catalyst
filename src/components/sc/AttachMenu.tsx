@@ -58,6 +58,10 @@ export function AttachMenu({ children, disabled }: { children: ReactNode; disabl
     try {
       let text = "";
       const name = file.name.toLowerCase();
+      if (file.size > 20 * 1024 * 1024) {
+        toast.error("剧本文件不能超过 20 MB");
+        return;
+      }
       if (name.endsWith(".docx")) {
         const mammothMod = (await import("mammoth/mammoth.browser")) as unknown as {
           extractRawText: (opts: { arrayBuffer: ArrayBuffer }) => Promise<{ value: string }>;
@@ -65,10 +69,19 @@ export function AttachMenu({ children, disabled }: { children: ReactNode; disabl
         const arrayBuffer = await file.arrayBuffer();
         const res = await mammothMod.extractRawText({ arrayBuffer });
         text = res.value ?? "";
+      } else if (name.endsWith(".pdf") || file.type === "application/pdf") {
+        const { extractPdfText } = await import("@/lib/script-parse.functions");
+        const buf = new Uint8Array(await file.arrayBuffer());
+        let bin = "";
+        for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+        const base64 = btoa(bin);
+        toast("正在提取 PDF 文本…");
+        const res = await extractPdfText({ data: { base64 } });
+        text = res.text ?? "";
       } else if (name.endsWith(".txt") || name.endsWith(".md") || file.type.startsWith("text")) {
         text = await file.text();
       } else {
-        toast.error("暂只支持 .txt / .md / .docx 剧本上传；.pdf 请先转换为文本");
+        toast.error("暂只支持 .txt / .md / .docx / .pdf 剧本上传");
         return;
       }
       const trimmed = text.trim();
