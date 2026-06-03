@@ -2221,10 +2221,17 @@ export const useSC = create<SCState>((set, get) => {
 
 
 
-    addAttachment: (a) => set((s) => ({ attachments: [...s.attachments, a] })),
+    addAttachment: (a) =>
+      set((s) => {
+        const kindLabel = a.kind === "image" ? "图片" : a.kind === "video" ? "视频" : "音频";
+        const idx = s.attachments.filter((x) => x.kind === a.kind).length + 1;
+        const displayName = a.displayName ?? `${kindLabel} ${idx}`;
+        return { attachments: [...s.attachments, { ...a, displayName }] };
+      }),
     removeAttachment: (id) =>
       set((s) => ({ attachments: s.attachments.filter((a) => a.id !== id) })),
     clearAttachments: () => set({ attachments: [] }),
+
 
     submit: (prompt) => {
       const text = prompt.trim();
