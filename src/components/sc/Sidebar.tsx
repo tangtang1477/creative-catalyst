@@ -93,11 +93,12 @@ export function Sidebar() {
   const currentProjectId = useProjects((s) => s.currentProjectId);
   const removeProject = useProjects((s) => s.remove);
 
-  const enterProject = useSC((s) => s.enterProject);
+  const navigate = useNavigate();
 
   const handleSelectProject = (id: string) => {
-    enterProject(id);
+    void navigate({ to: "/projects/$projectId", params: { projectId: id } });
   };
+
 
   const handleDeleteProject = async (id: string, name: string) => {
     if (!window.confirm(`确定删除项目「${name}」吗？该项目下的任务记录会解除关联，但不会被删除。`)) return;
