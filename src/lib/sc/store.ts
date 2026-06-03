@@ -2624,6 +2624,7 @@ export const useSC = create<SCState>((set, get) => {
               scene: ready(["方向已锁定"]),
               structure: ready(["脚本/分镜就绪"]),
               wardrobe: ready(["服装/道具就绪"]),
+              cast: ready(["人物/场景就绪"]),
               paint: ready(["A01 Ready"]),
               qc: ready(["一致性通过"]),
               life: { ...emptyStage(), status: "failed", summary: ["返回内容不是可播放视频"], expanded: true },
