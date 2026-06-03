@@ -39,6 +39,8 @@ function ProjectDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   const project = projects.find((p) => p.id === projectId);
   const Icon = project ? KIND_ICON[project.kind] ?? Folder : Folder;
