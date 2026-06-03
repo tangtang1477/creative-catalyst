@@ -80,8 +80,9 @@ export function MentionPopover({ value, caret, anchorRef, onPick }: Props) {
       } else if (e.key === "Enter") {
         e.preventDefault();
         const it = items[active];
-        if (it) onPick(`${it.label} `, query.from, caret);
+        if (it) onPick(`${it.insert} `, query.from, caret);
       }
+
     };
     ta.addEventListener("keydown", onKey);
     return () => ta.removeEventListener("keydown", onKey);
