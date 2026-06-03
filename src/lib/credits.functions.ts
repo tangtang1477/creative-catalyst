@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const CONSUME_TOTAL = 100; // default monthly allotment (mocked)
+const CONSUME_TOTAL = 200; // default monthly allotment (mocked)
 
 const ConsumeInput = z.object({
   taskId: z.string().min(1).max(80).nullable().optional(),
