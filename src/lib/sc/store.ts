@@ -2768,7 +2768,8 @@ export const useSC = create<SCState>((set, get) => {
       if (patch.characters?.length) changeBits.push("角色");
       if (patch.scenes?.length) changeBits.push("场景");
       void import("sonner").then(({ toast }) => {
-        toast(`AI 指令已应用：${changeBits.join(" / ") || "—"}${rerun.length ? ` · 重跑 ${rerun.join("/")}` : ""}`);
+        const bits = changeBits.join(" / ") || "—";
+        toast(rerun.length ? `AI 指令已应用：${bits}（含 ${rerun.length} 个待确认重跑）` : `AI 指令已应用：${bits}`);
       }).catch(() => {});
       if (patch.brief && get().brief) {
         const merged = { ...get().brief!, ...patch.brief } as Brief;
