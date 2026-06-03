@@ -93,12 +93,12 @@ export function ChatAgentMessage({
       </div>
 
       {/* 正文 markdown 流式 */}
-      {(text || streaming) && (
+      {(visibleText || streaming) && (
         <div className="prose prose-sm max-w-none text-[13px] leading-relaxed text-foreground/90 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0">
-          {text ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+          {visibleText ? (
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{visibleText}</ReactMarkdown>
           ) : null}
-          {streaming && text && (
+          {streaming && visibleText && (
             <span className="ml-0.5 inline-block h-3 w-[2px] translate-y-[2px] animate-pulse bg-accent align-middle" />
           )}
         </div>
