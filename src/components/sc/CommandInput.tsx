@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, type KeyboardEvent } from "react";
-import { Plus, ArrowUp, Square } from "lucide-react";
+import { Plus, ArrowUp, Square, X } from "lucide-react";
 import { useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
 import { ModelMenu } from "./ModelMenu";
