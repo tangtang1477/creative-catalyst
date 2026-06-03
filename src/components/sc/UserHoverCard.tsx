@@ -98,9 +98,9 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
                 style={{
                   width: `${Math.round(pctRemain * 100)}%`,
                   background:
-                    pctRemain <= 0.1
+                    remaining <= 20
                       ? "var(--credit-critical)"
-                      : pctRemain <= 0.2
+                      : remaining <= 50
                         ? "var(--credit-low)"
                         : "var(--accent)",
                 }}
