@@ -1993,6 +1993,8 @@ export const useSC = create<SCState>((set, get) => {
     previewAssetId: null,
     currentUserId: null,
     script: null,
+    pendingScript: null,
+
 
     intakeSel: {},
     intakeCustoms: {},
