@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 
 interface Props {
   label?: string;
-  aspect?: "9 / 16" | "16 / 9" | "1 / 1";
+  aspect?: string;
   maxHeight?: number;
   className?: string;
 }
