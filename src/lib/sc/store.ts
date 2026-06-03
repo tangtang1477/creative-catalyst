@@ -2692,9 +2692,20 @@ export const useSC = create<SCState>((set, get) => {
       // Defensive: legacy records persisted from older versions may be missing
       // fields like assets / stageSnapshots — fill with safe defaults so the
       // downstream render path never throws "Cannot read length of undefined".
+      const normalizedAssets = Array.isArray(found.assets)
+        ? found.assets.map((asset, index) => ({
+            ...asset,
+            id: asset?.id ?? `restored-${found.id}-${index}`,
+            label: asset?.label ?? asset?.id ?? `A${String(index + 1).padStart(2, "0")}`,
+            kind: asset?.kind === "video" ? "video" : "image",
+            status: asset?.status ?? "Ready",
+            stageId: asset?.stageId ?? ((asset as { stage?: StageId | undefined })?.stage ?? undefined),
+            versions: Array.isArray(asset?.versions) ? asset.versions : undefined,
+          }))
+        : [];
       const rec: TaskRecord = {
         ...found,
-        assets: Array.isArray(found.assets) ? found.assets : [],
+        assets: normalizedAssets,
         stageSummaries: found.stageSummaries ?? {},
         stageSnapshots: found.stageSnapshots ?? {},
         prompt: found.prompt ?? "",
@@ -2716,10 +2727,10 @@ export const useSC = create<SCState>((set, get) => {
         const sum = sums[sid];
         if (snap) {
           stages[sid] = {
-            status: snap.status,
-            summary: snap.summary.slice(),
-            toolCalls: snap.toolCalls.slice(),
-            thoughts: snap.thoughts.slice(),
+            status: snap.status ?? "ready",
+            summary: Array.isArray(snap.summary) ? snap.summary.slice() : [],
+            toolCalls: Array.isArray(snap.toolCalls) ? snap.toolCalls.slice() : [],
+            thoughts: Array.isArray(snap.thoughts) ? snap.thoughts.slice() : [],
             expanded: true,
           };
           if (snap.status === "failed" && !failedStageId) failedStageId = sid;
