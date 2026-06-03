@@ -2698,6 +2698,57 @@ export const useSC = create<SCState>((set, get) => {
       })();
     },
 
+    applyAgentPatch: (dir) => {
+      if (!dir || typeof dir !== "object") return;
+      const patch = dir.patch ?? {};
+      const rerun = Array.isArray(dir.rerun) ? dir.rerun : [];
+
+      // 1) brief 浅合并
+      if (patch.brief && get().brief) {
+        const merged = { ...get().brief!, ...patch.brief } as Brief;
+        set({ brief: merged });
+      } else if (patch.brief && !get().brief) {
+        set({ brief: patch.brief as unknown as Brief });
+      }
+
+      // 2) script 浅合并（保留未覆盖字段）
+      if (patch.script) {
+        const cur = (get().script as Record<string, unknown> | null) ?? {};
+        const next = { ...cur, ...patch.script };
+        set({ script: next as unknown as typeof get extends never ? never : never });
+      }
+
+      // 3) characters / scenes 暂时只记录到 brief.meta 以便后续 cast/paint 取用
+      if ((patch.characters && patch.characters.length) || (patch.scenes && patch.scenes.length)) {
+        const cur = (get().brief as unknown as Record<string, unknown>) ?? {};
+        const meta = ((cur.meta as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+        const nextMeta = {
+          ...meta,
+          ...(patch.characters ? { characters: patch.characters } : {}),
+          ...(patch.scenes ? { scenes: patch.scenes } : {}),
+        };
+        set({ brief: { ...(cur as object), meta: nextMeta } as unknown as Brief });
+      }
+
+      // 4) rerun：按 stage 顺序触发对应阶段重跑
+      const order: Record<string, () => void> = {
+        script: () => get().retryStage("structure"),
+        wardrobe: () => get().retryStage("wardrobe"),
+        cast: () => get().retryStage("cast"),
+        paint: () => get().retryStage("paint"),
+      };
+      const seen = new Set<string>();
+      for (const r of rerun) {
+        if (seen.has(r)) continue;
+        seen.add(r);
+        const fn = order[r];
+        if (fn) {
+          try { fn(); break; /* 触发最早的那个 stage，后续 stage 会因 rerun 链路重跑 */ }
+          catch (e) { console.warn("[applyAgentPatch] rerun failed", r, e); }
+        }
+      }
+    },
+
     retryStage: (id) => {
       // 重做前同步刷新一次最新登录态，避免点了重试还报「未登录」
       void supabase.auth.getUser().then(({ data }) => {
