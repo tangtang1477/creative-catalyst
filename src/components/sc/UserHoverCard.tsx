@@ -140,8 +140,9 @@ export function UserHoverCard({ collapsed = false }: { collapsed?: boolean }) {
         <div className="mt-2 overflow-hidden rounded-xl bg-surface-2/60">
           <Row icon={<Zap className="h-3.5 w-3.5 text-accent" />} label="Top-up credits" cta onClick={openPricing} />
           <div className="mx-2 h-px bg-border" />
-          <Row icon={<Zap className="h-3.5 w-3.5 text-accent" />} label="Boost speed" cta />
+          <Row icon={<Zap className="h-3.5 w-3.5 text-accent" />} label="Boost speed · 2000 积分" cta onClick={handleBoost} />
         </div>
+
 
         {/* Theme toggle — sliding pill */}
         <div className="relative mt-2 flex items-center rounded-full bg-surface-2 p-0.5">
