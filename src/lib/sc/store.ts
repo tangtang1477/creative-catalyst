@@ -2702,8 +2702,17 @@ export const useSC = create<SCState>((set, get) => {
       if (!dir || typeof dir !== "object") return;
       const patch = dir.patch ?? {};
       const rerun = Array.isArray(dir.rerun) ? dir.rerun : [];
-
-      // 1) brief 浅合并
+      if (!patch.brief && !patch.script && !patch.characters && !patch.scenes && !rerun.length) {
+        return;
+      }
+      const changeBits: string[] = [];
+      if (patch.brief) changeBits.push("brief");
+      if (patch.script) changeBits.push("脚本");
+      if (patch.characters?.length) changeBits.push("角色");
+      if (patch.scenes?.length) changeBits.push("场景");
+      void import("sonner").then(({ toast }) => {
+        toast(`AI 指令已应用：${changeBits.join(" / ") || "—"}${rerun.length ? ` · 重跑 ${rerun.join("/")}` : ""}`);
+      }).catch(() => {});
       if (patch.brief && get().brief) {
         const merged = { ...get().brief!, ...patch.brief } as Brief;
         set({ brief: merged });
