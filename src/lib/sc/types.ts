@@ -72,9 +72,11 @@ export interface Thought {
 }
 
 
+export type SummaryLine = string | { text: string; thumbs: string[] };
+
 export interface StageState {
   status: StageStatus;
-  summary: string[];
+  summary: SummaryLine[];
   details?: string;
   expanded: boolean;
   toolCalls: ToolCall[];
@@ -82,6 +84,7 @@ export interface StageState {
   /** Human-readable error message displayed inline when status === 'failed'. */
   errorMessage?: string;
 }
+
 
 export interface AssetVersion {
   url: string;
