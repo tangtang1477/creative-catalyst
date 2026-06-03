@@ -25,6 +25,7 @@ import { streamGenerateImage, uploadBase64Image } from "@/lib/upload-image";
 import { submitVideoTask, pollVideoTask } from "@/lib/seedance.functions";
 import { generateScript, type GeneratedScript } from "@/lib/script.functions";
 import { parseFormatDuration, parseFormatRatio, formatDurationLabel, clampSeedanceDuration } from "@/lib/sc/format-utils";
+import { useProjects } from "@/lib/sc/projects-store";
 
 
 const consume = (stage: string, label: string, cost: number, taskId?: string | null) =>
@@ -422,15 +423,7 @@ export const useSC = create<SCState>((set, get) => {
       }
     }
     // Read currently active project (if any) so this task is linked back to it.
-    let currentProjectId: string | null = null;
-    try {
-      // Lazy-require to avoid circular dep at module init
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { useProjects } = require("@/lib/sc/projects-store");
-      currentProjectId = useProjects.getState().currentProjectId ?? null;
-    } catch {
-      currentProjectId = existing?.projectId ?? null;
-    }
+    const currentProjectId = useProjects.getState().currentProjectId ?? existing?.projectId ?? null;
     const record: TaskRecord = {
       id: taskId,
       title: taskTitle,
