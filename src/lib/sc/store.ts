@@ -194,6 +194,10 @@ interface SCState {
   closePreview: () => void;
   /** 用户上传剧本后由后端 parseScriptText 返回的结构，直接灌进 store 并跳过 structure 生成。 */
   importGeneratedScript: (script: GeneratedScript) => void;
+  /** 用户上传剧本：仅暂存抽取后的文本，等下一次 submit 时连同 prompt 一起送后端解析。 */
+  setPendingScript: (s: PendingScript | null) => void;
+  clearPendingScript: () => void;
+
 
 
 
