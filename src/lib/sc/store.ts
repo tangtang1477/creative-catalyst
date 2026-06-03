@@ -9,6 +9,8 @@ import {
   type StageId,
   type StageState,
   type StageSnapshot,
+  type SummaryLine,
+
   type TaskKind,
   type TaskRecord,
   type ToolCall,
