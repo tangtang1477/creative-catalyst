@@ -55,11 +55,11 @@ export const listProjectTasks = createServerFn({ method: "POST" })
       .from("video_tasks")
       .select("id, title, prompt, status, project_id, snapshot, created_at, updated_at")
       .eq("user_id", userId)
-      .not("snapshot", "is", null)
       .order("updated_at", { ascending: false })
-      .limit(60);
+      .limit(120);
     if (data.projectId) q = q.eq("project_id", data.projectId);
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
     return { tasks: rows ?? [] };
   });
+
