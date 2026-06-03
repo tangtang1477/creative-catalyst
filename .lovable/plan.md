@@ -1,109 +1,99 @@
-# 修复计划
 
 ## 目标
-把你指出的 8 个问题拆成三层一起修：
-1. 先修“显示与数据不一致”问题；
-2. 再把“角色三视图 + 音色绑定/试听/换音色”做成真正可用；
-3. 最后重构 chat agent、QC 和 reference-image-to-video 的失败兜底，避免再次出现“看起来做了，实际上没生效”。
 
-## 我会改什么
+闭环上轮遗留的 4 个问题；同时修掉本轮发现的一个相关 bug（credit_ledger cost ≤1000 校验拒收 2000 的 Boost 消费，控制台已在刷错）。
 
-### 1. 积分与项目历史
-- 把 `Boost speed` 从假入口改成真实扣费入口：点击一次立即消费 **2000 积分**，并统一 toast、余额、hover 卡、圆环显示。
-- 明确区分“充值入口”和“加速入口”，避免现在两个 `Get` 看起来一样但一个根本没逻辑。
-- 修复项目历史只存在 `localStorage` 的问题：
-  - 现在项目页只能恢复“本机本浏览器的本地任务快照”；
-  - 我会把项目重新进入逻辑改成优先读后端任务/素材，而不是只看本地缓存。
-- 补齐项目再次查看能力：进入项目时能看到该项目下已完成任务，而不是出现“暂无本地历史内容”就像丢了。
+---
 
-### 2. 角色图改成三视图 + 音色卡片内联
-- 把 `cast` 阶段的人物素材从单张头像/半身参考，改成 **角色三视图**（正面 / 侧面 / 背面）输出逻辑。
-- 角色素材卡片不再只显示图片：
-  - 在角色卡片下方直接显示当前绑定音色；
-  - 支持试听；
-  - 支持更换音色；
-  - 没绑定时显示可选音色下拉或选择器。
-- 修复“角色出现了但音色没一起出现”问题：
-  - 现在自动绑定只写进 `character_voices`，但 UI 读取条件不对；
-  - 我会把绑定关系改成按 **cast 角色资产** 正确命中，而不是仍按 wardrobe 的 `W*` 逻辑找。
-- 修复“音色库没有东西”的表现问题：
-  - 后端其实已经有 `voices` 和 `character_voices`；
-  - 但前端入口和角色卡联动没有打通，我会把音色库、角色绑定、卡片试听做成同一条链路。
+## 1. 视频段安全审核兜底（reference-image-to-video 全段失败）
 
-### 3. chatbox / agent 变成真正影响生成的智能代理
-- 现在 chatbox 只是生成一段回复文本，**不会真正改动 brief / script / asset prompt / rerun plan**，所以你说什么都不会影响最终输出。
-- 我会把 agent 改成“可执行指令入口”：
-  - 能识别用户是在改主角、改性别、改场景、改风格、改单镜头；
-  - 将变更写回 store 中的结构化状态；
-  - 自动判断需要重跑哪一段（cast / paint / qc / life）；
-  - 把重跑影响明确展示出来，而不是只回复一句话。
-- 针对你图 3 的场景，我会让“变为女性”这类指令真正进入人物设定，并触发后续素材失效与重生成。
+**根因**：Seedance 上游对参考图触发 `InputImageSensitiveContentDetected.PrivacyInformation` / `PolicyViolation` 时整段失败；当前并发提交 3 段，一旦某段触发，UI 只显示"全部视频段渲染失败"且把原始 JSON 直接抛给用户。
 
-### 4. QC 从“展示结果”升级为“真检测 + 真约束”
-- 现在 QC 确实调用了多模态检查，但它的问题是：
-  - 只检查 `paint` 关键帧；
-  - 修图时只拿 wardrobe + 当前镜头旧图作为参考；
-  - **没有把 cast 角色三视图 / 场景参考图一起作为强约束输入**，所以修完仍会人物不一致。
-- 我会把 QC 修复链路升级成：
-  - 检测时同时参考 cast 角色素材、场景素材、关键帧；
-  - 修复时把对应角色三视图 + 场景参考 + 原关键帧一并送入图像编辑；
-  - QC 面板里区分“检测通过 / 检测未通过 / 已修复待复检 / 复检失败”。
-- 最终做到图 4 不是只是绿条展示，而是真正约束后续修图结果。
+**改动**（`src/lib/sc/store.ts` 的 `runLife` 段 + `src/lib/seedance.functions.ts`）：
 
-### 5. reference-image-to-video 全失败的根因修复
-- 我已经定位到你这次全失败的直接原因：
-  - 送给视频接口的 `image_urls` 里包含真人角色图；
-  - 上游直接返回 `PrivacyInformation`；
-  - 另一些图又触发 `PolicyViolation`；
-  - 当前代码是 3 段并发一起提，结果就会出现“全部失败”。
-- 我会把视频阶段改成更稳的策略：
-  - 在提交前先做参考图分级，区分“真人角色参考 / 场景参考 / 道具参考”；
-  - 对容易触发隐私/版权拦截的参考图，先做脱敏替代策略，而不是直接原图送上游；
-  - 每一段失败时返回**可读失败原因 + 对应参考图类型**；
-  - 增加段级 fallback，不再让 1 个策略错误拖死全部分段；
-  - 失败后提供“改用场景图重试 / 改用非真人角色参考重试 / 仅用关键帧重试”这类明确操作。
-- 同时把“未扣积分”与失败原因展示统一化，避免用户只能看到一大串原始报错 JSON。
+1. **错误归类**：在 `seedance.functions.ts` 解析上游 envelope 时识别敏感词错误码（`InputImageSensitive*`、`PolicyViolation`、`RealPerson*`），把 `errorCode` 规范化为 `policy_real_person` / `policy_violation` / `submit_failed`，并把 `errorMessage` 转成中文短句（"参考图疑似包含真实人物，已自动降级重试"），原始 JSON 收进 `meta.upstream`，不再直接抛给前端。
+2. **逐段自动降级重试**：在 `runLife` 单段失败 + `errorCode === "policy_real_person"` 时，自动剔除 character 类参考图（只保留 scene plate + keyframe），用 `text-to-video` 路由再试一次；仍失败才标 `Failed`。
+3. **并发兜底**：保留并发提交，但把 `okCount === 0` 的复盖文案改成"其中 N 段被上游安全审核拒绝，可在下方单独重做（提示更换参考图或描述）"，并在每段卡片上显示规范化原因，而不是原始 JSON。
+4. **重试入口**：`retryLifeSegment`（已存在）补一个"不带人物参考重试"按钮选项（UI 仅在 `errorCode === "policy_real_person"` 时显示）。
 
-## 具体文件范围
-- `src/lib/sc/store.ts`
-- `src/lib/sc/types.ts`
-- `src/lib/sc/projects-store.ts`
-- `src/lib/video-tasks.functions.ts`
-- `src/lib/seedance.functions.ts`
-- `src/lib/voices.functions.ts`
-- `src/lib/sc/voices-store.ts`
-- `src/lib/sc/character-voices-store.ts`
-- `src/components/sc/UserHoverCard.tsx`
-- `src/components/sc/Workspace.tsx`
-- `src/components/sc/AssetCard.tsx`
-- `src/components/sc/VoiceLibraryPanel.tsx`
-- `src/components/sc/CharacterVoiceBinding.tsx`
-- `src/components/sc/QCPanel.tsx`
-- `src/components/sc/ChatAgentMessage.tsx`
-- `src/routes/api/chat-stream.ts`
-- 以及必要时补 1 个数据库 migration（如果要把项目任务历史真正持久化到后端而不是只靠本地缓存）
+UI 改动局限在 `AssetCard.tsx`（错误文案 + 可选重试按钮分支），不新增组件。
 
-## 技术说明
-- 目前真正的问题不是“后端完全没搭”，而是“有表、有 server fn，但没接进主流程”：
-  - `voices` / `character_voices` 已存在；
-  - ElevenLabs 试听/克隆接口也存在；
-  - 但角色卡读取还是旧条件，导致你看不到正确音色。
-- 项目内容“看不到历史”不是内容消失，而是当前项目页恢复逻辑主要依赖 `localStorage taskHistory`，所以换设备/清缓存/没本地记录时就像没了。
-- reference-image-to-video 全失败不是积分问题，而是上游安全拦截：你贴出来的 `PrivacyInformation` / `PolicyViolation` 都是真实上游返回，不是前端伪造状态。
+---
 
-## 交付顺序
-1. 修积分入口与项目历史恢复。
-2. 修角色三视图、角色卡内联音色试听/换音色。
-3. 修 agent 指令真正落库到生成状态。
-4. 修 QC 强约束与复检。
-5. 修视频阶段拦截规避、段级 fallback 与失败展示。
+## 2. Chat Agent 真指令落库
 
-## 验收结果
-完成后你会得到：
-- `Boost speed` 点击一次就真实扣 2000 积分；
-- 项目做完后可再次进入查看，不依赖单机本地缓存；
-- 角色素材是三视图；
-- 角色卡下方直接试听/切换音色；
-- chatbox 改指令会真实影响后续生成；
-- QC 修完后会复检，不再只是展示绿条；
-- reference-image-to-video 不会再因为同类敏感参考图策略错误而整批一起失败。
+**根因**：`src/routes/api/chat-stream.ts` 只产出文本流，不会回写 brief / script / 角色，所以"在 chatbox 改场景/人物"对生成结果无影响。
+
+**改动**：
+
+1. **服务端**（`chat-stream.ts`）：在系统提示里追加"指令协议"——模型必须在回答末尾输出 `<directives>...</directives>` JSON 块，schema：
+   ```json
+   { "patch": {
+       "brief.prompt"?: string,
+       "brief.adType"?: string,
+       "brief.format"?: string,
+       "script.mood"?: string,
+       "script.shots"?: [...],
+       "characters"?: [{ id, name?, look?, voiceName? }],
+       "scenes"?: [{ id, name?, description? }]
+     },
+     "rerun"?: ("script"|"wardrobe"|"cast"|"paint")[]
+   }
+   ```
+   服务端解析后通过新 SSE 事件 `directives` 推给客户端；正文里把 `<directives>` 块剥掉。
+
+2. **客户端**（`ChatAgentMessage.tsx` + 新建 `src/lib/sc/agent-directives.ts`）：监听 `directives` 事件 → 调用 store 新增的 `applyAgentPatch(patch)`：浅合并 brief / script / 角色字段，必要时 `set({ assets: ... })` 标记受影响的 stage 为 `pending`，再按 `rerun` 数组顺序触发对应阶段 runner。每条 patch 在聊天气泡下方显示一张"已生效"摘要卡，用户可点"撤销"（恢复 snapshot）。
+
+3. **store**（`store.ts`）：暴露 `applyAgentPatch / undoAgentPatch`；不破坏现有 stage 顺序。
+
+---
+
+## 3. 跨设备项目历史
+
+**根因**：`enterProject` 只读 `taskHistory`（localStorage），换设备/清缓存就没了；任务内容也没持久化到后端。
+
+**改动**：
+
+1. **后端落库**：复用已有 `assets` / `video_tasks` 表 + 新增列 `video_tasks.snapshot jsonb`（保存 `stageSnapshots`、`script`、`brief`、`status`、`taskKind`、`projectId`、`assetsIndex`）。通过 migration 加列 + GRANT 已存在无需重新授权（同表）。
+2. **新增 server fn**（`src/lib/tasks.functions.ts`）：
+   - `upsertTaskSnapshot({ taskId, projectId, snapshot })`：受 `requireSupabaseAuth` 保护，写入 `video_tasks`。
+   - `listProjectTasks({ projectId })`：返回该用户该项目下所有 task snapshot。
+3. **store**：`persistCurrent` 在写本地后异步 fire-and-forget 调 `upsertTaskSnapshot`；`enterProject` 改为：先 `listProjectTasks` 拉远端，与本地 `taskHistory` 合并（远端为准、本地补全），再走原来的 restore 逻辑；若远端有本地没有的任务，写回本地缓存。
+
+不改 UI 文案。
+
+---
+
+## 4. Boost speed 2000 积分上限 / 校验放宽（修本轮新出 bug）
+
+**现象**：控制台持续刷 `cost Number must be less than or equal to 1000` —— 上轮把 Boost 接到 `consume(... 2000 ...)` 后，`credits.functions.ts` 的 zod schema 仍限 `max(1000)`，每次都被拒入库。
+
+**改动**：
+
+1. `src/lib/credits.functions.ts`：把 `cost` 上限放宽到 `max(20000)`（覆盖 Boost 2000、未来批量场景）。
+2. `src/lib/sc/credits-store.ts`：后端失败时仅 console.warn 已做；额外在 toast 里只在「前端余额校验失败」时提示用户，后端校验失败不再骚扰用户。
+
+---
+
+## 涉及文件
+
+- `src/lib/seedance.functions.ts`（错误归类）
+- `src/lib/sc/store.ts`（runLife 降级重试、applyAgentPatch、enterProject 合并远端）
+- `src/components/sc/AssetCard.tsx`（错误文案/重试按钮分支）
+- `src/routes/api/chat-stream.ts`（directives 协议）
+- `src/components/sc/ChatAgentMessage.tsx`（解析 directives + 撤销卡）
+- `src/lib/sc/agent-directives.ts`（新建：patch → store 映射）
+- `src/lib/tasks.functions.ts`（新建：upsertTaskSnapshot / listProjectTasks）
+- `supabase` migration：`alter table public.video_tasks add column snapshot jsonb`
+- `src/lib/credits.functions.ts`（cost max 20000）
+
+不改：sidebar、QC、cast、voice library（上轮已完成）。
+
+---
+
+## 验收
+
+1. 故意上传含真人脸的参考图 → 单段标"参考图疑似真人，已自动降级"，其余段继续；总段不再"全部失败"。
+2. 在 chatbox 输入"把女主换成男主、场景改成雨夜地铁" → 出现"已生效"摘要卡 → cast/paint 自动 rerun，输出和指令一致；点"撤销"可回滚。
+3. 浏览器 A 创建项目并跑完一个任务 → 浏览器 B 登录同账号进入该项目 → 能看到任务历史并可 restore。
+4. 点 Boost speed → 控制台不再刷 cost 校验错误，余额 -2000，ledger 正常入库。

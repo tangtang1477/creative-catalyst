@@ -302,7 +302,9 @@ export type Database = {
           created_at: string
           id: string
           kind: string
+          project_id: string | null
           prompt: string
+          snapshot: Json | null
           status: string
           title: string
           updated_at: string
@@ -313,7 +315,9 @@ export type Database = {
           created_at?: string
           id?: string
           kind?: string
+          project_id?: string | null
           prompt: string
+          snapshot?: Json | null
           status?: string
           title: string
           updated_at?: string
@@ -324,7 +328,9 @@ export type Database = {
           created_at?: string
           id?: string
           kind?: string
+          project_id?: string | null
           prompt?: string
+          snapshot?: Json | null
           status?: string
           title?: string
           updated_at?: string
