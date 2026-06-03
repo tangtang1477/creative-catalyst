@@ -63,6 +63,19 @@ export function ChatAgentMessage({
   }, [showPill]);
   const pillVerb = streaming && !text ? "Thinking" : PILL_VERBS[pillIdx % PILL_VERBS.length];
 
+  // 兜底：永远不把 <directives> 协议块渲染给用户（含旧记录里残留的 raw 文本）。
+  // 1) 已闭合：整段移除。
+  // 2) streaming 中未闭合：截断到 <directives> 之前。
+  // 3) 单独的 </directives>：直接去掉。
+  const visibleText = (() => {
+    if (!text) return text;
+    let t = text.replace(/<directives>[\s\S]*?<\/directives>/g, "");
+    const openIdx = t.indexOf("<directives>");
+    if (openIdx >= 0) t = t.slice(0, openIdx);
+    t = t.replace(/<\/?directives>/g, "");
+    return t.trimEnd();
+  })();
+
   return (
     <div className="flex w-full flex-col gap-2 [animation:stream-fade_280ms_ease-out_both]">
       {/* 顶部 skill 行 — 无头像 */}
