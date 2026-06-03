@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, RotateCw, Pencil, X, Timer } from "lucide-react";
+import { Check, RotateCw, Pencil, X, Timer, Film } from "lucide-react";
 import { SCButton } from "./Button";
 import { useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
