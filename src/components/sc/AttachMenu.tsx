@@ -208,11 +208,24 @@ export function AttachMenu({ children, disabled }: { children: ReactNode; disabl
           className="hidden"
           onChange={(e) => onFiles(e.target.files)}
         />
+        <input
+          ref={scriptRef}
+          type="file"
+          accept=".txt,.md,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          className="hidden"
+          onChange={(e) => onScriptFile(e.target.files)}
+        />
         <Row
           icon={<Upload className="h-3.5 w-3.5" />}
           label="上传文件 · 图片/视频/音频"
           onClick={() => triggerFile("any")}
         />
+        <Row
+          icon={scriptBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+          label={scriptBusy ? "正在解析剧本…" : "上传剧本 · .txt / .md / .docx"}
+          onClick={scriptBusy ? undefined : triggerScript}
+        />
+
         <div className="grid grid-cols-3 gap-1 px-1.5 pt-1">
           <button
             type="button"
