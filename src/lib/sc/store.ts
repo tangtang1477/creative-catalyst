@@ -133,10 +133,14 @@ interface SCState {
   tweakScript: () => void;
   approveWardrobe: () => void;
   tweakWardrobe: () => void;
+  approveCast: () => void;
+  tweakCast: () => void;
   approveKeyframe: () => void;
   regenerateKeyframe: () => void;
   applyQCFix: () => void;
   keepAsIs: () => void;
+  approveMerge: () => void;
+  cancelMerge: () => void;
   cancelSoftGate: () => void;
   cancel: () => void;
   reset: (opts?: { fromUserAction?: boolean }) => void;
