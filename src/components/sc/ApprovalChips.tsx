@@ -12,10 +12,14 @@ export function ApprovalChips() {
     tweakScript,
     approveWardrobe,
     tweakWardrobe,
+    approveCast,
+    tweakCast,
     approveKeyframe,
     regenerateKeyframe,
     applyQCFix,
     keepAsIs,
+    approveMerge,
+    cancelMerge,
     cancelSoftGate,
   } = useSC();
 
