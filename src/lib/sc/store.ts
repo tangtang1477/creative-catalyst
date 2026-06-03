@@ -3031,6 +3031,87 @@ export const useSC = create<SCState>((set, get) => {
       }));
     },
 
+    addAssetVersion: (assetId, newUrl, note) => {
+      set((s) => ({
+        assets: s.assets.map((a) => {
+          if (a.id !== assetId) return a;
+          const prevVersions = a.versions ?? [];
+          const nextVersions = a.url
+            ? [
+                ...prevVersions,
+                {
+                  url: a.url,
+                  createdAt: Date.now(),
+                  source: "manual-edit" as const,
+                  note,
+                },
+              ]
+            : prevVersions;
+          return {
+            ...a,
+            url: newUrl,
+            status: "Ready" as const,
+            errorMessage: undefined,
+            errorCode: undefined,
+            versions: nextVersions,
+          };
+        }),
+      }));
+      // 写盘
+      try {
+        const s = get();
+        const tid = s.taskId;
+        if (tid) {
+          void upsertTaskSnapshot({
+            data: {
+              taskId: tid,
+              projectId: useProjects.getState().currentProjectId ?? null,
+              title: s.taskTitle,
+              status: s.phase === "done" ? "done" : "running",
+              snapshot: {
+                assets: s.assets,
+                stageSummaries: Object.fromEntries(
+                  STAGE_ORDER.map((id) => [id, s.stages[id].summary]),
+                ),
+              } as Record<string, unknown>,
+            },
+          }).catch(() => undefined);
+        }
+      } catch { /* ignore */ }
+    },
+
+    importGeneratedScript: (script) => {
+      // 直接进入 running 阶段；structure 标 ready，跳过 LLM 生成
+      set((s) => ({
+        phase: "running" as Phase,
+        script,
+        stages: {
+          ...s.stages,
+          structure: {
+            ...s.stages.structure,
+            status: "ready" as const,
+            expanded: false,
+            summary: [
+              "已导入用户上传的剧本",
+              `情绪：${script.mood}`,
+              `镜头语言：${script.cameraLanguage}`,
+              ...script.structureSummary,
+            ],
+            thoughts: [
+              {
+                id: uid(),
+                title: "分镜方案（来自上传剧本）",
+                body: script.shots.map(
+                  (sh) => `${sh.shot} · ${sh.duration} · ${sh.motion} — ${sh.scene}（${sh.elements}）`,
+                ),
+              },
+            ],
+          },
+        },
+      }));
+    },
+
+
     openVersionDrawer: (assetId) => set({ versionDrawerAssetId: assetId }),
     closeVersionDrawer: () => set({ versionDrawerAssetId: null }),
     openPreview: (assetId) => set({ previewAssetId: assetId }),
