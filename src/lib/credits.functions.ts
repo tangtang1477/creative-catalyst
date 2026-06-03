@@ -8,7 +8,7 @@ const ConsumeInput = z.object({
   taskId: z.string().min(1).max(80).nullable().optional(),
   stage: z.string().min(1).max(40),
   label: z.string().min(1).max(120),
-  cost: z.number().int().min(1).max(1000),
+  cost: z.number().int().min(1).max(20000),
 });
 
 const TopUpInput = z.object({
