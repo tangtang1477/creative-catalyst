@@ -2135,6 +2135,13 @@ export const useSC = create<SCState>((set, get) => {
                 ),
                 text: m.text || d.text || "AI 没有返回内容，请换种说法再试一次。",
               }));
+            } else if (ev === "directives") {
+              // 由 AI 模型解析出来的"真指令"——回写 brief / script / 角色 / 场景
+              try {
+                get().applyAgentPatch(data as Parameters<typeof get>[0] extends never ? unknown : unknown);
+              } catch (e) {
+                console.warn("[chat-stream] applyAgentPatch failed", e);
+              }
             } else if (ev === "error") {
               failWith(d.message ?? "stream_failed");
             }
