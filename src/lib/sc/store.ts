@@ -2646,21 +2646,25 @@ export const useSC = create<SCState>((set, get) => {
           const proj = fresh.projects.find((p) => p.id === projectId);
           if (!proj) return;
 
-          // 拉远端任务快照并合并入本地 taskHistory（远端为准）。
+          // 拉远端任务（含 snapshot 为空的旧记录），合并入本地 taskHistory。
+          let remoteLooseMatches: Array<{ id: string; title?: string; project_id?: string | null }> = [];
           try {
-            const { tasks: remote } = await listProjectTasks({ data: { projectId } });
+            const { tasks: remote } = await listProjectTasks({ data: { projectId: null } });
             if (Array.isArray(remote) && remote.length) {
               const local = get().taskHistory;
               const byId = new Map<string, TaskRecord>(local.map((t) => [t.id, t]));
               for (const r of remote) {
                 const snap = (r.snapshot ?? {}) as Partial<TaskRecord> & { status?: TaskRecord["status"] };
+                const matchByTitle = !r.project_id && proj.name && r.title === proj.name;
+                const inferProjectId =
+                  r.project_id ?? (matchByTitle ? projectId : (byId.get(r.id)?.projectId ?? null));
                 const rec: TaskRecord = {
                   id: r.id,
                   title: r.title ?? "Untitled",
                   prompt: r.prompt ?? "",
                   createdAt: snap.createdAt ?? (Date.parse(r.created_at ?? "") || Date.now()),
                   updatedAt: snap.updatedAt ?? (Date.parse(r.updated_at ?? "") || Date.now()),
-                  status: snap.status ?? "done",
+                  status: snap.status ?? (r.status === "completed" ? "done" : (r.status as TaskRecord["status"]) ?? "done"),
                   kind: snap.kind ?? "oneoff",
                   assets: snap.assets ?? [],
                   stageSummaries: snap.stageSummaries ?? {},
@@ -2668,9 +2672,12 @@ export const useSC = create<SCState>((set, get) => {
                   script: snap.script ?? null,
                   failureReason: snap.failureReason ?? undefined,
                   brief: snap.brief ?? null,
-                  projectId: r.project_id ?? projectId,
+                  projectId: inferProjectId,
                 };
                 byId.set(rec.id, rec);
+                if (inferProjectId === projectId) {
+                  remoteLooseMatches.push({ id: r.id, title: r.title ?? undefined, project_id: r.project_id });
+                }
               }
               const merged = Array.from(byId.values()).sort((a, b) => b.updatedAt - a.updatedAt);
               set({ taskHistory: merged });
@@ -2680,11 +2687,26 @@ export const useSC = create<SCState>((set, get) => {
             console.warn("[enterProject] remote fetch failed", e);
           }
 
-          // 命中：projectId 优先；其次 title 兜底
+          // 异步回填 project_id 为 NULL 的命中行（按标题），下次进入就能直接命中。
+          void (async () => {
+            try {
+              const { attachTaskToProject } = await import("@/lib/tasks.functions");
+              for (const m of remoteLooseMatches) {
+                if (m.project_id) continue;
+                if (!UUID_RE_TASK.test(m.id)) continue;
+                await attachTaskToProject({
+                  data: { taskId: m.id, projectId },
+                }).catch(() => undefined);
+              }
+            } catch { /* ignore */ }
+          })();
+
+          // 命中：projectId 精确 → title 兜底 → 该项目下最新一条
           const history = get().taskHistory;
-          const match =
-            history.find((t) => t.projectId === projectId) ??
-            history.find((t) => t.title === proj.name);
+          const projHits = history
+            .filter((t) => t.projectId === projectId || (!t.projectId && t.title === proj.name))
+            .sort((a, b) => b.updatedAt - a.updatedAt);
+          const match = projHits[0];
           if (match) {
             get().restoreTask(match.id);
             useProjects.getState().setCurrentProject(projectId);
@@ -2697,6 +2719,8 @@ export const useSC = create<SCState>((set, get) => {
         }
       })();
     },
+
+
 
     applyAgentPatch: (dir) => {
       if (!dir || typeof dir !== "object") return;
