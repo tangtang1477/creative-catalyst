@@ -12,6 +12,7 @@ import {
   Sparkles,
   Shirt,
   ShieldCheck,
+  Users,
 } from "lucide-react";
 import type { StageId, StageState } from "@/lib/sc/types";
 import { STAGE_LABEL } from "@/lib/sc/types";
@@ -25,6 +26,7 @@ const stageIcon: Record<StageId, typeof Layers> = {
   scene: Layers,
   structure: Film,
   wardrobe: Shirt,
+  cast: Users,
   paint: ImageIcon,
   qc: ShieldCheck,
   life: Wand2,
@@ -35,10 +37,11 @@ const thinkingVerb: Record<StageId, string> = {
   scene: "Building the scene",
   structure: "Structuring the film",
   wardrobe: "Styling wardrobe & props",
+  cast: "Casting characters & scenes",
   paint: "Painting the frame",
   qc: "Self-checking consistency",
   life: "Bringing it to life",
-  details: "Adding the details",
+  details: "Merging final cut",
 };
 
 interface Props {
