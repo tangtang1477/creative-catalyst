@@ -10,14 +10,14 @@ export interface CreditEvent {
 }
 
 interface CreditsState {
-  /** 账户总积分（含充值）。仅用于 hover 面板的账户余额展示。 */
+  /** 账户总积分（初始 200 + 累计充值）。 */
   total: number;
-  /** 已消耗积分。 */
+  /** 累计已消耗积分。 */
   used: number;
   history: CreditEvent[];
   pricingOpen: boolean;
   lowOpen: boolean;
-  lowDismissedFor: string | null; // taskId user dismissed for
+  lowDismissedFor: string | null;
   pulseId: number;
   synced: boolean;
   toppingUp: boolean;
@@ -35,12 +35,12 @@ interface CreditsState {
 const KEY = "sc.credits.v1";
 
 /**
- * 任务额度（固定 200）：圆环 / 进度条都按这 200 计算。
- * 账户总积分（total，可能含充值）单独展示在 hover 面板，不参与圆环闭合判断。
+ * 圆环视觉满格阈值：当账户余额 ≥ 200 时圆环 100% 闭合；
+ * 余额 < 200 时按 余额 / 200 比例展示。仅用于视觉，不参与任何"封顶/已用"计算。
  */
-export const QUOTA = 200;
+export const RING_FULL_AT = 200;
 
-const DEFAULT_TOTAL = QUOTA;
+const DEFAULT_TOTAL = 200;
 
 const load = (): { total: number; used: number; history: CreditEvent[] } => {
   if (typeof window === "undefined") return { total: DEFAULT_TOTAL, used: 0, history: [] };
@@ -71,10 +71,9 @@ const persist = (s: { total: number; used: number; history: CreditEvent[] }) => 
   }
 };
 
-// Per-stage debounce so batch generators (8 keyframes in a row) don't
-// produce 8 stacked toasts. We aggregate the cost within 350ms.
+// 按 stage 节流：连续多次消耗合并为一条 toast
 const toastBuffer = new Map<string, { cost: number; timer: ReturnType<typeof setTimeout> }>();
-function notifyConsume(stage: string, cost: number, quotaRemaining: number) {
+function notifyConsume(stage: string, cost: number, remaining: number) {
   if (typeof window === "undefined") return;
   const existing = toastBuffer.get(stage);
   if (existing) {
@@ -85,7 +84,7 @@ function notifyConsume(stage: string, cost: number, quotaRemaining: number) {
   if (!existing) toastBuffer.set(stage, entry);
   entry.timer = setTimeout(() => {
     toastBuffer.delete(stage);
-    toast(`本次消耗 ${entry.cost} 积分 · 任务额度剩余 ${Math.max(0, quotaRemaining)} / ${QUOTA}`, {
+    toast(`本次消耗 ${entry.cost} 积分 · 账户余额 ${Math.max(0, remaining)} 积分`, {
       description: `阶段 · ${stage}`,
       duration: 2500,
     });
@@ -107,11 +106,10 @@ export const useCredits = create<CreditsState>((set, get) => {
 
     consume: (stage, label, cost, taskId) => {
       if (cost <= 0) return;
-      let quotaRemainingSnap = 0;
+      let remainingSnap = 0;
       set((s) => {
         const used = s.used + cost;
-        const quotaUsed = Math.min(QUOTA, used);
-        quotaRemainingSnap = Math.max(0, QUOTA - quotaUsed);
+        remainingSnap = Math.max(0, s.total - used);
         const history = [
           ...s.history,
           { ts: Date.now(), stage, label, cost, taskId: taskId ?? null },
@@ -119,15 +117,12 @@ export const useCredits = create<CreditsState>((set, get) => {
         persist({ total: s.total, used, history });
         return { used, history, pulseId: s.pulseId + 1 };
       });
-      notifyConsume(stage, cost, quotaRemainingSnap);
-      // Auto-trigger low-credit prompt — 基于任务额度比例
-      if (quotaRemainingSnap === 0) {
+      notifyConsume(stage, cost, remainingSnap);
+      if (remainingSnap === 0) {
         set({ lowOpen: true, lowDismissedFor: null });
-      } else if (quotaRemainingSnap / QUOTA <= 0.1) {
+      } else if (remainingSnap <= 20) {
         if (!taskId || get().lowDismissedFor !== taskId) set({ lowOpen: true });
       }
-      // Backend ledger insert (best-effort)。注意：后端 total 含充值，仅作为账户余额来源，
-      // 不会再覆盖本地任务额度逻辑。
       void (async () => {
         try {
           const { consumeCredits } = await import("@/lib/credits.functions");
@@ -136,9 +131,9 @@ export const useCredits = create<CreditsState>((set, get) => {
           });
           set({ used: r.used, total: r.total, synced: true });
           persist({ total: r.total, used: r.used, history: get().history });
-          const qRemain = Math.max(0, QUOTA - Math.min(QUOTA, r.used));
-          if (qRemain === 0) set({ lowOpen: true, lowDismissedFor: null });
-          else if (qRemain / QUOTA <= 0.1) {
+          const rem = Math.max(0, r.total - r.used);
+          if (rem === 0) set({ lowOpen: true, lowDismissedFor: null });
+          else if (rem <= 20) {
             if (!taskId || get().lowDismissedFor !== taskId) set({ lowOpen: true });
           }
         } catch (err) {
@@ -149,7 +144,6 @@ export const useCredits = create<CreditsState>((set, get) => {
 
     topUp: async (n, tier) => {
       if (n <= 0) return;
-      // Optimistic update
       set((s) => {
         const total = s.total + n;
         persist({ total, used: s.used, history: s.history });
@@ -166,7 +160,7 @@ export const useCredits = create<CreditsState>((set, get) => {
         set({ used, total, synced: true, toppingUp: false, pulseId: get().pulseId + 1 });
         persist({ total, used, history: get().history });
         toast.success(`充值成功 · 到账 ${n} 积分`, {
-          description: `账户余额 ${Math.max(0, remaining)} · 任务额度 ${Math.max(0, QUOTA - Math.min(QUOTA, used))} / ${QUOTA}`,
+          description: `账户余额 ${Math.max(0, remaining)} 积分`,
           duration: 3000,
         });
       } catch (err) {
@@ -205,17 +199,9 @@ export const useCredits = create<CreditsState>((set, get) => {
 });
 
 export const creditsSelectors = {
-  /** 账户余额（含充值），用于 hover 面板的"账户余额"行。 */
+  /** 账户余额（唯一口径）。 */
   remaining: (s: CreditsState) => Math.max(0, s.total - s.used),
-  /** 任务额度内已用积分（封顶 200）。 */
-  quotaUsed: (s: CreditsState) => Math.min(QUOTA, s.used),
-  /** 任务额度剩余（0 - 200）。驱动圆环 / 进度条 / 圆点。 */
-  quotaRemaining: (s: CreditsState) => Math.max(0, QUOTA - Math.min(QUOTA, s.used)),
-  /** 任务额度剩余百分比 0..1。 */
-  quotaPercent: (s: CreditsState) =>
-    Math.max(0, Math.min(1, (QUOTA - Math.min(QUOTA, s.used)) / QUOTA)),
-  /** 已消耗百分比（0..100）— 旧接口保留兼容。 */
-  percent: (s: CreditsState) => Math.min(100, Math.round((Math.min(QUOTA, s.used) / QUOTA) * 100)),
-  remainingPercent: (s: CreditsState) =>
-    Math.round(Math.max(0, Math.min(1, (QUOTA - Math.min(QUOTA, s.used)) / QUOTA)) * 100),
+  /** 圆环填充比例 0..1：余额 ≥ 200 时为 1。 */
+  ringPercent: (s: CreditsState) =>
+    Math.max(0, Math.min(1, Math.max(0, s.total - s.used) / RING_FULL_AT)),
 };
