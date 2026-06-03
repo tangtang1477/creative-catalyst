@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/sc/Sidebar";
 import { DotGridBackground } from "@/components/sc/DotGridBackground";
 import { useTheme } from "@/hooks/use-theme";
 import { useProjects } from "@/lib/sc/projects-store";
-import { useSC, titleMatchesProject } from "@/lib/sc/store";
+import { useSC, titleMatchesProject, normalizeTaskRecord } from "@/lib/sc/store";
 import { listProjectTasks, backfillLegacyTasksForProject, attachTaskToProject } from "@/lib/tasks.functions";
 import type { TaskRecord } from "@/lib/sc/types";
 import { supabase } from "@/integrations/supabase/client";
@@ -107,7 +107,7 @@ function ProjectDetailPage() {
             const snap = (r.snapshot ?? {}) as Partial<TaskRecord> & { status?: TaskRecord["status"] };
             const looseTitleMatch = !r.project_id && proj && titleMatchesProject(r.title, proj.name);
             const inferProjectId = r.project_id ?? (looseTitleMatch ? projectId : (byId.get(r.id)?.projectId ?? null));
-            const rec: TaskRecord = {
+            const rec = normalizeTaskRecord({
               id: r.id,
               title: r.title ?? "Untitled",
               prompt: r.prompt ?? "",
@@ -122,7 +122,7 @@ function ProjectDetailPage() {
               failureReason: snap.failureReason ?? undefined,
               brief: snap.brief ?? null,
               projectId: inferProjectId,
-            };
+            });
             byId.set(rec.id, rec);
             if (inferProjectId === projectId) loose.push({ id: r.id, projectId: r.project_id ?? null });
           }

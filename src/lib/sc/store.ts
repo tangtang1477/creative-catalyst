@@ -302,7 +302,7 @@ const loadViewMode = (): ViewMode => {
   return v === "canvas" ? "canvas" : "list";
 };
 
-const normalizeTaskRecord = (found: Partial<TaskRecord> & Pick<TaskRecord, "id">): TaskRecord => {
+export const normalizeTaskRecord = (found: Partial<TaskRecord> & Pick<TaskRecord, "id">): TaskRecord => {
   const normalizedAssets: Asset[] = Array.isArray(found.assets)
     ? found.assets.map((asset, index): Asset => ({
         id: asset?.id ?? `restored-${found.id}-${index}`,
