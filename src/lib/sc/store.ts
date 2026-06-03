@@ -26,6 +26,7 @@ import { submitVideoTask, pollVideoTask } from "@/lib/seedance.functions";
 import { generateScript, type GeneratedScript } from "@/lib/script.functions";
 import { parseFormatDuration, parseFormatRatio, formatDurationLabel, clampSeedanceDuration } from "@/lib/sc/format-utils";
 import { useProjects } from "@/lib/sc/projects-store";
+import { upsertTaskSnapshot, listProjectTasks } from "@/lib/tasks.functions";
 
 
 const consume = (stage: string, label: string, cost: number, taskId?: string | null) =>
