@@ -2305,9 +2305,12 @@ export const useSC = create<SCState>((set, get) => {
       // submit 时兜底再拉一次，确保是最新登录态
       supabase.auth.getUser().then(async ({ data }) => {
         set({ currentUserId: data.user?.id ?? null });
+        if (!data.user) return;
+
+        let attachProjectId: string | null = null;
 
         // Auto-create + attach project when this looks like a series episode
-        if (data.user && taskKind === "series") {
+        if (taskKind === "series") {
           try {
             const { useProjects } = await import("@/lib/sc/projects-store");
             const { createProject } = await import("@/lib/projects.functions");
@@ -2315,7 +2318,9 @@ export const useSC = create<SCState>((set, get) => {
             if (!projectsState.loaded) await projectsState.fetchProjects();
             const fresh = useProjects.getState().projects;
             const presetName = inferTaskTitle(text);
-            let existing = fresh.find((p) => p.name === presetName);
+            let existing =
+              fresh.find((p) => p.name === presetName) ??
+              fresh.find((p) => titleMatchesProject(presetName, p.name));
             if (!existing) {
               const { project } = await createProject({
                 data: { name: presetName, kind: "series", icon: "series" },
@@ -2324,13 +2329,42 @@ export const useSC = create<SCState>((set, get) => {
               useProjects.setState((s) => ({ projects: [existing!, ...s.projects] }));
             }
             useProjects.getState().setCurrentProject(existing.id);
-            // task_id column is uuid; the in-memory `t_xxx` ids aren't UUIDs,
-            // so skip the row-level attach. The currentProjectId in store is enough
-            // for the UI to highlight the project, and persistence is recorded in
-            // `projects.brief` on subsequent saves.
+            attachProjectId = existing.id;
           } catch (e) {
             console.warn("[auto-create project] failed", e);
           }
+        } else {
+          // oneoff 也尝试沿用当前已选中的项目（用户可能从某个项目里发起一次性需求）
+          try {
+            const { useProjects } = await import("@/lib/sc/projects-store");
+            attachProjectId = useProjects.getState().currentProjectId ?? null;
+          } catch { /* ignore */ }
+        }
+
+        // 一创建就把 task 落库一次（最小骨架），保证下次 enterProject 能直接拉到。
+        if (UUID_RE_TASK.test(newTaskId)) {
+          const nowMs = Date.now();
+          void upsertTaskSnapshot({
+            data: {
+              taskId: newTaskId,
+              projectId: attachProjectId,
+              title: inferTaskTitle(text) || "Untitled",
+              status: "running",
+              prompt: text,
+              snapshot: {
+                kind: taskKind,
+                createdAt: nowMs,
+                updatedAt: nowMs,
+                status: "running",
+                assets: [],
+                stageSummaries: {},
+                stageSnapshots: {},
+                brief: { prompt: text, adType: "", format: "", visualSource: "", mode: "" },
+                script: null,
+                failureReason: null,
+              },
+            },
+          }).catch((e) => console.warn("[submit] initial persist failed", e));
         }
       });
       const delay = 1500 + Math.random() * 1000;
