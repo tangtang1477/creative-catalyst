@@ -618,6 +618,8 @@ export const useSC = create<SCState>((set, get) => {
     closeGate();
     updateStage("wardrobe", { status: "running", expanded: true });
     runTool("wardrobe", "tool", "wardrobe-stylist · text-to-image", 1500, 0);
+    appendRefThumbs("wardrobe");
+
 
     const script = get().script;
     const wardrobeSpec = Array.isArray(script?.wardrobe) && script!.wardrobe!.length > 0
