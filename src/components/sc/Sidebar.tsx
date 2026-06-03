@@ -89,7 +89,6 @@ export function Sidebar() {
   const projectsLoaded = useProjects((s) => s.loaded);
   const fetchProjects = useProjects((s) => s.fetchProjects);
   const openCreateProject = useProjects((s) => s.openCreate);
-  const setCurrentProject = useProjects((s) => s.setCurrentProject);
   const currentProjectId = useProjects((s) => s.currentProjectId);
 
   const enterProject = useSC((s) => s.enterProject);
