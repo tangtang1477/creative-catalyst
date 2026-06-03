@@ -293,6 +293,45 @@ export const Route = createFileRoute("/api/chat-stream")({
             let sectionBuf = "";
             let lastSectionFlushIdx = -1;
             let replyAcc = "";
+            // directives 抑制：reply 阶段一旦看到 <directives>，后续 token 不再 emit
+            let replyTail = "";
+            let directivesOpen = false;
+
+            const emitReplyToken = (chunk: string) => {
+              if (!chunk) return;
+              if (directivesOpen) {
+                replyAcc += chunk;
+                return;
+              }
+              const combined = replyTail + chunk;
+              const openIdx = combined.indexOf("<directives>");
+              if (openIdx >= 0) {
+                const visible = combined.slice(0, openIdx);
+                if (visible) emit("token", { text: visible });
+                replyTail = "";
+                replyAcc += combined; // 保留全量含 tag，后处理解析
+                directivesOpen = true;
+                return;
+              }
+              // 保留最后 12 个字符在 tail，避免 "<direct" 跨 chunk 漏判
+              const SAFE = 12;
+              if (combined.length > SAFE) {
+                const visible = combined.slice(0, combined.length - SAFE);
+                emit("token", { text: visible });
+                replyAcc += visible;
+                replyTail = combined.slice(combined.length - SAFE);
+              } else {
+                replyTail = combined;
+              }
+            };
+
+            const flushReplyTail = () => {
+              if (!directivesOpen && replyTail) {
+                emit("token", { text: replyTail });
+                replyAcc += replyTail;
+                replyTail = "";
+              }
+            };
 
             const flushSection = (idx: number) => {
               if (idx <= lastSectionFlushIdx) return;
@@ -332,8 +371,7 @@ export const Route = createFileRoute("/api/chat-stream")({
                     return;
                   } else {
                     // 已经离开 thinking → 全部是 reply token
-                    replyAcc += remaining;
-                    emit("token", { text: remaining });
+                    emitReplyToken(remaining);
                     return;
                   }
                 }
