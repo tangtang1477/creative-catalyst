@@ -72,9 +72,11 @@ export interface Thought {
 }
 
 
+export type SummaryLine = string | { text: string; thumbs: string[] };
+
 export interface StageState {
   status: StageStatus;
-  summary: string[];
+  summary: SummaryLine[];
   details?: string;
   expanded: boolean;
   toolCalls: ToolCall[];
@@ -82,6 +84,7 @@ export interface StageState {
   /** Human-readable error message displayed inline when status === 'failed'. */
   errorMessage?: string;
 }
+
 
 export interface AssetVersion {
   url: string;
@@ -187,15 +190,18 @@ export interface Attachment {
   id: string;
   kind: "image" | "video" | "audio";
   name: string;
+  /** Friendly auto-numbered name like "图片 1 / 视频 2 / 音频 1". */
+  displayName?: string;
   url: string;
   thumb?: string;
   source: "upload" | "url" | "asset";
   ref?: string;
 }
 
+
 export interface StageSnapshot {
   status: StageStatus;
-  summary: string[];
+  summary: SummaryLine[];
   toolCalls: ToolCall[];
   thoughts: Thought[];
 }
@@ -210,7 +216,8 @@ export interface TaskRecord {
   kind: TaskKind;
   assets: Asset[];
   /** Legacy lightweight per-stage summary (read-only fallback for old records). */
-  stageSummaries?: Partial<Record<StageId, string[]>>;
+  stageSummaries?: Partial<Record<StageId, SummaryLine[]>>;
+
   /** Full per-stage snapshot for playback (summary + toolCalls + thoughts). */
   stageSnapshots?: Partial<Record<StageId, StageSnapshot>>;
   /** LLM script captured at run time so playback can re-render tables. */

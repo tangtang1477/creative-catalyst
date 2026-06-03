@@ -55,11 +55,33 @@ export const listProjectTasks = createServerFn({ method: "POST" })
       .from("video_tasks")
       .select("id, title, prompt, status, project_id, snapshot, created_at, updated_at")
       .eq("user_id", userId)
-      .not("snapshot", "is", null)
       .order("updated_at", { ascending: false })
-      .limit(60);
+      .limit(120);
     if (data.projectId) q = q.eq("project_id", data.projectId);
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
     return { tasks: rows ?? [] };
+  });
+
+
+/** Attach a stray task (project_id NULL) to a project; idempotent. */
+export const attachTaskToProject = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z
+      .object({
+        taskId: z.string().uuid(),
+        projectId: z.string().uuid(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { error } = await supabase
+      .from("video_tasks")
+      .update({ project_id: data.projectId, updated_at: new Date().toISOString() })
+      .eq("id", data.taskId)
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });

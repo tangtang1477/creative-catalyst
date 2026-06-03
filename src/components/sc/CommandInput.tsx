@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, type KeyboardEvent } from "react";
-import { Plus, ArrowUp, Square } from "lucide-react";
+import { Plus, ArrowUp, Square, X } from "lucide-react";
 import { useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
 import { ModelMenu } from "./ModelMenu";
@@ -34,7 +34,11 @@ export function CommandInput({ placeholder, compact = false }: Props) {
     resolveIntakeOthers,
     cancelIntakeOthers,
     chatMessage,
+    attachments,
+    assets,
+    removeAttachment,
   } = useSC();
+
   const [value, setValue] = useState(prompt ?? "");
   const [caret, setCaret] = useState(0);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -159,6 +163,17 @@ export function CommandInput({ placeholder, compact = false }: Props) {
         )}
       />
       <MentionPopover value={value} caret={caret} anchorRef={taRef} onPick={handlePick} />
+      <InlineReferenceRow
+        value={value}
+        attachments={attachments}
+        assets={assets}
+        onRemoveAttachment={removeAttachment}
+        onStrip={(token) => {
+          const re = new RegExp(`\\s*${escapeRegExp(token)}\\s?`, "g");
+          setValue((prev: string) => prev.replace(re, " ").replace(/\s{2,}/g, " ").trimStart());
+        }}
+      />
+
       <div className="flex items-center justify-between gap-2 px-2 pb-2">
         <div className="flex items-center gap-1.5">
           <AttachMenu disabled={inputDisabled}>
@@ -214,6 +229,107 @@ export function CommandInput({ placeholder, compact = false }: Props) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+interface InlineRefProps {
+  value: string;
+  attachments: import("@/lib/sc/types").Attachment[];
+  assets: import("@/lib/sc/types").Asset[];
+  onRemoveAttachment: (id: string) => void;
+  onStrip: (token: string) => void;
+}
+
+
+/**
+ * 显示当前 prompt 中引用到的素材（@A01 资产 + 图片N/视频N/音频N 附件）的小缩略图行。
+ * 点击 ✕ 同时从文本中删除 token；附件 ✕ 还会从 attachments 中移除。
+ */
+function InlineReferenceRow({
+  value,
+  attachments,
+  assets,
+  onRemoveAttachment,
+  onStrip,
+}: InlineRefProps) {
+  const refs: Array<{
+    key: string;
+    token: string;
+    label: string;
+    thumb?: string;
+    kind: "image" | "video" | "audio";
+    onRemove: () => void;
+  }> = [];
+
+  // Asset @-references
+  for (const a of assets) {
+    const tok = `@${a.id}`;
+    if (value.includes(tok)) {
+      refs.push({
+        key: `a:${a.id}`,
+        token: tok,
+        label: tok,
+        thumb: a.kind === "image" ? a.url : a.poster,
+        kind: a.kind,
+        onRemove: () => onStrip(tok),
+      });
+    }
+  }
+  // Attachment references (displayName w/o whitespace, e.g. 图片1)
+  for (const att of attachments) {
+    const label = att.displayName ?? att.name;
+    const tok = label.replace(/\s+/g, "");
+    if (value.includes(tok)) {
+      refs.push({
+        key: `att:${att.id}`,
+        token: tok,
+        label,
+        thumb: att.thumb ?? (att.kind === "image" ? att.url : undefined),
+        kind: att.kind,
+        onRemove: () => {
+          onStrip(tok);
+          onRemoveAttachment(att.id);
+        },
+      });
+    }
+  }
+
+  if (refs.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 border-t border-border/60 px-2.5 py-1.5">
+      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        已引用
+      </span>
+      {refs.map((r) => (
+        <span
+          key={r.key}
+          title={r.label}
+          className="group flex items-center gap-1 rounded-lg border border-border bg-surface-2 py-0.5 pl-0.5 pr-1.5 text-[11px] text-foreground/85 transition-colors hover:border-accent/60"
+        >
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-md bg-surface text-foreground/70">
+            {r.thumb ? (
+              <img src={r.thumb} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span className="text-[9px]">{r.kind === "video" ? "🎬" : r.kind === "audio" ? "🎵" : "🖼"}</span>
+            )}
+          </span>
+          <span className="max-w-[90px] truncate">{r.label}</span>
+          <button
+            type="button"
+            aria-label="remove"
+            onClick={r.onRemove}
+            className="ml-0.5 flex h-3.5 w-3.5 items-center justify-center rounded text-muted-foreground hover:bg-surface hover:text-rose-400"
+          >
+            <X className="h-2.5 w-2.5" />
+          </button>
+        </span>
+      ))}
     </div>
   );
 }

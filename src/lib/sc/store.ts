@@ -9,6 +9,8 @@ import {
   type StageId,
   type StageState,
   type StageSnapshot,
+  type SummaryLine,
+
   type TaskKind,
   type TaskRecord,
   type ToolCall,
@@ -287,13 +289,27 @@ export const useSC = create<SCState>((set, get) => {
       stages: { ...s.stages, [id]: { ...s.stages[id], ...patch } },
     }));
 
-  const appendSummary = (id: StageId, line: string) =>
-    set((s) => ({
-      stages: {
-        ...s.stages,
-        [id]: { ...s.stages[id], summary: [...s.stages[id].summary, line] },
-      },
-    }));
+  const appendSummary = (id: StageId, line: string, thumbs?: string[]) =>
+    set((s) => {
+      const entry: SummaryLine =
+        thumbs && thumbs.length ? { text: line, thumbs } : line;
+      return {
+        stages: {
+          ...s.stages,
+          [id]: { ...s.stages[id], summary: [...s.stages[id].summary, entry] },
+        },
+      };
+    });
+
+  /** Append a "参考图：" line to a stage if the user uploaded reference images. */
+  const appendRefThumbs = (id: StageId) => {
+    const refs = get().attachments;
+    const imgRefs = refs
+      .filter((a) => a.kind === "image" && a.url)
+      .map((a) => a.thumb ?? a.url);
+    if (imgRefs.length) appendSummary(id, "参考图：", imgRefs);
+  };
+
 
   const startToolCall = (stageId: StageId, kind: ToolCall["kind"], label: string) => {
     const id = uid();
@@ -436,7 +452,7 @@ export const useSC = create<SCState>((set, get) => {
     if (!taskId) return;
     const now = Date.now();
     const existing = taskHistory.find((t) => t.id === taskId);
-    const stageSummaries: Partial<Record<StageId, string[]>> = {};
+    const stageSummaries: Partial<Record<StageId, SummaryLine[]>> = {};
     const stageSnapshots: Partial<Record<StageId, StageSnapshot>> = {};
     let failureReason: string | undefined;
     for (const sid of STAGE_ORDER) {
@@ -451,9 +467,11 @@ export const useSC = create<SCState>((set, get) => {
         };
       }
       if (status === "failed" && st.status === "failed" && !failureReason) {
-        failureReason = st.summary[st.summary.length - 1] ?? `${STAGE_LABEL[sid]} 失败`;
+        const last = st.summary[st.summary.length - 1];
+        failureReason = (typeof last === "string" ? last : last?.text) ?? `${STAGE_LABEL[sid]} 失败`;
       }
     }
+
     // Read currently active project (if any) so this task is linked back to it.
     const currentProjectId = useProjects.getState().currentProjectId ?? existing?.projectId ?? null;
     const record: TaskRecord = {
@@ -543,6 +561,8 @@ export const useSC = create<SCState>((set, get) => {
     updateStage("structure", { status: "running", expanded: true });
     const tcId = startToolCall("structure", "tool", "video-script-writer · LLM");
     appendSummary("structure", "调用大模型生成本次剧本与分镜…");
+    appendRefThumbs("structure");
+
 
     const startedRunId = get().runId;
     const b = get().brief;
@@ -598,6 +618,8 @@ export const useSC = create<SCState>((set, get) => {
     closeGate();
     updateStage("wardrobe", { status: "running", expanded: true });
     runTool("wardrobe", "tool", "wardrobe-stylist · text-to-image", 1500, 0);
+    appendRefThumbs("wardrobe");
+
 
     const script = get().script;
     const wardrobeSpec = Array.isArray(script?.wardrobe) && script!.wardrobe!.length > 0
@@ -729,6 +751,8 @@ export const useSC = create<SCState>((set, get) => {
     closeGate();
     updateStage("cast", { status: "running", expanded: true });
     runTool("cast", "tool", "cast-and-scene-director · text-to-image", 1400, 0);
+    appendRefThumbs("cast");
+
 
     const script = get().script as (GeneratedScript & { characters?: Array<{ name?: string; caption?: string }>; scenes?: Array<{ name?: string; caption?: string }> }) | null;
     type CastSpec = { id: string; caption: string; kind: "character" | "scene" };
@@ -908,6 +932,8 @@ export const useSC = create<SCState>((set, get) => {
     updateStage("paint", { status: "running", expanded: true });
     runTool("paint", "skill", "ai-video-studio · keyframe-painter", 800, 0);
     runTool("paint", "tool", "text-to-image · streaming", 1200, 900);
+    appendRefThumbs("paint");
+
 
     const scriptForThought = get().script;
     const wardrobeIds = get()
@@ -2217,10 +2243,17 @@ export const useSC = create<SCState>((set, get) => {
 
 
 
-    addAttachment: (a) => set((s) => ({ attachments: [...s.attachments, a] })),
+    addAttachment: (a) =>
+      set((s) => {
+        const kindLabel = a.kind === "image" ? "图片" : a.kind === "video" ? "视频" : "音频";
+        const idx = s.attachments.filter((x) => x.kind === a.kind).length + 1;
+        const displayName = a.displayName ?? `${kindLabel} ${idx}`;
+        return { attachments: [...s.attachments, { ...a, displayName }] };
+      }),
     removeAttachment: (id) =>
       set((s) => ({ attachments: s.attachments.filter((a) => a.id !== id) })),
     clearAttachments: () => set({ attachments: [] }),
+
 
     submit: (prompt) => {
       const text = prompt.trim();
@@ -2646,21 +2679,25 @@ export const useSC = create<SCState>((set, get) => {
           const proj = fresh.projects.find((p) => p.id === projectId);
           if (!proj) return;
 
-          // 拉远端任务快照并合并入本地 taskHistory（远端为准）。
+          // 拉远端任务（含 snapshot 为空的旧记录），合并入本地 taskHistory。
+          let remoteLooseMatches: Array<{ id: string; title?: string; project_id?: string | null }> = [];
           try {
-            const { tasks: remote } = await listProjectTasks({ data: { projectId } });
+            const { tasks: remote } = await listProjectTasks({ data: { projectId: null } });
             if (Array.isArray(remote) && remote.length) {
               const local = get().taskHistory;
               const byId = new Map<string, TaskRecord>(local.map((t) => [t.id, t]));
               for (const r of remote) {
                 const snap = (r.snapshot ?? {}) as Partial<TaskRecord> & { status?: TaskRecord["status"] };
+                const matchByTitle = !r.project_id && proj.name && r.title === proj.name;
+                const inferProjectId =
+                  r.project_id ?? (matchByTitle ? projectId : (byId.get(r.id)?.projectId ?? null));
                 const rec: TaskRecord = {
                   id: r.id,
                   title: r.title ?? "Untitled",
                   prompt: r.prompt ?? "",
                   createdAt: snap.createdAt ?? (Date.parse(r.created_at ?? "") || Date.now()),
                   updatedAt: snap.updatedAt ?? (Date.parse(r.updated_at ?? "") || Date.now()),
-                  status: snap.status ?? "done",
+                  status: snap.status ?? (r.status === "completed" ? "done" : (r.status as TaskRecord["status"]) ?? "done"),
                   kind: snap.kind ?? "oneoff",
                   assets: snap.assets ?? [],
                   stageSummaries: snap.stageSummaries ?? {},
@@ -2668,9 +2705,12 @@ export const useSC = create<SCState>((set, get) => {
                   script: snap.script ?? null,
                   failureReason: snap.failureReason ?? undefined,
                   brief: snap.brief ?? null,
-                  projectId: r.project_id ?? projectId,
+                  projectId: inferProjectId,
                 };
                 byId.set(rec.id, rec);
+                if (inferProjectId === projectId) {
+                  remoteLooseMatches.push({ id: r.id, title: r.title ?? undefined, project_id: r.project_id });
+                }
               }
               const merged = Array.from(byId.values()).sort((a, b) => b.updatedAt - a.updatedAt);
               set({ taskHistory: merged });
@@ -2680,11 +2720,26 @@ export const useSC = create<SCState>((set, get) => {
             console.warn("[enterProject] remote fetch failed", e);
           }
 
-          // 命中：projectId 优先；其次 title 兜底
+          // 异步回填 project_id 为 NULL 的命中行（按标题），下次进入就能直接命中。
+          void (async () => {
+            try {
+              const { attachTaskToProject } = await import("@/lib/tasks.functions");
+              for (const m of remoteLooseMatches) {
+                if (m.project_id) continue;
+                if (!UUID_RE_TASK.test(m.id)) continue;
+                await attachTaskToProject({
+                  data: { taskId: m.id, projectId },
+                }).catch(() => undefined);
+              }
+            } catch { /* ignore */ }
+          })();
+
+          // 命中：projectId 精确 → title 兜底 → 该项目下最新一条
           const history = get().taskHistory;
-          const match =
-            history.find((t) => t.projectId === projectId) ??
-            history.find((t) => t.title === proj.name);
+          const projHits = history
+            .filter((t) => t.projectId === projectId || (!t.projectId && t.title === proj.name))
+            .sort((a, b) => b.updatedAt - a.updatedAt);
+          const match = projHits[0];
           if (match) {
             get().restoreTask(match.id);
             useProjects.getState().setCurrentProject(projectId);
@@ -2697,6 +2752,8 @@ export const useSC = create<SCState>((set, get) => {
         }
       })();
     },
+
+
 
     applyAgentPatch: (dir) => {
       if (!dir || typeof dir !== "object") return;

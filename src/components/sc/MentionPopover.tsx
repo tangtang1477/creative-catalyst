@@ -36,22 +36,29 @@ export function MentionPopover({ value, caret, anchorRef, onPick }: Props) {
       .filter((a) => a.status === "Ready" && a.url)
       .map((a) => ({
         key: a.id,
+        // Token inserted into textarea (short, machine-friendly).
+        insert: `@${a.id}`,
         label: `@${a.id}`,
         sub: a.caption ?? a.label,
         thumb: a.kind === "image" ? a.url : a.poster,
         kind: a.kind as "image" | "video",
       }));
-    const fromAttach = attachments.map((a) => ({
-      key: a.id,
-      label: a.ref ? `@${a.ref}` : a.name,
-      sub: a.source,
-      thumb: a.thumb,
-      kind: a.kind as "image" | "video",
-    }));
+    const fromAttach = attachments.map((a) => {
+      const friendly = a.displayName ?? a.name;
+      return {
+        key: a.id,
+        insert: friendly.replace(/\s+/g, ""), // 图片1 — no space, avoids `@` parsing snags
+        label: friendly,
+        sub: a.name,
+        thumb: a.thumb ?? (a.kind === "image" ? a.url : undefined),
+        kind: a.kind as "image" | "video",
+      };
+    });
     return [...fromAssets, ...fromAttach].filter(
       (x) => !q || x.label.toLowerCase().includes(q) || x.sub.toLowerCase().includes(q),
     );
   }, [query, assets, attachments]);
+
 
   useEffect(() => setActive(0), [query?.q]);
 
@@ -73,8 +80,9 @@ export function MentionPopover({ value, caret, anchorRef, onPick }: Props) {
       } else if (e.key === "Enter") {
         e.preventDefault();
         const it = items[active];
-        if (it) onPick(`${it.label} `, query.from, caret);
+        if (it) onPick(`${it.insert} `, query.from, caret);
       }
+
     };
     ta.addEventListener("keydown", onKey);
     return () => ta.removeEventListener("keydown", onKey);
@@ -113,19 +121,20 @@ export function MentionPopover({ value, caret, anchorRef, onPick }: Props) {
               key={it.key}
               type="button"
               onMouseEnter={() => setActive(i)}
-              onClick={() => onPick(`${it.label} `, query.from, caret)}
+              onClick={() => onPick(`${it.insert} `, query.from, caret)}
               className={cn(
                 "flex w-full items-center gap-2 rounded-xl px-1.5 py-1.5 text-left text-[12px] transition-colors",
                 active === i ? "bg-surface-2 text-accent" : "text-foreground/85 hover:bg-surface-2",
               )}
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-2 text-foreground/70">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-2 text-foreground/70">
                 {it.thumb ? (
                   <img src={it.thumb} alt="" className="h-full w-full object-cover" />
                 ) : it.kind === "video" ? (
-                  <Film className="h-3.5 w-3.5" />
+                  <Film className="h-4 w-4" />
                 ) : (
-                  <ImageIcon className="h-3.5 w-3.5" />
+                  <ImageIcon className="h-4 w-4" />
+
                 )}
               </span>
               <span className="flex min-w-0 flex-col">

@@ -464,25 +464,67 @@ function HomeProjectsRow() {
 function ActiveProjectBanner() {
   const currentProjectId = useProjects((s) => s.currentProjectId);
   const projects = useProjects((s) => s.projects);
+  const taskHistory = useSC((s) => s.taskHistory);
+  const restoreTask = useSC((s) => s.restoreTask);
+  const currentTaskId = useSC((s) => s.taskId);
   const proj = projects.find((p) => p.id === currentProjectId) ?? null;
   if (!proj) return null;
   const Icon = HOME_KIND_ICON[proj.kind] ?? FolderIcon;
+  const projectTasks = taskHistory
+    .filter((t) => t.projectId === proj.id || (!t.projectId && t.title === proj.name))
+    .filter((t) => t.id !== currentTaskId)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, 6);
+
   return (
-    <div className="mb-4 flex items-center gap-3 rounded-2xl border border-accent/30 bg-[color-mix(in_oklab,var(--accent)_8%,var(--surface))] px-4 py-3 text-[12.5px] [animation:stream-fade_320ms_ease-out_both]">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
-        <Icon className="h-4 w-4" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="font-semibold text-foreground">
-          当前项目 · <span className="text-accent">{proj.name}</span>
+    <div className="mb-4 rounded-2xl border border-accent/30 bg-[color-mix(in_oklab,var(--accent)_8%,var(--surface))] px-4 py-3 text-[12.5px] [animation:stream-fade_320ms_ease-out_both]">
+      <div className="flex items-center gap-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
+          <Icon className="h-4 w-4" />
         </div>
-        <div className="text-[11.5px] text-muted-foreground">
-          该项目暂无本地历史内容。直接在下方输入需求即可开始第一次创作，素材会自动归档到本项目。
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-foreground">
+            当前项目 · <span className="text-accent">{proj.name}</span>
+          </div>
+          <div className="text-[11.5px] text-muted-foreground">
+            {projectTasks.length === 0
+              ? "该项目暂无历史内容。直接在下方输入需求即可开始第一次创作，素材会自动归档到本项目。"
+              : `该项目下有 ${projectTasks.length} 条历史任务，点击可恢复。`}
+          </div>
         </div>
       </div>
+      {projectTasks.length > 0 && (
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {projectTasks.map((t) => {
+            const date = new Date(t.updatedAt).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+            const dot =
+              t.status === "done"
+                ? "bg-emerald-400"
+                : t.status === "failed"
+                  ? "bg-rose-400"
+                  : t.status === "running"
+                    ? "bg-amber-400"
+                    : "bg-muted-foreground";
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => restoreTask(t.id)}
+                className="group inline-flex max-w-[220px] items-center gap-1.5 rounded-xl border border-border bg-surface/60 px-2.5 py-1 text-[11.5px] text-foreground/85 transition-colors hover:border-accent/60 hover:bg-accent/10"
+                title={t.title}
+              >
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
+                <span className="truncate">{t.title || "Untitled"}</span>
+                <span className="shrink-0 text-[10.5px] text-muted-foreground">{date}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
+
 
 
 
