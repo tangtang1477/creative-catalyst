@@ -171,8 +171,18 @@ function ProjectDetailPage() {
   }, [taskHistory, project]);
 
   const handleOpenTask = (taskId: string) => {
-    restoreTask(taskId);
-    void navigate({ to: "/" });
+    try {
+      // Ensure the task is present in local taskHistory before restoring.
+      const exists = useSC.getState().taskHistory.some((t) => t.id === taskId);
+      if (!exists) {
+        console.warn("[projects/detail] open task: not in history, skip", taskId);
+        return;
+      }
+      restoreTask(taskId);
+      void navigate({ to: "/" });
+    } catch (e) {
+      console.error("[projects/detail] handleOpenTask failed", e);
+    }
   };
 
   const handleNewTask = () => {
