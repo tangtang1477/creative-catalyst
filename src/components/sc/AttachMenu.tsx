@@ -90,20 +90,31 @@ export function AttachMenu({ children, disabled }: { children: ReactNode; disabl
         toast.error("剧本内容为空");
         return;
       }
-      toast("正在解析剧本…");
-      const script = await parseScriptText({
-        data: { text: trimmed.slice(0, 60000), briefHint: briefPrompt || undefined },
+      const source: "txt" | "md" | "docx" | "pdf" = name.endsWith(".docx")
+        ? "docx"
+        : name.endsWith(".pdf") || file.type === "application/pdf"
+          ? "pdf"
+          : name.endsWith(".md")
+            ? "md"
+            : "txt";
+      // 只暂存原文，不立刻解析。等用户在输入框写下意图后，submit 时再连同
+      // prompt 一起送 parseScriptText，确保解析忠实于"剧本 + 用户意图"。
+      setPendingScript({
+        text: trimmed.slice(0, 60000),
+        fileName: file.name,
+        source,
+        uploadedAt: Date.now(),
       });
-      importGeneratedScript(script);
-      toast.success(`已导入剧本：${script.shots.length} 个分镜`);
+      toast.success(`已读取剧本「${file.name}」 · 现在请在输入框告诉我你的拍摄意图，回车后我会按你的指令解析这份剧本。`);
     } catch (e) {
       console.error("[script upload] failed", e);
-      toast.error(`剧本解析失败：${(e as Error).message}`);
+      toast.error(`剧本读取失败：${(e as Error).message}`);
     } finally {
       setScriptBusy(false);
       if (scriptRef.current) scriptRef.current.value = "";
     }
   };
+
 
 
   const onFiles = async (files: FileList | null) => {
