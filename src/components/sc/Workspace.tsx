@@ -110,6 +110,7 @@ export function Workspace() {
             <div className="mx-auto flex min-h-full w-full max-w-[760px] flex-col px-6 py-6">
               {phase === "empty" && (
                 <div className="flex flex-1 flex-col justify-center pb-20">
+                  <ActiveProjectBanner />
                   <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-accent/85">
                     <span className="h-1 w-1 rounded-full bg-accent shadow-[0_0_6px_var(--accent)]" />
                     Using skill ai-video-studio
