@@ -46,7 +46,7 @@ export function CreditRing({ size = 32, stroke = 2, children, className }: Props
     <span
       className={cn("relative inline-flex items-center justify-center", className)}
       style={{ width: size, height: size }}
-      title={title}
+      aria-label={title}
     >
       <svg
         className={cn(
