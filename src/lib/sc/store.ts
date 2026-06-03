@@ -28,6 +28,27 @@ import { parseFormatDuration, parseFormatRatio, formatDurationLabel, clampSeedan
 import { useProjects } from "@/lib/sc/projects-store";
 import { upsertTaskSnapshot, listProjectTasks } from "@/lib/tasks.functions";
 
+/** Chat agent 解析出来的"真指令"。后端 chat-stream.ts 端的 schema 同步。 */
+export interface AgentDirectives {
+  patch?: {
+    brief?: { prompt?: string; adType?: string; format?: string };
+    script?: {
+      mood?: string;
+      shots?: Array<{
+        shot?: string;
+        duration?: string;
+        scene?: string;
+        motion?: string;
+        elements?: string;
+        prompt?: string;
+      }>;
+    };
+    characters?: Array<{ id: string; name?: string; look?: string }>;
+    scenes?: Array<{ id: string; name?: string; description?: string }>;
+  };
+  rerun?: Array<"script" | "wardrobe" | "cast" | "paint">;
+}
+
 
 const consume = (stage: string, label: string, cost: number, taskId?: string | null) =>
   useCredits.getState().consume(stage, label, cost, taskId);
