@@ -292,10 +292,31 @@ export function AttachMenu({ children, disabled }: { children: ReactNode; disabl
           <div className="px-2.5 pb-1 pt-0.5 text-[10.5px] uppercase tracking-wide text-muted-foreground">剧本</div>
           <Row
             icon={scriptBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-            label={scriptBusy ? "正在解析剧本…" : "上传剧本 · .txt / .md / .docx / .pdf"}
+            label={
+              scriptBusy
+                ? "正在读取剧本…"
+                : pendingScript
+                  ? `已读取「${pendingScript.fileName}」· 换一份`
+                  : "上传剧本 · .txt / .md / .docx / .pdf"
+            }
             onClick={scriptBusy ? undefined : triggerScript}
           />
+          {pendingScript && (
+            <div className="mx-2.5 mb-1 mt-0.5 flex items-center justify-between gap-2 rounded-lg bg-accent/10 px-2 py-1.5 text-[11px] text-foreground/85">
+              <span className="line-clamp-2 leading-snug">
+                等你在输入框写下意图后，剧本会按你的指令解析。
+              </span>
+              <button
+                type="button"
+                onClick={() => setPendingScript(null)}
+                className="shrink-0 rounded-md px-1.5 py-0.5 text-[10.5px] text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+              >
+                移除
+              </button>
+            </div>
+          )}
         </div>
+
 
         {readyAssets.length > 0 && (
           <>
