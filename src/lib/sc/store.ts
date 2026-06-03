@@ -142,6 +142,9 @@ interface SCState {
   /** 用户上传的剧本（待解析），等待用户输入 prompt 时一起送后端解析 */
   pendingScript: PendingScript | null;
 
+  hydrated: boolean;
+  hydrateFromStorage: () => void;
+
 
   intakeSel: Record<string, string>;
   intakeCustoms: Record<string, string[]>;
@@ -297,6 +300,49 @@ const loadViewMode = (): ViewMode => {
   if (typeof window === "undefined") return "list";
   const v = window.localStorage.getItem(VIEW_KEY);
   return v === "canvas" ? "canvas" : "list";
+};
+
+const normalizeTaskRecord = (found: Partial<TaskRecord> & Pick<TaskRecord, "id">): TaskRecord => {
+  const normalizedAssets: Asset[] = Array.isArray(found.assets)
+    ? found.assets.map((asset, index): Asset => ({
+        id: asset?.id ?? `restored-${found.id}-${index}`,
+        kind: asset?.kind === "video" ? "video" : "image",
+        label: asset?.label ?? asset?.id ?? `A${String(index + 1).padStart(2, "0")}`,
+        status: asset?.status ?? "Ready",
+        caption: asset?.caption,
+        url: asset?.url,
+        poster: asset?.poster,
+        width: asset?.width,
+        height: asset?.height,
+        aspectRatio: asset?.aspectRatio,
+        duration: asset?.duration,
+        stageId: asset?.stageId ?? ((asset as { stage?: StageId | undefined })?.stage ?? undefined),
+        episode: asset?.episode,
+        scene: asset?.scene,
+        errorMessage: asset?.errorMessage,
+        errorCode: asset?.errorCode,
+        versions: Array.isArray(asset?.versions) ? asset.versions : undefined,
+        segmentIndex: asset?.segmentIndex,
+        sourceShotId: asset?.sourceShotId,
+      }))
+    : [];
+
+  return {
+    id: found.id,
+    title: found.title ?? "Untitled",
+    prompt: found.prompt ?? "",
+    createdAt: typeof found.createdAt === "number" ? found.createdAt : 0,
+    updatedAt: typeof found.updatedAt === "number" ? found.updatedAt : 0,
+    status: found.status ?? "done",
+    kind: found.kind ?? "oneoff",
+    assets: normalizedAssets,
+    stageSummaries: found.stageSummaries ?? {},
+    stageSnapshots: found.stageSnapshots ?? {},
+    script: found.script ?? null,
+    failureReason: found.failureReason ?? undefined,
+    brief: found.brief ?? null,
+    projectId: found.projectId ?? null,
+  };
 };
 
 const uid = () => Math.random().toString(36).slice(2, 9);
