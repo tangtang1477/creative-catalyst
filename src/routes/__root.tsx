@@ -79,14 +79,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "vibe aideo" },
+      { name: "description", content: "AI ad-video agent for generating product commercials with a dark, premium creative workstation interface." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "vibe aideo" },
+      { property: "og:description", content: "AI ad-video agent for generating product commercials with a dark, premium creative workstation interface." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "vibe aideo" },
+      { name: "twitter:description", content: "AI ad-video agent for generating product commercials with a dark, premium creative workstation interface." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/433e4494-0b01-4cd4-a7b1-7f182a22ce61/id-preview-8d156d46--869eea4f-21dc-43e7-892a-873c56191116.lovable.app-1780556272489.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/433e4494-0b01-4cd4-a7b1-7f182a22ce61/id-preview-8d156d46--869eea4f-21dc-43e7-892a-873c56191116.lovable.app-1780556272489.png" },
     ],
     links: [
       {
