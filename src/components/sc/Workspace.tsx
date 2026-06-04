@@ -423,7 +423,7 @@ export function Workspace() {
       <WorkspaceVersionDrawer />
       <CreateProjectDialog />
       <AssetPreviewDialog />
-    </div>
+    </main>
   );
 }
 
