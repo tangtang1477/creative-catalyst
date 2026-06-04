@@ -373,6 +373,29 @@ export function Sidebar() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            toggleFavoriteTask(t.id);
+                          }}
+                          aria-label={t.favorite ? "unfavorite task" : "favorite task"}
+                          title={t.favorite ? "取消收藏" : "收藏"}
+                          className={cn(
+                            "h-6 w-6 shrink-0 rounded-md hover:bg-surface-2",
+                            t.favorite
+                              ? "visible text-amber-400 hover:text-amber-300"
+                              : "invisible text-muted-foreground hover:text-foreground group-hover:visible",
+                          )}
+                        >
+                          <Star
+                            className={cn(
+                              "mx-auto h-3 w-3",
+                              t.favorite && "fill-amber-400",
+                            )}
+                          />
+                        </button>
+                      )}
+                      {!isActive && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
                             deleteTask(t.id);
                           }}
                           aria-label="delete task"
