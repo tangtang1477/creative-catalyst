@@ -62,7 +62,7 @@ export function Workspace() {
   }, [chatLog.length, stagesKey, assets.length]);
 
   return (
-    <div className="relative flex h-screen min-w-0 flex-1 flex-col">
+    <main className="relative flex h-screen min-w-0 flex-1 flex-col">
       {/* Top bar */}
       <header className="z-10 flex h-12 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur">
         <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
