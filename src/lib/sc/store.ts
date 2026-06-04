@@ -758,7 +758,7 @@ export const useSC = create<SCState>((set, get) => {
 
   /** Persist current task snapshot into taskHistory */
   const persistCurrent = (status: TaskRecord["status"]) => {
-    const { taskId, taskTitle, brief, assets, taskHistory, taskKind, stages, script } = get();
+    const { taskId, taskTitle, brief, assets, taskHistory, taskKind, stages, script, chatLog } = get();
     if (!taskId) return;
     const now = Date.now();
     const existing = taskHistory.find((t) => t.id === taskId);
@@ -799,6 +799,9 @@ export const useSC = create<SCState>((set, get) => {
       failureReason: failureReason ?? existing?.failureReason,
       brief,
       projectId: currentProjectId ?? existing?.projectId ?? null,
+      favorite: existing?.favorite,
+      // Persist full chat timeline so historical playback shows the exact original output.
+      archivedChat: chatLog as unknown as unknown[],
     };
     const next = [record, ...taskHistory.filter((t) => t.id !== taskId)];
     set({ taskHistory: next });
