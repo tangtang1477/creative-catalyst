@@ -17,7 +17,7 @@ import {
   Star,
 } from "lucide-react";
 import { SCButton } from "./Button";
-import { useSC } from "@/lib/sc/store";
+import { canRestoreTaskRecord, useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
 import { Logo } from "./Logo";
 import { PulseDot } from "./PulseDot";
@@ -350,6 +350,11 @@ export function Sidebar() {
                         onClick={() => {
                           if (disabled) return;
                           try {
+                             const candidate = useSC.getState().taskHistory.find((task) => task.id === t.id);
+                             if (!candidate || !canRestoreTaskRecord(candidate)) {
+                               console.warn("[sidebar] skipped non-restorable task", t.id, candidate);
+                               return;
+                             }
                             restoreTask(t.id);
                             void navigate({ to: "/" });
                           } catch (error) {
