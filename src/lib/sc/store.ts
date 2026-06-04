@@ -1199,6 +1199,7 @@ export const useSC = create<SCState>((set, get) => {
           console.error("[cast] failed", c.id, e);
           updateAsset(c.id, {
             status: "Failed",
+            url: undefined,
             errorMessage: (e as Error).message,
             errorCode: "gen_failed",
           });
