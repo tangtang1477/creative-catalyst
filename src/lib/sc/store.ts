@@ -184,6 +184,7 @@ interface SCState {
   forceState: (s: string) => void;
   restoreTask: (id: string) => void;
   deleteTask: (id: string) => void;
+  toggleFavoriteTask: (id: string) => void;
   enterProject: (projectId: string) => void;
   applyAgentPatch: (dir: AgentDirectives) => void;
   retryStage: (id: StageId) => void;
@@ -342,6 +343,7 @@ export const normalizeTaskRecord = (found: Partial<TaskRecord> & Pick<TaskRecord
     failureReason: found.failureReason ?? undefined,
     brief: found.brief ?? null,
     projectId: found.projectId ?? null,
+    favorite: !!found.favorite,
   };
 };
 
@@ -2839,6 +2841,14 @@ export const useSC = create<SCState>((set, get) => {
 
     deleteTask: (id) => {
       const next = get().taskHistory.filter((t) => t.id !== id);
+      set({ taskHistory: next });
+      saveHistory(next);
+    },
+
+    toggleFavoriteTask: (id) => {
+      const next = get().taskHistory.map((t) =>
+        t.id === id ? { ...t, favorite: !t.favorite } : t,
+      );
       set({ taskHistory: next });
       saveHistory(next);
     },

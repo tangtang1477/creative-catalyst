@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Settings,
   Trash2,
+  Star,
 } from "lucide-react";
 import { SCButton } from "./Button";
 import { useSC } from "@/lib/sc/store";
@@ -67,6 +68,7 @@ export function Sidebar() {
     taskHistory,
     restoreTask,
     deleteTask,
+    toggleFavoriteTask,
     hydrated: workspaceHydrated,
   } = useSC();
   const openPricing = useCredits((s) => s.openPricing);
@@ -135,10 +137,13 @@ export function Sidebar() {
             status: phase === "done" ? "done" : phase === "failed" ? "failed" : "running" as const,
             kind: "oneoff" as const,
             assets: [],
+            favorite: false,
           }]
         : [];
-    const rest = taskHistory.filter((t) => t.id !== taskId).slice(0, 12);
-    return [...active, ...rest];
+    const rest = taskHistory.filter((t) => t.id !== taskId);
+    const favorites = rest.filter((t) => t.favorite);
+    const others = rest.filter((t) => !t.favorite).slice(0, 12);
+    return [...active, ...favorites, ...others];
   }, [phase, taskId, taskTitle, taskHistory, workspaceHydrated]);
 
   const handleNewTask = () => {
@@ -365,6 +370,29 @@ export function Sidebar() {
                           <span className="h-2 w-2 rounded-full bg-status-failed" />
                         )}
                       </button>
+                      {!isActive && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFavoriteTask(t.id);
+                          }}
+                          aria-label={t.favorite ? "unfavorite task" : "favorite task"}
+                          title={t.favorite ? "取消收藏" : "收藏"}
+                          className={cn(
+                            "h-6 w-6 shrink-0 rounded-md hover:bg-surface-2",
+                            t.favorite
+                              ? "visible text-amber-400 hover:text-amber-300"
+                              : "invisible text-muted-foreground hover:text-foreground group-hover:visible",
+                          )}
+                        >
+                          <Star
+                            className={cn(
+                              "mx-auto h-3 w-3",
+                              t.favorite && "fill-amber-400",
+                            )}
+                          />
+                        </button>
+                      )}
                       {!isActive && (
                         <button
                           onClick={(e) => {

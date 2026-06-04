@@ -227,6 +227,8 @@ export interface TaskRecord {
   brief?: Brief | null;
   /** Project this task belongs to (set when task was started under a project). */
   projectId?: string | null;
+  /** User-marked favorite — pinned to top of sidebar Tasks list. */
+  favorite?: boolean;
 }
 
 /** Chat agent 单条"直接改图"指令。 */
