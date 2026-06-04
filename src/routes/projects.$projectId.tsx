@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/sc/Sidebar";
 import { DotGridBackground } from "@/components/sc/DotGridBackground";
 import { useTheme } from "@/hooks/use-theme";
 import { useProjects } from "@/lib/sc/projects-store";
-import { useSC, titleMatchesProject, normalizeTaskRecord } from "@/lib/sc/store";
+import { useSC, titleMatchesProject, normalizeTaskRecord, canRestoreTaskRecord } from "@/lib/sc/store";
 import { listProjectTasks, backfillLegacyTasksForProject, attachTaskToProject } from "@/lib/tasks.functions";
 import type { TaskRecord } from "@/lib/sc/types";
 import { supabase } from "@/integrations/supabase/client";
@@ -176,9 +176,13 @@ function ProjectDetailPage() {
   const handleOpenTask = (taskId: string) => {
     try {
       // Ensure the task is present in local taskHistory before restoring.
-      const exists = useSC.getState().taskHistory.some((t) => t.id === taskId);
-      if (!exists) {
+      const candidate = useSC.getState().taskHistory.find((t) => t.id === taskId);
+      if (!candidate) {
         console.warn("[projects/detail] open task: not in history, skip", taskId);
+        return;
+      }
+      if (!canRestoreTaskRecord(candidate)) {
+        console.warn("[projects/detail] open task: not restorable, skip", taskId, candidate);
         return;
       }
       restoreTask(taskId);

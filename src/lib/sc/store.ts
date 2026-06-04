@@ -303,13 +303,198 @@ const loadViewMode = (): ViewMode => {
   return v === "canvas" ? "canvas" : "list";
 };
 
+const normalizeSummaryLine = (line: unknown): SummaryLine | null => {
+  if (typeof line === "string") {
+    const text = line.trim();
+    return text ? text : null;
+  }
+  if (!line || typeof line !== "object") return null;
+  const raw = line as { text?: unknown; thumbs?: unknown };
+  const text = typeof raw.text === "string" ? raw.text.trim() : "";
+  if (!text) return null;
+  const thumbs = Array.isArray(raw.thumbs)
+    ? raw.thumbs.filter((thumb): thumb is string => typeof thumb === "string" && thumb.length > 0)
+    : [];
+  return thumbs.length > 0 ? { text, thumbs } : text;
+};
+
+const normalizeToolCall = (call: unknown, fallbackId: string): ToolCall | null => {
+  if (!call || typeof call !== "object") return null;
+  const raw = call as Partial<ToolCall>;
+  const label = typeof raw.label === "string" ? raw.label.trim() : "";
+  if (!label) return null;
+  return {
+    id: typeof raw.id === "string" && raw.id.trim() ? raw.id : fallbackId,
+    kind: raw.kind === "skill" ? "skill" : "tool",
+    label,
+    startedAt: typeof raw.startedAt === "number" && Number.isFinite(raw.startedAt) ? raw.startedAt : 0,
+    durationMs: typeof raw.durationMs === "number" && Number.isFinite(raw.durationMs) ? raw.durationMs : undefined,
+    status: raw.status === "running" ? "running" : "done",
+    summary: typeof raw.summary === "string" ? raw.summary : undefined,
+  };
+};
+
+const normalizeThought = (thought: unknown, fallbackId: string): Thought | null => {
+  if (!thought || typeof thought !== "object") return null;
+  const raw = thought as Partial<Thought>;
+  const title = typeof raw.title === "string" ? raw.title.trim() : "";
+  const body = Array.isArray(raw.body)
+    ? raw.body.filter((line): line is string => typeof line === "string" && line.trim().length > 0)
+    : [];
+  if (!title && body.length === 0) return null;
+  return {
+    id: typeof raw.id === "string" && raw.id.trim() ? raw.id : fallbackId,
+    title: title || "Thought",
+    body,
+    summary: typeof raw.summary === "string" ? raw.summary : undefined,
+    thumbAssetIds: Array.isArray(raw.thumbAssetIds)
+      ? raw.thumbAssetIds.filter((id): id is string => typeof id === "string" && id.length > 0)
+      : undefined,
+    elapsedMs: typeof raw.elapsedMs === "number" && Number.isFinite(raw.elapsedMs) ? raw.elapsedMs : undefined,
+  };
+};
+
+const normalizeStageSnapshot = (snapshot: unknown, stageId: StageId): StageSnapshot | undefined => {
+  if (!snapshot || typeof snapshot !== "object") return undefined;
+  const raw = snapshot as Partial<StageSnapshot> & { status?: unknown };
+  const summary = Array.isArray(raw.summary)
+    ? raw.summary
+        .map((line) => normalizeSummaryLine(line))
+        .filter((line): line is SummaryLine => !!line)
+    : [];
+  const toolCalls = Array.isArray(raw.toolCalls)
+    ? raw.toolCalls
+        .map((call, index) => normalizeToolCall(call, `${stageId}-tool-${index}`))
+        .filter((call): call is ToolCall => !!call)
+    : [];
+  const thoughts = Array.isArray(raw.thoughts)
+    ? raw.thoughts
+        .map((thought, index) => normalizeThought(thought, `${stageId}-thought-${index}`))
+        .filter((thought): thought is Thought => !!thought)
+    : [];
+  const status =
+    raw.status === "pending" ||
+    raw.status === "running" ||
+    raw.status === "ready" ||
+    raw.status === "recovering" ||
+    raw.status === "failed"
+      ? raw.status
+      : summary.length > 0 || toolCalls.length > 0 || thoughts.length > 0
+        ? "ready"
+        : "pending";
+  if (status === "pending" && summary.length === 0 && toolCalls.length === 0 && thoughts.length === 0) {
+    return undefined;
+  }
+  return { status, summary, toolCalls, thoughts };
+};
+
+const normalizeBrief = (brief: unknown, task: { prompt?: string; title?: string }): Brief | null => {
+  if (!brief || typeof brief !== "object") {
+    if (!task.prompt && !task.title) return null;
+    return {
+      prompt: task.prompt || task.title || "",
+      adType: "",
+      format: "—",
+      visualSource: "—",
+      mode: "—",
+    };
+  }
+  const raw = brief as Partial<Brief>;
+  return {
+    prompt: typeof raw.prompt === "string" && raw.prompt.trim() ? raw.prompt : task.prompt || task.title || "",
+    adType: typeof raw.adType === "string" ? raw.adType : "",
+    format: typeof raw.format === "string" && raw.format.trim() ? raw.format : "—",
+    visualSource: typeof raw.visualSource === "string" && raw.visualSource.trim() ? raw.visualSource : "—",
+    mode: typeof raw.mode === "string" && raw.mode.trim() ? raw.mode : "—",
+    visualStyle: typeof raw.visualStyle === "string" && raw.visualStyle.trim() ? raw.visualStyle : undefined,
+  };
+};
+
+const normalizeGeneratedScript = (script: unknown): GeneratedScript | null => {
+  if (!script || typeof script !== "object") return null;
+  const raw = script as Partial<GeneratedScript>;
+  const mood = typeof raw.mood === "string" ? raw.mood : "";
+  const cameraLanguage = typeof raw.cameraLanguage === "string" ? raw.cameraLanguage : "";
+  const structureSummary = Array.isArray(raw.structureSummary)
+    ? raw.structureSummary.filter((line): line is string => typeof line === "string" && line.trim().length > 0)
+    : [];
+  const wardrobe = Array.isArray(raw.wardrobe)
+    ? raw.wardrobe
+        .map((item, index) => {
+          if (!item || typeof item !== "object") return null;
+          const candidate = item as { id?: unknown; caption?: unknown };
+          const caption = typeof candidate.caption === "string" ? candidate.caption.trim() : "";
+          if (!caption) return null;
+          return {
+            id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id : `W${String(index + 1).padStart(2, "0")}`,
+            caption,
+          };
+        })
+        .filter((item): item is GeneratedScript["wardrobe"][number] => !!item)
+    : [];
+  const shots = Array.isArray(raw.shots)
+    ? raw.shots
+        .map((shot, index) => {
+          if (!shot || typeof shot !== "object") return null;
+          const candidate = shot as {
+            shot?: unknown;
+            duration?: unknown;
+            motion?: unknown;
+            scene?: unknown;
+            elements?: unknown;
+            prompt?: unknown;
+          };
+          const scene = typeof candidate.scene === "string" ? candidate.scene.trim() : "";
+          const elements = typeof candidate.elements === "string" ? candidate.elements.trim() : "";
+          const motion = typeof candidate.motion === "string" ? candidate.motion.trim() : "";
+          if (!scene && !elements && !motion) return null;
+          return {
+            shot: typeof candidate.shot === "string" && candidate.shot.trim() ? candidate.shot : `A${String(index + 1).padStart(2, "0")}`,
+            duration: typeof candidate.duration === "string" && candidate.duration.trim() ? candidate.duration : "3s",
+            motion,
+            scene,
+            elements,
+            prompt: typeof candidate.prompt === "string" ? candidate.prompt : "",
+          };
+        })
+        .filter((shot): shot is GeneratedScript["shots"][number] => !!shot)
+    : [];
+  if (!mood && !cameraLanguage && structureSummary.length === 0 && wardrobe.length === 0 && shots.length === 0) {
+    return null;
+  }
+  return { mood, cameraLanguage, structureSummary, wardrobe, shots };
+};
+
+export const canRestoreTaskRecord = (task: Partial<TaskRecord> | null | undefined): task is Partial<TaskRecord> & Pick<TaskRecord, "id"> => {
+  if (!task || typeof task !== "object") return false;
+  if (typeof task.id !== "string" || task.id.trim().length === 0) return false;
+  const hasTitle = typeof task.title === "string" && task.title.trim().length > 0;
+  const hasPrompt = typeof task.prompt === "string" && task.prompt.trim().length > 0;
+  const hasAssets = Array.isArray(task.assets) && task.assets.length > 0;
+  const hasStageSummaries = STAGE_ORDER.some((stageId) => {
+    const lines = task.stageSummaries?.[stageId];
+    return Array.isArray(lines) && lines.length > 0;
+  });
+  const hasStageSnapshots = STAGE_ORDER.some((stageId) => !!normalizeStageSnapshot(task.stageSnapshots?.[stageId], stageId));
+  return hasTitle || hasPrompt || hasAssets || hasStageSummaries || hasStageSnapshots || !!normalizeGeneratedScript(task.script);
+};
+
 export const normalizeTaskRecord = (found: Partial<TaskRecord> & Pick<TaskRecord, "id">): TaskRecord => {
   const normalizedAssets: Asset[] = Array.isArray(found.assets)
     ? found.assets.map((asset, index): Asset => ({
         id: asset?.id ?? `restored-${found.id}-${index}`,
         kind: asset?.kind === "video" ? "video" : "image",
         label: asset?.label ?? asset?.id ?? `A${String(index + 1).padStart(2, "0")}`,
-        status: asset?.status ?? "Ready",
+        status:
+          asset?.status === "Generating" ||
+          asset?.status === "Queued" ||
+          asset?.status === "Processing" ||
+          asset?.status === "Status checked" ||
+          asset?.status === "Ready" ||
+          asset?.status === "Recovering" ||
+          asset?.status === "Failed"
+            ? asset.status
+            : "Ready",
         caption: asset?.caption,
         url: asset?.url,
         poster: asset?.poster,
@@ -317,16 +502,53 @@ export const normalizeTaskRecord = (found: Partial<TaskRecord> & Pick<TaskRecord
         height: asset?.height,
         aspectRatio: asset?.aspectRatio,
         duration: asset?.duration,
-        stageId: asset?.stageId ?? ((asset as { stage?: StageId | undefined })?.stage ?? undefined),
+        stageId:
+          asset?.stageId && STAGE_ORDER.includes(asset.stageId)
+            ? asset.stageId
+            : (asset as { stage?: StageId | undefined })?.stage && STAGE_ORDER.includes((asset as { stage?: StageId | undefined }).stage as StageId)
+              ? (asset as { stage?: StageId | undefined }).stage
+              : undefined,
         episode: asset?.episode,
         scene: asset?.scene,
         errorMessage: asset?.errorMessage,
         errorCode: asset?.errorCode,
-        versions: Array.isArray(asset?.versions) ? asset.versions : undefined,
+        versions: Array.isArray(asset?.versions)
+          ? asset.versions
+              .filter((version): version is NonNullable<Asset["versions"]>[number] => !!version && typeof version.url === "string" && version.url.length > 0)
+              .map((version) => ({
+                url: version.url,
+                createdAt: typeof version.createdAt === "number" && Number.isFinite(version.createdAt) ? version.createdAt : 0,
+                source:
+                  version.source === "qc-fix" ||
+                  version.source === "manual-retry" ||
+                  version.source === "batch-edit" ||
+                  version.source === "manual-edit" ||
+                  version.source === "manual-revert"
+                    ? version.source
+                    : "init",
+                note: typeof version.note === "string" ? version.note : undefined,
+              }))
+          : undefined,
         segmentIndex: asset?.segmentIndex,
         sourceShotId: asset?.sourceShotId,
       }))
     : [];
+
+  const normalizedStageSummaries: Partial<Record<StageId, SummaryLine[]>> = {};
+  for (const stageId of STAGE_ORDER) {
+    const lines = found.stageSummaries?.[stageId];
+    if (!Array.isArray(lines)) continue;
+    const normalized = lines
+      .map((line) => normalizeSummaryLine(line))
+      .filter((line): line is SummaryLine => !!line);
+    if (normalized.length > 0) normalizedStageSummaries[stageId] = normalized;
+  }
+
+  const normalizedStageSnapshots: Partial<Record<StageId, StageSnapshot>> = {};
+  for (const stageId of STAGE_ORDER) {
+    const snapshot = normalizeStageSnapshot(found.stageSnapshots?.[stageId], stageId);
+    if (snapshot) normalizedStageSnapshots[stageId] = snapshot;
+  }
 
   return {
     id: found.id,
@@ -334,15 +556,21 @@ export const normalizeTaskRecord = (found: Partial<TaskRecord> & Pick<TaskRecord
     prompt: found.prompt ?? "",
     createdAt: typeof found.createdAt === "number" ? found.createdAt : 0,
     updatedAt: typeof found.updatedAt === "number" ? found.updatedAt : 0,
-    status: found.status ?? "done",
+    status:
+      found.status === "running" ||
+      found.status === "done" ||
+      found.status === "failed" ||
+      found.status === "interrupted"
+        ? found.status
+        : "done",
     kind: found.kind ?? "oneoff",
     assets: normalizedAssets,
-    stageSummaries: found.stageSummaries ?? {},
-    stageSnapshots: found.stageSnapshots ?? {},
-    script: found.script ?? null,
+    stageSummaries: normalizedStageSummaries,
+    stageSnapshots: normalizedStageSnapshots,
+    script: normalizeGeneratedScript(found.script),
     failureReason: found.failureReason ?? undefined,
-    brief: found.brief ?? null,
-    projectId: found.projectId ?? null,
+    brief: normalizeBrief(found.brief, { prompt: found.prompt, title: found.title }),
+    projectId: typeof found.projectId === "string" ? found.projectId : null,
     favorite: !!found.favorite,
   };
 };
@@ -2749,6 +2977,10 @@ export const useSC = create<SCState>((set, get) => {
         console.warn("[restoreTask] task not found in local history", id);
         return;
       }
+      if (!canRestoreTaskRecord(found)) {
+        console.warn("[restoreTask] task is not restorable", id, found);
+        return;
+      }
       const rec = normalizeTaskRecord(found);
       clearTimers();
       const stages = initialStages();
@@ -2779,6 +3011,16 @@ export const useSC = create<SCState>((set, get) => {
           if (rec.status === "failed" && sid === "life" && !failedStageId) failedStageId = sid;
         }
       }
+      const restoredPhase: Phase =
+        rec.status === "done"
+          ? "done"
+          : rec.status === "failed"
+            ? "failed"
+            : rec.status === "running"
+              ? "running"
+              : rec.assets.length > 0
+                ? "done"
+                : "failed";
       const hasRealBrief = !!rec.brief && !!(rec.brief as Brief).adType;
       const restoredBrief: Brief = (rec.brief as Brief | undefined) ?? {
         prompt: rec.prompt || rec.title || "",
@@ -2815,19 +3057,23 @@ export const useSC = create<SCState>((set, get) => {
       }
       set((s) => ({
         runId: s.runId + 1,
-        phase: rec.status === "done" ? "done" : "failed",
+        phase: restoredPhase,
         taskId: rec.id,
         taskTitle: rec.title,
         taskKind: rec.kind,
         brief: restoredBrief,
-        script: (rec.script as GeneratedScript | undefined) ?? null,
+        script: normalizeGeneratedScript(rec.script),
         stages,
         assets: rec.assets,
         gate: null,
         softGate: null,
         selection: [],
         chatLog,
-        rail: { open: rec.assets.length > 0 },
+        rail: { open: rec.assets.length > 0, flashId: undefined, focusedAssetId: undefined },
+        attachments: [],
+        versionDrawerAssetId: null,
+        previewAssetId: null,
+        pendingScript: null,
       }));
       // Sync the active project so sidebar highlight + ProjectGuideCard follow.
       void (async () => {
