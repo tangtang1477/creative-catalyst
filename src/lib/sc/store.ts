@@ -388,6 +388,28 @@ const normalizeStageSnapshot = (snapshot: unknown, stageId: StageId): StageSnaps
   return { status, summary, toolCalls, thoughts };
 };
 
+const normalizeBrief = (brief: unknown, task: { prompt?: string; title?: string }): Brief | null => {
+  if (!brief || typeof brief !== "object") {
+    if (!task.prompt && !task.title) return null;
+    return {
+      prompt: task.prompt || task.title || "",
+      adType: "",
+      format: "—",
+      visualSource: "—",
+      mode: "—",
+    };
+  }
+  const raw = brief as Partial<Brief>;
+  return {
+    prompt: typeof raw.prompt === "string" && raw.prompt.trim() ? raw.prompt : task.prompt || task.title || "",
+    adType: typeof raw.adType === "string" ? raw.adType : "",
+    format: typeof raw.format === "string" && raw.format.trim() ? raw.format : "—",
+    visualSource: typeof raw.visualSource === "string" && raw.visualSource.trim() ? raw.visualSource : "—",
+    mode: typeof raw.mode === "string" && raw.mode.trim() ? raw.mode : "—",
+    visualStyle: typeof raw.visualStyle === "string" && raw.visualStyle.trim() ? raw.visualStyle : undefined,
+  };
+};
+
 const normalizeGeneratedScript = (script: unknown): GeneratedScript | null => {
   if (!script || typeof script !== "object") return null;
   const raw = script as Partial<GeneratedScript>;
@@ -480,7 +502,12 @@ export const normalizeTaskRecord = (found: Partial<TaskRecord> & Pick<TaskRecord
         height: asset?.height,
         aspectRatio: asset?.aspectRatio,
         duration: asset?.duration,
-        stageId: asset?.stageId ?? ((asset as { stage?: StageId | undefined })?.stage ?? undefined),
+        stageId:
+          asset?.stageId && STAGE_ORDER.includes(asset.stageId)
+            ? asset.stageId
+            : (asset as { stage?: StageId | undefined })?.stage && STAGE_ORDER.includes((asset as { stage?: StageId | undefined }).stage as StageId)
+              ? (asset as { stage?: StageId | undefined }).stage
+              : undefined,
         episode: asset?.episode,
         scene: asset?.scene,
         errorMessage: asset?.errorMessage,
@@ -542,8 +569,8 @@ export const normalizeTaskRecord = (found: Partial<TaskRecord> & Pick<TaskRecord
     stageSnapshots: normalizedStageSnapshots,
     script: normalizeGeneratedScript(found.script),
     failureReason: found.failureReason ?? undefined,
-    brief: found.brief ?? null,
-    projectId: found.projectId ?? null,
+    brief: normalizeBrief(found.brief, { prompt: found.prompt, title: found.title }),
+    projectId: typeof found.projectId === "string" ? found.projectId : null,
     favorite: !!found.favorite,
   };
 };
