@@ -15,6 +15,19 @@ const EMPTY_TASKS: TaskRecord[] = [];
 
 export const Route = createFileRoute("/projects/$projectId")({
   component: ProjectDetailPage,
+  head: ({ params }) => ({
+    meta: [
+      { title: `Project ${params.projectId} — vibe aideo` },
+      { name: "description", content: "Project workspace in vibe aideo — manage briefs, scripts, and AI-generated ad-video tasks." },
+      { property: "og:title", content: `Project ${params.projectId} — vibe aideo` },
+      { property: "og:description", content: "Project workspace in vibe aideo — manage briefs, scripts, and AI-generated ad-video tasks." },
+      { property: "og:url", content: `https://auto-ad-director.lovable.app/projects/${params.projectId}` },
+      { name: "robots", content: "noindex" },
+    ],
+    links: [
+      { rel: "canonical", href: `https://auto-ad-director.lovable.app/projects/${params.projectId}` },
+    ],
+  }),
   errorComponent: ({ error, reset }) => {
     console.error("[projects/detail] route error", error);
     return (

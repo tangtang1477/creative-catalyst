@@ -11,6 +11,18 @@ import { useTheme } from "@/hooks/use-theme";
 export const Route = createFileRoute("/")({
   component: Index,
   errorComponent: IndexErrorComponent,
+  head: () => ({
+    meta: [
+      { title: "vibe aideo — AI Ad-Video Agent for Commercials" },
+      { name: "description", content: "Brief in, commercial out. vibe aideo turns product ideas into shoot-ready ad videos inside a dark, premium creative workstation." },
+      { property: "og:title", content: "vibe aideo — AI Ad-Video Agent for Commercials" },
+      { property: "og:description", content: "Brief in, commercial out. Turn product ideas into shoot-ready ad videos in minutes." },
+      { property: "og:url", content: "https://auto-ad-director.lovable.app/" },
+    ],
+    links: [
+      { rel: "canonical", href: "https://auto-ad-director.lovable.app/" },
+    ],
+  }),
 });
 
 function IndexErrorComponent({ error, reset }: { error: Error; reset: () => void }) {

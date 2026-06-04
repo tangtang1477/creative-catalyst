@@ -79,23 +79,43 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "vibe aideo" },
-      { name: "description", content: "AI ad-video agent for generating product commercials with a dark, premium creative workstation interface." },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "vibe aideo" },
-      { property: "og:description", content: "AI ad-video agent for generating product commercials with a dark, premium creative workstation interface." },
+      { title: "vibe aideo — AI Ad-Video Agent for Commercials" },
+      { name: "description", content: "vibe aideo is an AI ad-video agent that turns briefs into polished product commercials with a dark, premium creative workstation." },
+      { name: "author", content: "vibe aideo" },
+      { property: "og:site_name", content: "vibe aideo" },
+      { property: "og:title", content: "vibe aideo — AI Ad-Video Agent for Commercials" },
+      { property: "og:description", content: "Turn briefs into polished product commercials with an AI ad-video agent built for creative teams." },
       { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
+      { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
-      { name: "twitter:title", content: "vibe aideo" },
-      { name: "twitter:description", content: "AI ad-video agent for generating product commercials with a dark, premium creative workstation interface." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/433e4494-0b01-4cd4-a7b1-7f182a22ce61/id-preview-8d156d46--869eea4f-21dc-43e7-892a-873c56191116.lovable.app-1780556272489.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/433e4494-0b01-4cd4-a7b1-7f182a22ce61/id-preview-8d156d46--869eea4f-21dc-43e7-892a-873c56191116.lovable.app-1780556272489.png" },
+      { name: "twitter:title", content: "vibe aideo — AI Ad-Video Agent for Commercials" },
+      { name: "twitter:description", content: "Turn briefs into polished product commercials with an AI ad-video agent built for creative teams." },
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
+      },
+    ],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "Organization",
+              name: "vibe aideo",
+              url: "https://auto-ad-director.lovable.app",
+              logo: "https://auto-ad-director.lovable.app/favicon.ico",
+            },
+            {
+              "@type": "WebSite",
+              name: "vibe aideo",
+              url: "https://auto-ad-director.lovable.app",
+            },
+          ],
+        }),
       },
     ],
   }),
