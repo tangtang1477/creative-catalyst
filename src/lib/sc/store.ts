@@ -827,6 +827,7 @@ export const useSC = create<SCState>((set, get) => {
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
         status: record.status,
+        archivedChat: record.archivedChat ?? [],
       };
       void upsertTaskSnapshot({
         data: {
