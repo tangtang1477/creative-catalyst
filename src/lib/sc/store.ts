@@ -1054,8 +1054,11 @@ export const useSC = create<SCState>((set, get) => {
           consume("wardrobe", `Wardrobe · ${w.id}`, 5, get().taskId);
         } catch (e) {
           console.error("[wardrobe] failed", w.id, e);
+          // Clear any partial-preview data URL — keeping it would make a failed
+          // asset look like "image generated but marked failed".
           updateAsset(w.id, {
             status: "Failed",
+            url: undefined,
             errorMessage: (e as Error).message,
             errorCode: "gen_failed",
           });
@@ -1196,6 +1199,7 @@ export const useSC = create<SCState>((set, get) => {
           console.error("[cast] failed", c.id, e);
           updateAsset(c.id, {
             status: "Failed",
+            url: undefined,
             errorMessage: (e as Error).message,
             errorCode: "gen_failed",
           });
@@ -2074,82 +2078,101 @@ export const useSC = create<SCState>((set, get) => {
 
     const startedRunId = get().runId;
     void (async () => {
-      try {
-        const refs = [...wardrobeRefs, keyUrl].slice(0, 6);
-        const { taskId: seedanceTaskId } = await submitVideoTask({
-          data: {
-            route: "reference-image-to-video",
-            videoTaskId: get().taskId ?? null,
-            payload: {
-              prompt: segPrompt,
-              image_urls: refs,
-              ratio: videoRatio,
-              duration: segDur,
-            } as unknown as { prompt: string },
-          },
-        });
-        if (get().runId !== startedRunId) return;
-        const started = Date.now();
-        while (true) {
-          if (get().runId !== startedRunId) return;
-          await new Promise((r) => setTimeout(r, 3000));
-          let r;
-          try {
-            r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
-          } catch (e) {
-            console.error(`[life] segment ${asset.id} poll error`, e);
-            continue;
-          }
-          if (get().runId !== startedRunId) return;
-          if (r.status === "success" && r.ossUrl) {
-            updateAssetWithVersion(asset.id, r.ossUrl, "manual-retry", "单段重做", {
-              status: "Ready",
-              poster: keyUrl,
-              errorMessage: undefined,
-              errorCode: undefined,
-            });
-            consume("life", `Video ${asset.id} · seedance retry`, VIDEO_COST_PER_SEG, get().taskId);
-            appendSummary("life", `${asset.id} Ready`);
-            // Re-evaluate stage status: if all life segments are Ready, mark stage ready.
-            const allLife = get().assets.filter((a) => a.stageId === "life");
-            if (allLife.every((a) => a.status === "Ready")) {
-              updateStage("life", { status: "ready", errorMessage: undefined });
-              persistCurrent("running");
-              openGate("merge", () => runDetails());
+      const trySubmit = async (
+        mode: "refs" | "text-only",
+      ): Promise<{ ok: true; ossUrl: string } | { ok: false; code: string; message: string }> => {
+        try {
+          const submitArgs =
+            mode === "refs"
+              ? {
+                  route: "reference-image-to-video" as const,
+                  videoTaskId: get().taskId ?? null,
+                  payload: {
+                    prompt: segPrompt,
+                    image_urls: [...wardrobeRefs, keyUrl].slice(0, 6),
+                    ratio: videoRatio,
+                    duration: segDur,
+                  } as unknown as { prompt: string },
+                }
+              : {
+                  route: "text-to-video" as const,
+                  videoTaskId: get().taskId ?? null,
+                  payload: {
+                    prompt: `${segPrompt}\n(无真人参考，请按描述生成)`,
+                    ratio: videoRatio,
+                    duration: segDur,
+                  } as unknown as { prompt: string },
+                };
+          const { taskId: seedanceTaskId } = await submitVideoTask({ data: submitArgs });
+          if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
+          appendSummary(
+            "life",
+            `${asset.id} Seedance task: ${seedanceTaskId}${mode === "text-only" ? "（已降级为纯文本）" : ""}`,
+          );
+          const started = Date.now();
+          while (true) {
+            if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
+            await new Promise((r) => setTimeout(r, 3000));
+            let r;
+            try {
+              r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
+            } catch (e) {
+              console.error(`[life] segment ${asset.id} poll error`, e);
+              continue;
             }
-            return;
+            if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
+            if (r.status === "success" && r.ossUrl) return { ok: true, ossUrl: r.ossUrl };
+            if (r.status === "failed") {
+              return {
+                ok: false,
+                code: r.errorCode ?? "seedance_failed",
+                message: r.errorMessage ?? "Seedance 渲染失败",
+              };
+            }
+            if (Date.now() - started > 5 * 60_000) {
+              return { ok: false, code: "timeout", message: "Seedance 轮询超时（5min）" };
+            }
+            updateAsset(asset.id, { status: "Processing" });
           }
-          if (r.status === "failed") {
-            updateAsset(asset.id, {
-              status: "Failed",
-              errorMessage: "Seedance 渲染失败",
-              errorCode: "seedance_failed",
-            });
-            updateStage("life", { status: "failed", errorMessage: "至少一段视频渲染失败" });
-            set({ phase: "failed" });
-            return;
-          }
-          if (Date.now() - started > 5 * 60_000) {
-            updateAsset(asset.id, {
-              status: "Failed",
-              errorMessage: "Seedance 轮询超时（5min）",
-              errorCode: "timeout",
-            });
-            updateStage("life", { status: "failed", errorMessage: "至少一段视频超时" });
-            set({ phase: "failed" });
-            return;
-          }
+        } catch (e) {
+          const raw = (e as Error).message ?? "";
+          const m = raw.match(/^\[(policy_real_person|policy_violation|quota_exceeded|submit_failed)\]\s*([^:]+)/);
+          if (m) return { ok: false, code: m[1], message: m[2].trim() };
+          return { ok: false, code: "submit_failed", message: raw };
         }
-      } catch (e) {
-        console.error(`[life] segment ${asset.id} submit failed`, e);
-        updateAsset(asset.id, {
-          status: "Failed",
-          errorMessage: (e as Error).message,
-          errorCode: "submit_failed",
-        });
-        updateStage("life", { status: "failed", errorMessage: (e as Error).message });
-        set({ phase: "failed" });
+      };
+
+      let r = await trySubmit("refs");
+      if (!r.ok && (r.code === "policy_real_person" || r.code === "policy_violation")) {
+        appendSummary("life", `${asset.id} 触发上游安全审核，自动降级为纯文本重试…`);
+        updateAsset(asset.id, { status: "Processing", errorMessage: r.message, errorCode: r.code });
+        r = await trySubmit("text-only");
       }
+      if (get().runId !== startedRunId) return;
+      if (r.ok) {
+        updateAssetWithVersion(asset.id, r.ossUrl, "manual-retry", "单段重做", {
+          status: "Ready",
+          poster: keyUrl,
+          errorMessage: undefined,
+          errorCode: undefined,
+        });
+        consume("life", `Video ${asset.id} · seedance retry`, VIDEO_COST_PER_SEG, get().taskId);
+        appendSummary("life", `${asset.id} Ready`);
+        const allLife = get().assets.filter((a) => a.stageId === "life");
+        if (allLife.every((a) => a.status === "Ready")) {
+          updateStage("life", { status: "ready", errorMessage: undefined });
+          persistCurrent("running");
+          openGate("merge", () => runDetails());
+        }
+        return;
+      }
+      if (r.code === "cancelled") return;
+      updateAsset(asset.id, {
+        status: "Failed",
+        errorMessage: r.message,
+        errorCode: r.code,
+      });
+      appendSummary("life", `${asset.id} 重做失败：${r.message}（未扣积分）`);
     })();
   };
 

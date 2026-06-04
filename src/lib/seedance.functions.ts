@@ -238,19 +238,32 @@ export const pollVideoTask = createServerFn({ method: "POST" })
 
     const status = envelope.data?.status ?? "processing";
     const progress = envelope.data?.progress ?? 0;
-    const ossUrl = envelope.data?.oss_url ?? null;
-    const videoUrl = envelope.data?.video_url ?? null;
+    // 兼容上游不同字段命名：oss_url / video_url / results[].url。
+    const rawData = (envelope.data ?? {}) as Record<string, unknown> & {
+      results?: Array<{ url?: string; video_url?: string; oss_url?: string }>;
+    };
+    const resultUrl = Array.isArray(rawData.results)
+      ? rawData.results.find((r) => typeof (r?.url ?? r?.video_url ?? r?.oss_url) === "string")
+      : undefined;
+    const ossUrl =
+      envelope.data?.oss_url
+      ?? (resultUrl?.oss_url ?? resultUrl?.url ?? null);
+    const videoUrl = envelope.data?.video_url ?? resultUrl?.video_url ?? null;
 
+    const lowered = String(status).toLowerCase();
     const normalized =
-      status === "success" || status === "succeeded"
+      lowered === "success" || lowered === "succeeded" || lowered === "completed" || lowered === "complete" || lowered === "finished" || lowered === "done"
         ? "success"
-        : status === "failed" || status === "failure"
+        : lowered === "failed" || lowered === "failure" || lowered === "error"
           ? "failed"
           : "processing";
 
+    // 如果上游没给明确状态但已经有可用 url，也认作成功——避免“后端有视频但前端死等”。
+    const effectiveStatus = normalized === "processing" && ossUrl ? "success" : normalized;
+
     let assetId: string | null = job.asset_id ?? null;
 
-    if (normalized === "success" && ossUrl) {
+    if (effectiveStatus === "success" && ossUrl) {
       // 原子声明：只有当 oss_url 仍为空的那行才能更新成功，并返回。
       // 并发的 tick 拿不到行，就跳过 insert，避免重复写 asset。
       const { data: claimed, error: claimErr } = await supabaseAdmin
@@ -301,7 +314,7 @@ export const pollVideoTask = createServerFn({ method: "POST" })
       }
     } else {
       const errMsg =
-        normalized === "failed"
+        effectiveStatus === "failed"
           ? (envelope.message ||
               (envelope.data as { error?: string } | undefined)?.error ||
               JSON.stringify(envelope.data ?? envelope).slice(0, 400))
@@ -309,7 +322,7 @@ export const pollVideoTask = createServerFn({ method: "POST" })
       await supabaseAdmin
         .from("seedance_jobs")
         .update({
-          status: normalized,
+          status: effectiveStatus,
           progress,
           raw: (envelope.data ?? null) as unknown as never,
           error_message: errMsg,
@@ -317,16 +330,16 @@ export const pollVideoTask = createServerFn({ method: "POST" })
         .eq("task_id", data.taskId);
     }
 
-    if (job.video_task_id && normalized !== "processing") {
+    if (job.video_task_id && effectiveStatus !== "processing") {
       await supabaseAdmin
         .from("video_tasks")
-        .update({ status: normalized })
+        .update({ status: effectiveStatus })
         .eq("id", job.video_task_id);
     }
 
     let errorCode: string | null = null;
     let errorMessage: string | null = null;
-    if (normalized === "failed") {
+    if (effectiveStatus === "failed") {
       const raw =
         envelope.message ||
         (envelope.data as { error?: string } | undefined)?.error ||
@@ -337,7 +350,7 @@ export const pollVideoTask = createServerFn({ method: "POST" })
     }
 
     return {
-      status: normalized,
+      status: effectiveStatus,
       progress,
       ossUrl,
       videoUrl,

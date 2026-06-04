@@ -209,10 +209,12 @@ export function Workspace() {
 
                   <SeriesBible />
 
-                  {/* Refining brief / preflight option cards — always rendered ABOVE script planning, regardless of status (so users keep their answers in view) */}
+                  {/* Refining brief / preflight option cards — only the AWAITING ones are pinned above; once submitted/skipped they stay in their original chat position so users see the confirmation in context, not at the very bottom. */}
                   {chatLog
                     .flatMap((m) =>
-                      (m.optionCards ?? []).map((c) => ({ msgId: m.id, card: c })),
+                      (m.optionCards ?? [])
+                        .filter((c) => c.status === "awaiting")
+                        .map((c) => ({ msgId: m.id, card: c })),
                     )
                     .map(({ msgId, card }) => (
                       <ChatOptionCard key={`${msgId}-${card.id}-top`} msgId={msgId} card={card} />
@@ -385,9 +387,9 @@ export function Workspace() {
                         text={m.text}
                         streaming={m.streaming}
                         toolCalls={m.toolCalls}
-                        // Option cards are rendered ABOVE the script — hide them here
-                        // so they don't appear twice (once above, once in the chat log).
-                        optionCards={undefined}
+                        // Option cards that are still awaiting are pinned at the top;
+                        // submitted/skipped cards render here in their original chat position.
+                        optionCards={(m.optionCards ?? []).filter((c) => c.status !== "awaiting")}
                         skill={m.skill}
                         actions={m.actions}
                       />

@@ -301,6 +301,8 @@ export function MediaRail() {
         <div className="flex-1 overflow-y-auto p-3">
           {filter === "audio" && audioTab === "library" ? (
             <VoiceLibraryGrid />
+          ) : filter === "audio" && audioTab === "task" ? (
+            <TaskAudioPanel audios={audios} />
           ) : (
             <>
           {assets.length === 0 ? (
@@ -589,6 +591,78 @@ function Group({
       <Collapse open={open}>
         <div className="mt-2">{children}</div>
       </Collapse>
+    </div>
+  );
+}
+
+/**
+ * 任务音频面板：按音轨类型把当前 task 的真实音频资源分到
+ * 对白 / 旁白 / 背景音乐 三栏。没有数据时给明确的"暂未生成"提示，
+ * 不再制造 mock 音频。生成分镜视频后由后端把对应轨道写入当前 task。
+ */
+function TaskAudioPanel({ audios }: { audios: import("@/lib/sc/types").Asset[] }) {
+  const classify = (a: import("@/lib/sc/types").Asset): "dialogue" | "narration" | "bgm" => {
+    const tag = `${a.label ?? ""} ${a.caption ?? ""} ${a.url ?? ""}`.toLowerCase();
+    if (/(bgm|music|背景|配乐|score)/.test(tag)) return "bgm";
+    if (/(narration|旁白|voiceover|vo[^a-z]?)/.test(tag)) return "narration";
+    return "dialogue";
+  };
+  const groups: Record<"dialogue" | "narration" | "bgm", import("@/lib/sc/types").Asset[]> = {
+    dialogue: [],
+    narration: [],
+    bgm: [],
+  };
+  for (const a of audios) groups[classify(a)].push(a);
+
+  const SECTIONS: Array<{
+    id: "dialogue" | "narration" | "bgm";
+    title: string;
+    hint: string;
+  }> = [
+    { id: "dialogue", title: "对白", hint: "分镜视频生成后，角色对白会按音色绑定写入这里。" },
+    { id: "narration", title: "旁白", hint: "若脚本含旁白，会在合成阶段写入此处。" },
+    { id: "bgm", title: "背景音乐", hint: "合成阶段挑选/生成的 BGM 会出现在这里。" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {SECTIONS.map((sec) => {
+        const list = groups[sec.id];
+        return (
+          <div key={sec.id}>
+            <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              <span>{sec.title}</span>
+              <span className="font-mono text-[10px]">{list.length}</span>
+            </div>
+            {list.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border bg-surface-2/20 px-3 py-3 text-[11.5px] text-muted-foreground">
+                暂未生成 · {sec.hint}
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {list.map((a) => (
+                  <div
+                    key={a.id}
+                    className="flex items-center gap-2 rounded-lg border border-border bg-surface-2/40 px-2.5 py-2"
+                  >
+                    <span className="rounded bg-background/60 px-1.5 py-0.5 font-mono text-[10.5px] text-accent">
+                      {a.label}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[12px] text-foreground/85">
+                        {a.caption ?? a.label}
+                      </div>
+                      {a.url && (
+                        <audio src={a.url} controls className="mt-1 h-7 w-full" />
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
