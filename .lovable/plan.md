@@ -1,42 +1,36 @@
-1. 先修首屏 hydration 崩溃源头
-- 重点处理所有 SSR 首次渲染与客户端 localStorage 状态不一致的组件，优先是 `Sidebar.tsx`、`UserHoverCard.tsx`、`CreditRing.tsx`、`CreditsHoverPanel.tsx`、`LowCreditToast.tsx`、`Workspace.tsx`。
-- 把会直接参与首屏文本/属性输出的客户端状态改成 mounted/hydrated 后再渲染，避免服务端默认值与客户端真实值不一致触发 React 418。
-- 特别清理这些高风险点：
-  - `useCredits` 读 localStorage 后直接渲染余额/积分文案
-  - `Sidebar` 里用 `Date.now()` 伪造 active task 时间
-  - 所有 `aria-label`、文本节点、数字余额、时间字符串在 SSR 与 CSR 的差异
+## 目标
+1. 在 Sidebar 的 Tasks 列表中添加「收藏」星星按钮，支持任务收藏/取消收藏，并将收藏的任务置顶展示。
+2. 把"不修改未提及的地方"这条规则写入项目记忆，避免未来误改。
 
-2. 修复 task 恢复链路的两个入口
-- 保持项目详情页 `handleOpenTask` 的安全校验，并继续确保点击后进入 `/` 工作区。
-- 修复 Sidebar 的 task 点击链路：恢复任务后必须稳定导航回 `/`，且不能在 hydration 尚未稳定时渲染出与客户端不同的 task 文本结构。
-- 继续加固 `restoreTask`，确保历史残缺数据不会在恢复后把首页工作区渲染炸掉。
+## 1. Tasks 收藏功能
 
-3. 清理会诱发 hydration mismatch 的动态展示
-- 统一处理所有时间文本：只在 mounted 后显示，并保留 `suppressHydrationWarning`。
-- 对积分余额、最近消费、动态进度条、任务计数等首屏动态值，改为客户端挂载后再显示或提供 SSR/CSR 一致的占位内容。
-- 对 hover card / toast / dialog 这类客户端交互内容，避免在 SSR 首帧输出依赖本地状态的文案。
+### 数据层（src/lib/sc/types.ts、store.ts）
+- 在 `TaskRecord` 上新增可选字段 `favorite?: boolean`。
+- 在 `useSC` store 中新增 `toggleFavorite(taskId)` action：翻转 `taskHistory` 中对应任务的 `favorite` 字段，并持久化到 localStorage（与现有 `deleteTask` 走相同的持久化链路）。
+- `normalizeTaskRecord` 中补一个默认值 `favorite: !!record.favorite`，确保历史/远端数据不报错（遵循 task-restore-safe 规则）。
 
-4. 补足防回归边界
-- 保留并完善 `index.tsx`、`projects.$projectId.tsx`、`__root.tsx` 的错误边界，避免再次表现为“白屏/闪退”。
-- 把这次新增的规则补进记忆：凡是本地存储驱动的展示值，不允许直接参与 SSR 首屏文本输出。
+### UI 层（src/components/sc/Sidebar.tsx）
+- 在每个 task 行的 trash 按钮左侧新增一个星星按钮：
+  - 未收藏：`Star`（lucide）描边图标，hover 才显示，与 trash 按钮一致。
+  - 已收藏：填充态金色 `Star`（`fill-amber-400 text-amber-400`），常驻显示，hover 仍可点击切换。
+  - 点击 `stopPropagation` 后调用 `toggleFavorite(t.id)`，不触发任务恢复。
+- 排序：在 `useMemo` 的 `tasks` 计算中，把收藏的任务排到前面（active 任务依旧最顶），其余按现有 `updatedAt` 顺序。
+- 仅改 Tasks 列表区域，不动 Projects、Pricing、UserHoverCard、导航等任何其他模块。
 
-5. 按你提供的真实路径做回归验证
-- 用预览实际复现并验证：从项目详情页点 task、从 Sidebar 点失败 task、返回首页后是否正常进入工作区。
-- 重点确认不再出现 React 418、页面不再白屏、失败 task 仍可恢复到 Gallery/工作区。
+### 视觉
+- 与现有 trash 按钮保持同一套尺寸（`h-6 w-6`、`h-3 w-3` 图标），不引入新的颜色 token。
+- 收藏星星使用现有金色 token（如直接 `text-amber-400`，与项目中已有 `bg-amber-500/15` 等保持一致）。
 
-技术细节
-- 预计修改文件：
-  - `src/components/sc/Sidebar.tsx`
-  - `src/components/sc/UserHoverCard.tsx`
-  - `src/components/sc/credits/CreditRing.tsx`
-  - `src/components/sc/credits/CreditsHoverPanel.tsx`
-  - `src/components/sc/credits/LowCreditToast.tsx`
-  - `src/components/sc/Workspace.tsx`
-  - `src/lib/sc/store.ts`
-  - `src/routes/index.tsx`
-  - `src/routes/projects.$projectId.tsx`
-- 这次修复目标不是只“让点击能跳转”，而是同时解决：
-  - task 点击入口恢复正确
-  - React 418 hydration mismatch
-  - 残缺历史任务恢复安全
-  - 首屏不再间歇性白屏
+## 2. 写入记忆
+
+新增 `mem://constraints/scope-discipline.md`：
+- 规则：除非用户在当前需求中明确点名，否则不要修改任何文件、模块、样式、复制、文案、行为。新功能也只在用户指定的位置落地，不顺手"优化"未提及的地方。
+- 适用范围：所有后续迭代。
+
+更新 `mem://index.md` 的 Core 段，追加一行：
+> 用户未明确提出的地方一律不动；新增功能只落在用户点名的位置，禁止顺带改动其它模块/样式/文案。
+
+## 不做的事
+- 不动 Sidebar 其他区块（Projects、Pricing、Header、Nav）。
+- 不改任何路由、store hydration、credits、media、详情页逻辑。
+- 不做收藏的远端同步（仅本地持久化，遵循现有 taskHistory 的存储方式）。
