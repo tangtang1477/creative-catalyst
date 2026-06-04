@@ -2844,6 +2844,14 @@ export const useSC = create<SCState>((set, get) => {
       saveHistory(next);
     },
 
+    toggleFavoriteTask: (id) => {
+      const next = get().taskHistory.map((t) =>
+        t.id === id ? { ...t, favorite: !t.favorite } : t,
+      );
+      set({ taskHistory: next });
+      saveHistory(next);
+    },
+
     enterProject: (projectId) => {
       const { phase } = get();
       if (phase === "running" || phase === "thinking") {
