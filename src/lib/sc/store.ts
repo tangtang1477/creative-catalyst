@@ -572,6 +572,9 @@ export const normalizeTaskRecord = (found: Partial<TaskRecord> & Pick<TaskRecord
     brief: normalizeBrief(found.brief, { prompt: found.prompt, title: found.title }),
     projectId: typeof found.projectId === "string" ? found.projectId : null,
     favorite: !!found.favorite,
+    archivedChat: Array.isArray((found as { archivedChat?: unknown }).archivedChat)
+      ? ((found as { archivedChat?: unknown[] }).archivedChat as unknown[])
+      : undefined,
   };
 };
 
