@@ -3060,8 +3060,30 @@ export const useSC = create<SCState>((set, get) => {
         mode: "—",
       };
       const chatLog: ChatMsg[] = [];
+      // Restore the full archived chat timeline so historical playback shows the EXACT
+      // original output (user msgs, agent msgs, option cards, tool calls, thoughts).
+      const archived = (rec as unknown as { archivedChat?: unknown[] }).archivedChat;
+      if (Array.isArray(archived) && archived.length > 0) {
+        for (const raw of archived) {
+          if (!raw || typeof raw !== "object") continue;
+          const m = raw as Partial<ChatMsg>;
+          if (typeof m.id !== "string" || (m.role !== "user" && m.role !== "agent")) continue;
+          chatLog.push({
+            id: m.id,
+            role: m.role,
+            text: typeof m.text === "string" ? m.text : "",
+            ts: typeof m.ts === "number" ? m.ts : Date.now(),
+            actions: Array.isArray(m.actions) ? m.actions : undefined,
+            streaming: false,
+            toolCalls: Array.isArray(m.toolCalls) ? m.toolCalls : undefined,
+            thinking: typeof m.thinking === "string" ? m.thinking : undefined,
+            optionCards: Array.isArray(m.optionCards) ? m.optionCards : undefined,
+            skill: m.skill && typeof m.skill === "object" ? m.skill : undefined,
+          });
+        }
+      }
       // 历史归档恢复：给出一句友好提示，避免中间区域只剩一张空卡。
-      if (!hasRealBrief && rec.assets.length > 0) {
+      if (chatLog.length === 0 && !hasRealBrief && rec.assets.length > 0) {
         chatLog.push({
           id: `restore-${rec.id}-info`,
           role: "agent",
