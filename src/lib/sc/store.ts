@@ -414,7 +414,14 @@ const normalizeGeneratedScript = (script: unknown): GeneratedScript | null => {
     ? raw.shots
         .map((shot, index) => {
           if (!shot || typeof shot !== "object") return null;
-          const candidate = shot as Record<string, unknown>;
+          const candidate = shot as {
+            shot?: unknown;
+            duration?: unknown;
+            motion?: unknown;
+            scene?: unknown;
+            elements?: unknown;
+            prompt?: unknown;
+          };
           const scene = typeof candidate.scene === "string" ? candidate.scene.trim() : "";
           const elements = typeof candidate.elements === "string" ? candidate.elements.trim() : "";
           const motion = typeof candidate.motion === "string" ? candidate.motion.trim() : "";
