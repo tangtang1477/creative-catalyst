@@ -301,6 +301,8 @@ export function MediaRail() {
         <div className="flex-1 overflow-y-auto p-3">
           {filter === "audio" && audioTab === "library" ? (
             <VoiceLibraryGrid />
+          ) : filter === "audio" && audioTab === "task" ? (
+            <TaskAudioPanel audios={audios} />
           ) : (
             <>
           {assets.length === 0 ? (
