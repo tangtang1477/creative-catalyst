@@ -79,17 +79,30 @@ export const useVoices = create<VoicesState>((set, get) => ({
 
   preview: async (voiceId) => {
     get().stopPreview();
+    // Create the Audio element synchronously so we stay within the user
+    // gesture context — autoplay policies (Safari especially) block play()
+    // when the element is created after an await.
+    const audio = new Audio();
+    audio.preload = "auto";
+    currentAudio = audio;
     set({ previewingId: voiceId });
     try {
       const { audioBase64, mime } = await fnPreview({ data: { voice_id: voiceId } });
+      // If a newer preview started or stop was called, abandon this one.
+      if (currentAudio !== audio) return;
       const url = `data:${mime};base64,${audioBase64}`;
-      const audio = new Audio(url);
-      currentAudio = audio;
+      audio.src = url;
       set({ currentAudioUrl: url });
       audio.onended = () => set({ previewingId: null, currentAudioUrl: null });
+      audio.onerror = () => {
+        console.error("[voice preview] audio element error", audio.error);
+        set({ previewingId: null, currentAudioUrl: null, error: "音频播放失败" });
+      };
       await audio.play();
     } catch (e) {
-      set({ previewingId: null, error: (e as Error).message });
+      console.error("[voice preview] failed:", e);
+      if (currentAudio === audio) currentAudio = null;
+      set({ previewingId: null, currentAudioUrl: null, error: (e as Error).message });
     }
   },
 
