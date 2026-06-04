@@ -87,10 +87,9 @@ export function AssetCard({
   const hasVersions = versionCount >= 2;
   const [loaded, setLoaded] = useState(false);
 
-  // —— Character ↔ voice (wardrobe W* 或 cast C*) ——
-  const isCharacter =
-    (asset.stageId === "wardrobe" && /^W/i.test(asset.id)) ||
-    (asset.stageId === "cast" && /^C/i.test(asset.id));
+  // —— Character ↔ voice 绑定只作用于「人物 & 场景素材」阶段的人物 C* ——
+  // 服化道阶段（W*/P*）属于服装与道具，按需求不再展示音色控件。
+  const isCharacter = asset.stageId === "cast" && /^C/i.test(asset.id);
   const characterName = asset.caption ?? asset.id;
   const cvFetch = useCharacterVoices((s) => s.fetch);
   const cvRefresh = useCharacterVoices((s) => s.refresh);
