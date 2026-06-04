@@ -314,7 +314,7 @@ export const pollVideoTask = createServerFn({ method: "POST" })
       }
     } else {
       const errMsg =
-        normalized === "failed"
+        effectiveStatus === "failed"
           ? (envelope.message ||
               (envelope.data as { error?: string } | undefined)?.error ||
               JSON.stringify(envelope.data ?? envelope).slice(0, 400))
@@ -322,7 +322,7 @@ export const pollVideoTask = createServerFn({ method: "POST" })
       await supabaseAdmin
         .from("seedance_jobs")
         .update({
-          status: normalized,
+          status: effectiveStatus,
           progress,
           raw: (envelope.data ?? null) as unknown as never,
           error_message: errMsg,
@@ -330,16 +330,16 @@ export const pollVideoTask = createServerFn({ method: "POST" })
         .eq("task_id", data.taskId);
     }
 
-    if (job.video_task_id && normalized !== "processing") {
+    if (job.video_task_id && effectiveStatus !== "processing") {
       await supabaseAdmin
         .from("video_tasks")
-        .update({ status: normalized })
+        .update({ status: effectiveStatus })
         .eq("id", job.video_task_id);
     }
 
     let errorCode: string | null = null;
     let errorMessage: string | null = null;
-    if (normalized === "failed") {
+    if (effectiveStatus === "failed") {
       const raw =
         envelope.message ||
         (envelope.data as { error?: string } | undefined)?.error ||
@@ -350,7 +350,7 @@ export const pollVideoTask = createServerFn({ method: "POST" })
     }
 
     return {
-      status: normalized,
+      status: effectiveStatus,
       progress,
       ossUrl,
       videoUrl,
