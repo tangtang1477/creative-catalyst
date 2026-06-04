@@ -3068,6 +3068,30 @@ export const useSC = create<SCState>((set, get) => {
           if (!raw || typeof raw !== "object") continue;
           const m = raw as Partial<ChatMsg>;
           if (typeof m.id !== "string" || (m.role !== "user" && m.role !== "agent")) continue;
+          // Sanitize possibly-stale archived shapes so a missing field in an
+          // old record cannot crash the chatLog renderer.
+          const safeToolCalls = Array.isArray(m.toolCalls)
+            ? (m.toolCalls as unknown[]).filter(
+                (t): t is NonNullable<ChatMsg["toolCalls"]>[number] =>
+                  !!t && typeof t === "object" &&
+                  typeof (t as { id?: unknown }).id === "string" &&
+                  typeof (t as { label?: unknown }).label === "string",
+              )
+            : undefined;
+          const safeOptionCards = Array.isArray(m.optionCards)
+            ? (m.optionCards as unknown[]).filter(
+                (c): c is NonNullable<ChatMsg["optionCards"]>[number] =>
+                  !!c && typeof c === "object" &&
+                  typeof (c as { id?: unknown }).id === "string" &&
+                  typeof (c as { status?: unknown }).status === "string" &&
+                  Array.isArray((c as { options?: unknown }).options),
+              )
+            : undefined;
+          const rawSkill = m.skill as { id?: unknown } | undefined;
+          const safeSkill =
+            rawSkill && typeof rawSkill === "object" && typeof rawSkill.id === "string"
+              ? (rawSkill as ChatMsg["skill"])
+              : undefined;
           chatLog.push({
             id: m.id,
             role: m.role,
@@ -3075,10 +3099,10 @@ export const useSC = create<SCState>((set, get) => {
             ts: typeof m.ts === "number" ? m.ts : Date.now(),
             actions: Array.isArray(m.actions) ? m.actions : undefined,
             streaming: false,
-            toolCalls: Array.isArray(m.toolCalls) ? m.toolCalls : undefined,
+            toolCalls: safeToolCalls,
             thinking: typeof m.thinking === "string" ? m.thinking : undefined,
-            optionCards: Array.isArray(m.optionCards) ? m.optionCards : undefined,
-            skill: m.skill && typeof m.skill === "object" ? m.skill : undefined,
+            optionCards: safeOptionCards,
+            skill: safeSkill,
           });
         }
       }

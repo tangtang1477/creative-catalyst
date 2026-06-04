@@ -24,6 +24,7 @@ import { Logo } from "./Logo";
 import { InlineLowCredit } from "./credits/InlineLowCredit";
 import { useCredits, creditsSelectors } from "@/lib/sc/credits-store";
 import { StageBoundary } from "./StageBoundary";
+import { ChatItemBoundary } from "./ChatItemBoundary";
 import { VersionDrawer } from "./VersionDrawer";
 import { ChatAgentMessage } from "./ChatAgentMessage";
 import { CreateProjectDialog } from "./CreateProjectDialog";
@@ -217,7 +218,9 @@ export function Workspace() {
                         .map((c) => ({ msgId: m.id, card: c })),
                     )
                     .map(({ msgId, card }) => (
-                      <ChatOptionCard key={`${msgId}-${card.id}-top`} msgId={msgId} card={card} />
+                      <ChatItemBoundary key={`${msgId}-${card.id}-top`}>
+                        <ChatOptionCard msgId={msgId} card={card} />
+                      </ChatItemBoundary>
                     ))}
 
 
@@ -374,25 +377,27 @@ export function Workspace() {
                   {/* In-task chat (merged into main timeline, ChatGPT-style) */}
                   {chatLog.map((m) =>
                     m.role === "user" ? (
-                      <div
-                        key={m.id}
-                        className="ml-auto w-fit max-w-[80%] rounded-2xl bg-surface-2 px-3.5 py-2 text-[13px] [animation:stream-fade_280ms_ease-out_both]"
-                      >
-                        {m.text}
-                      </div>
+                      <ChatItemBoundary key={m.id}>
+                        <div
+                          className="ml-auto w-fit max-w-[80%] rounded-2xl bg-surface-2 px-3.5 py-2 text-[13px] [animation:stream-fade_280ms_ease-out_both]"
+                        >
+                          {m.text}
+                        </div>
+                      </ChatItemBoundary>
                     ) : (
-                      <ChatAgentMessage
-                        key={m.id}
-                        id={m.id}
-                        text={m.text}
-                        streaming={m.streaming}
-                        toolCalls={m.toolCalls}
-                        // Option cards that are still awaiting are pinned at the top;
-                        // submitted/skipped cards render here in their original chat position.
-                        optionCards={(m.optionCards ?? []).filter((c) => c.status !== "awaiting")}
-                        skill={m.skill}
-                        actions={m.actions}
-                      />
+                      <ChatItemBoundary key={m.id}>
+                        <ChatAgentMessage
+                          id={m.id}
+                          text={m.text}
+                          streaming={m.streaming}
+                          toolCalls={m.toolCalls}
+                          // Option cards that are still awaiting are pinned at the top;
+                          // submitted/skipped cards render here in their original chat position.
+                          optionCards={(m.optionCards ?? []).filter((c) => c.status !== "awaiting")}
+                          skill={m.skill}
+                          actions={m.actions}
+                        />
+                      </ChatItemBoundary>
                     ),
                   )}
 
