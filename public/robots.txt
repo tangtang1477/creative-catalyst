@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /login
+Disallow: /projects/
+Disallow: /test
+Disallow: /api/
+
+Sitemap: https://auto-ad-director.lovable.app/sitemap.xml

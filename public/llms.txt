@@ -1,0 +1,9 @@
+# vibe aideo
+
+> AI ad-video agent that turns product briefs into shoot-ready commercials inside a dark, premium creative workstation.
+
+vibe aideo helps creative teams go from brief to finished ad video — generating scripts, storyboards, voices, and shots with a guided AI workflow.
+
+## Pages
+
+- [Home](/): Product overview and creative workstation entry point.
