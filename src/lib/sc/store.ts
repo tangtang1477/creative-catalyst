@@ -2950,6 +2950,10 @@ export const useSC = create<SCState>((set, get) => {
         console.warn("[restoreTask] task not found in local history", id);
         return;
       }
+      if (!canRestoreTaskRecord(found)) {
+        console.warn("[restoreTask] task is not restorable", id, found);
+        return;
+      }
       const rec = normalizeTaskRecord(found);
       clearTimers();
       const stages = initialStages();
@@ -2980,6 +2984,16 @@ export const useSC = create<SCState>((set, get) => {
           if (rec.status === "failed" && sid === "life" && !failedStageId) failedStageId = sid;
         }
       }
+      const restoredPhase: Phase =
+        rec.status === "done"
+          ? "done"
+          : rec.status === "failed"
+            ? "failed"
+            : rec.status === "running"
+              ? "running"
+              : rec.assets.length > 0
+                ? "done"
+                : "failed";
       const hasRealBrief = !!rec.brief && !!(rec.brief as Brief).adType;
       const restoredBrief: Brief = (rec.brief as Brief | undefined) ?? {
         prompt: rec.prompt || rec.title || "",
@@ -3016,19 +3030,23 @@ export const useSC = create<SCState>((set, get) => {
       }
       set((s) => ({
         runId: s.runId + 1,
-        phase: rec.status === "done" ? "done" : "failed",
+        phase: restoredPhase,
         taskId: rec.id,
         taskTitle: rec.title,
         taskKind: rec.kind,
         brief: restoredBrief,
-        script: (rec.script as GeneratedScript | undefined) ?? null,
+        script: normalizeGeneratedScript(rec.script),
         stages,
         assets: rec.assets,
         gate: null,
         softGate: null,
         selection: [],
         chatLog,
-        rail: { open: rec.assets.length > 0 },
+        rail: { open: rec.assets.length > 0, flashId: undefined, focusedAssetId: undefined },
+        attachments: [],
+        versionDrawerAssetId: null,
+        previewAssetId: null,
+        pendingScript: null,
       }));
       // Sync the active project so sidebar highlight + ProjectGuideCard follow.
       void (async () => {
