@@ -97,9 +97,9 @@ export function ProjectGuideCard() {
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <h3 className="text-[14px] font-semibold tracking-tight text-foreground">
+          <h2 className="text-[14px] font-semibold tracking-tight text-foreground">
             保存为项目，方便制作后续集数
-          </h3>
+          </h2>
           <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
             <Sparkles className="h-2.5 w-2.5" />
             智能引导
