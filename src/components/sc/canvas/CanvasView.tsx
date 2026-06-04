@@ -1,84 +1,196 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSC } from "@/lib/sc/store";
-import { STAGE_ORDER, STAGE_LABEL, type StageId } from "@/lib/sc/types";
-import {
-  Loader2,
-  Check,
-  Clock,
-  AlertCircle,
-  RotateCw,
-  Layers,
-  Film,
-  Image as ImageIcon,
-  Wand2,
-  Sparkles,
-  Shirt,
-  ShieldCheck,
-  Users,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import type { Asset } from "@/lib/sc/types";
+import { User, Image as ImageIcon, Package, Film } from "lucide-react";
 
-const STAGE_ICON: Record<StageId, typeof Layers> = {
-  scene: Layers,
-  structure: Film,
-  wardrobe: Shirt,
-  cast: Users,
-  paint: ImageIcon,
-  qc: ShieldCheck,
-  life: Wand2,
-  details: Sparkles,
-};
+/**
+ * CanvasView — 资产库视图（参考用户图二「资产库编辑」）。
+ *
+ * 只展示素材；不再渲染 stage / 流水线节点。
+ * 同名角色的不同服装/姿态被收进一个浅色圆角分组卡片中横向排列，
+ * 分组之间通过贝塞尔曲线连接其相关关系（角色 → 场景 / 片段 / 道具）。
+ */
 
-const NODE_W = 220;
-const NODE_H = 110;
-const COL_GAP = 90;
-const ASSET_SIZE = 96;
+type GroupKind = "clip" | "character" | "wardrobe" | "prop" | "scene" | "other";
 
-/** Compute layout for stages + assets on the canvas. */
-function useLayout() {
-  const { stages, assets } = useSC();
-  const visibleStages = STAGE_ORDER.filter((id) => stages[id].status !== "pending");
+interface GroupSpec {
+  key: string;
+  kind: GroupKind;
+  label: string;
+  assets: Asset[];
+}
 
-  const stagePos: Record<string, { x: number; y: number }> = {};
-  visibleStages.forEach((id, i) => {
-    stagePos[id] = {
-      x: i * (NODE_W + COL_GAP),
-      y: 0,
-    };
-  });
+const ASSET_W = 96;
+const ASSET_H = 128;
+const ASSET_GAP = 8;
+const GROUP_PAD_X = 12;
+const GROUP_PAD_TOP = 26;
+const GROUP_PAD_BOTTOM = 12;
+const GROUP_GAP_Y = 28;
+const COL_GAP = 60;
 
-  const assetPos: Record<string, { x: number; y: number; stageId: StageId }> = {};
-  const byStage = new Map<StageId, typeof assets>();
-  assets.forEach((a) => {
-    const s = (a.stageId ?? "paint") as StageId;
-    if (!byStage.has(s)) byStage.set(s, []);
-    byStage.get(s)!.push(a);
-  });
-  byStage.forEach((list, sid) => {
-    const sp = stagePos[sid];
-    if (!sp) return;
-    list.forEach((a, i) => {
-      const col = i % 2;
-      const row = Math.floor(i / 2);
-      assetPos[a.id] = {
-        x: sp.x + col * (ASSET_SIZE + 16) + (NODE_W - 2 * ASSET_SIZE - 16) / 2,
-        y: NODE_H + 60 + row * (ASSET_SIZE + 50),
-        stageId: sid,
-      };
-    });
-  });
+function groupKindOf(a: Asset): GroupKind {
+  if (a.kind === "video" || a.stageId === "life" || a.stageId === "details") return "clip";
+  const id = (a.id || "").toUpperCase();
+  if (id.startsWith("C")) return "character";
+  if (id.startsWith("S")) return "scene";
+  if (id.startsWith("W")) return "wardrobe";
+  if (id.startsWith("P")) return "prop";
+  if (a.stageId === "cast") return "character";
+  if (a.stageId === "wardrobe") return "wardrobe";
+  return "other";
+}
 
-  return { visibleStages, stagePos, assetPos };
+function groupKeyOf(a: Asset, kind: GroupKind): string {
+  // 同一角色名（caption）的多张资产归为一组 — 实现"同一角色不同服装"分组。
+  const name = (a.caption ?? a.label ?? a.id).trim();
+  if (kind === "clip") return `clip::${a.id}`; // 每个片段独立
+  return `${kind}::${name}`;
+}
+
+function groupLabelOf(kind: GroupKind, sample: Asset, count: number): string {
+  const base = (sample.caption ?? sample.label ?? sample.id).trim();
+  if (kind === "clip") return sample.label || "片段";
+  if (count > 1 && kind === "character") return base;
+  return base;
+}
+
+function GroupHeaderIcon({ kind }: { kind: GroupKind }) {
+  if (kind === "character") return <User className="h-3 w-3" />;
+  if (kind === "scene") return <ImageIcon className="h-3 w-3" />;
+  if (kind === "wardrobe") return <ImageIcon className="h-3 w-3" />;
+  if (kind === "prop") return <Package className="h-3 w-3" />;
+  if (kind === "clip") return <Film className="h-3 w-3" />;
+  return <ImageIcon className="h-3 w-3" />;
+}
+
+/** Column layout: clips | characters | scenes — props/wardrobe stacked under characters. */
+function buildLayout(groups: GroupSpec[]) {
+  const columns: Record<"clip" | "character" | "wardrobe-prop" | "scene", GroupSpec[]> = {
+    clip: [],
+    character: [],
+    "wardrobe-prop": [],
+    scene: [],
+  };
+  for (const g of groups) {
+    if (g.kind === "clip") columns.clip.push(g);
+    else if (g.kind === "character") columns.character.push(g);
+    else if (g.kind === "wardrobe" || g.kind === "prop") columns["wardrobe-prop"].push(g);
+    else if (g.kind === "scene") columns.scene.push(g);
+    else columns.character.push(g);
+  }
+
+  const positions = new Map<string, { x: number; y: number; w: number; h: number }>();
+  const colStarts = { clip: 0, character: 0, "wardrobe-prop": 0, scene: 0 };
+
+  // Width per group depends on its asset count (max 3 per row).
+  const groupWidth = (g: GroupSpec) => {
+    const perRow = Math.min(g.assets.length, 3);
+    return GROUP_PAD_X * 2 + perRow * ASSET_W + Math.max(0, perRow - 1) * ASSET_GAP;
+  };
+  const groupHeight = (g: GroupSpec) => {
+    const rows = Math.ceil(g.assets.length / 3);
+    return GROUP_PAD_TOP + GROUP_PAD_BOTTOM + rows * ASSET_H + Math.max(0, rows - 1) * ASSET_GAP + 16;
+  };
+
+  const colMaxWidth = (list: GroupSpec[]) =>
+    list.reduce((m, g) => Math.max(m, groupWidth(g)), 0);
+
+  const wClip = Math.max(180, colMaxWidth(columns.clip));
+  const wChar = Math.max(240, colMaxWidth(columns.character));
+  const wWP = Math.max(180, colMaxWidth(columns["wardrobe-prop"]));
+  const wScene = Math.max(240, colMaxWidth(columns.scene));
+
+  colStarts.clip = 0;
+  colStarts.character = colStarts.clip + wClip + COL_GAP;
+  colStarts["wardrobe-prop"] = colStarts.character + wChar + COL_GAP;
+  colStarts.scene = colStarts["wardrobe-prop"] + wWP + COL_GAP;
+
+  const place = (list: GroupSpec[], colX: number) => {
+    let y = 0;
+    for (const g of list) {
+      const w = groupWidth(g);
+      const h = groupHeight(g);
+      positions.set(g.key, { x: colX, y, w, h });
+      y += h + GROUP_GAP_Y;
+    }
+  };
+  place(columns.clip, colStarts.clip);
+  place(columns.character, colStarts.character);
+  place(columns["wardrobe-prop"], colStarts["wardrobe-prop"]);
+  place(columns.scene, colStarts.scene);
+
+  const totalW = colStarts.scene + wScene + 40;
+  const totalH = Math.max(
+    400,
+    ...[columns.clip, columns.character, columns["wardrobe-prop"], columns.scene].map((list) => {
+      const last = list[list.length - 1];
+      if (!last) return 0;
+      const p = positions.get(last.key)!;
+      return p.y + p.h;
+    }),
+  );
+
+  return { positions, totalW, totalH, columns };
+}
+
+function buildEdges(groups: GroupSpec[]): Array<{ from: string; to: string }> {
+  // 角色→场景：当 caption 在 scene caption 中出现则连一条曲线。
+  // 角色→片段：所有 character 与所有 clip 连接（同 task 的关系）。
+  // 角色→服装/道具：当服装/道具 caption 包含角色名时。
+  const edges: Array<{ from: string; to: string }> = [];
+  const chars = groups.filter((g) => g.kind === "character");
+  const clips = groups.filter((g) => g.kind === "clip");
+  const scenes = groups.filter((g) => g.kind === "scene");
+  const wps = groups.filter((g) => g.kind === "wardrobe" || g.kind === "prop");
+
+  for (const c of chars) {
+    const cname = c.label.toLowerCase();
+    for (const wp of wps) {
+      const txt = `${wp.label} ${wp.assets.map((a) => a.caption ?? "").join(" ")}`.toLowerCase();
+      if (cname && (txt.includes(cname) || wps.length === 1)) {
+        edges.push({ from: c.key, to: wp.key });
+      }
+    }
+    for (const s of scenes.slice(0, 2)) {
+      edges.push({ from: c.key, to: s.key });
+    }
+    for (const clip of clips) {
+      edges.push({ from: clip.key, to: c.key });
+    }
+  }
+  return edges;
 }
 
 export function CanvasView() {
-  const { stages, assets } = useSC();
+  const assets = useSC((s) => s.assets);
+  const focusAsset = useSC((s) => s.focusAsset);
+  const openPreview = useSC((s) => s.openPreview);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [zoom, setZoom] = useState(0.85);
-  const [pan, setPan] = useState({ x: 80, y: 100 });
+  const [zoom, setZoom] = useState(0.9);
+  const [pan, setPan] = useState({ x: 60, y: 60 });
   const dragging = useRef<{ x: number; y: number } | null>(null);
 
-  const { visibleStages, stagePos, assetPos } = useLayout();
+  const groups = useMemo<GroupSpec[]>(() => {
+    const map = new Map<string, GroupSpec>();
+    for (const a of assets) {
+      const kind = groupKindOf(a);
+      const key = groupKeyOf(a, kind);
+      let g = map.get(key);
+      if (!g) {
+        g = { key, kind, label: "", assets: [] };
+        map.set(key, g);
+      }
+      g.assets.push(a);
+    }
+    return Array.from(map.values()).map((g) => ({
+      ...g,
+      label: groupLabelOf(g.kind, g.assets[0], g.assets.length),
+    }));
+  }, [assets]);
+
+  const { positions, totalW, totalH } = useMemo(() => buildLayout(groups), [groups]);
+  const edges = useMemo(() => buildEdges(groups), [groups]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -119,150 +231,112 @@ export function CanvasView() {
         }}
       />
 
+      {groups.length === 0 && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[12px] text-muted-foreground">
+          暂无素材
+        </div>
+      )}
+
       <div
         className="absolute origin-top-left"
-        style={{
-          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-        }}
+        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
       >
-        {/* edges */}
+        {/* Bezier connectors between groups */}
         <svg
           className="pointer-events-none absolute"
-          style={{
-            width: visibleStages.length * (NODE_W + COL_GAP),
-            height: 800,
-            overflow: "visible",
-          }}
+          style={{ width: totalW, height: totalH, overflow: "visible" }}
         >
-          {/* stage→stage */}
-          {visibleStages.slice(0, -1).map((from, i) => {
-            const to = visibleStages[i + 1];
-            const a = stagePos[from];
-            const b = stagePos[to];
-            const x1 = a.x + NODE_W;
-            const y1 = a.y + NODE_H / 2;
+          {edges.map((e, i) => {
+            const a = positions.get(e.from);
+            const b = positions.get(e.to);
+            if (!a || !b) return null;
+            const x1 = a.x + a.w;
+            const y1 = a.y + a.h / 2;
             const x2 = b.x;
-            const y2 = b.y + NODE_H / 2;
+            const y2 = b.y + b.h / 2;
             const mx = (x1 + x2) / 2;
             return (
               <path
-                key={`e-${from}-${to}`}
+                key={`${e.from}->${e.to}-${i}`}
                 d={`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`}
-                stroke="color-mix(in oklab, var(--accent) 50%, transparent)"
+                stroke="color-mix(in oklab, var(--accent) 35%, transparent)"
                 strokeWidth={1.2}
-                fill="none"
-              />
-            );
-          })}
-          {/* stage→asset */}
-          {assets.map((a) => {
-            const ap = assetPos[a.id];
-            if (!ap) return null;
-            const sp = stagePos[ap.stageId];
-            if (!sp) return null;
-            return (
-              <path
-                key={`ea-${a.id}`}
-                d={`M ${sp.x + NODE_W / 2} ${sp.y + NODE_H} L ${ap.x + ASSET_SIZE / 2} ${ap.y}`}
-                stroke="color-mix(in oklab, var(--accent) 28%, transparent)"
-                strokeWidth={1}
-                strokeDasharray="3 3"
                 fill="none"
               />
             );
           })}
         </svg>
 
-        {/* stage nodes */}
-        {visibleStages.map((id) => {
-          const st = stages[id];
-          const pos = stagePos[id];
-          const Icon = STAGE_ICON[id];
-          let StatusIcon = Clock;
-          let statusClass = "text-muted-foreground";
-          let spin = false;
-          if (st.status === "running") { StatusIcon = Loader2; statusClass = "text-status-generating"; spin = true; }
-          else if (st.status === "ready") { StatusIcon = Check; statusClass = "text-status-ready"; }
-          else if (st.status === "recovering") { StatusIcon = RotateCw; statusClass = "text-status-recovering"; spin = true; }
-          else if (st.status === "failed") { StatusIcon = AlertCircle; statusClass = "text-status-failed"; }
-
+        {/* Group cards */}
+        {groups.map((g) => {
+          const p = positions.get(g.key);
+          if (!p) return null;
           return (
             <div
-              key={id}
+              key={g.key}
               data-canvas-node
-              className="absolute rounded-xl border border-border bg-surface p-3 shadow-lg"
-              style={{
-                left: pos.x,
-                top: pos.y,
-                width: NODE_W,
-                minHeight: NODE_H,
-              }}
+              className="absolute rounded-2xl border border-border bg-surface-2/60 shadow-sm"
+              style={{ left: p.x, top: p.y, width: p.w, minHeight: p.h }}
             >
-              <div className="flex items-center gap-2">
-                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-surface-2">
-                  <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                </div>
-                <span className="flex-1 truncate text-[12.5px] font-medium">
-                  {STAGE_LABEL[id]}
-                </span>
-                <StatusIcon className={cn("h-3.5 w-3.5", statusClass, spin && "animate-spin")} />
-              </div>
-              {st.toolCalls.length > 0 && (
-                <div className="mt-2 text-[10.5px] font-mono text-muted-foreground">
-                  {st.toolCalls.slice(-2).map((tc) => (
-                    <div key={tc.id} className="truncate">
-                      · {tc.label}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {st.summary.length > 0 && (() => {
-                const last = st.summary[st.summary.length - 1];
-                const text = typeof last === "string" ? last : last.text;
-                return (
-                  <div className="mt-1 truncate text-[10.5px] text-muted-foreground">
-                    · {text}
-                  </div>
-                );
-              })()}
-
-            </div>
-          );
-        })}
-
-        {/* asset nodes */}
-        {assets.map((a) => {
-          const pos = assetPos[a.id];
-          if (!pos) return null;
-          return (
-            <div
-              key={a.id}
-              data-canvas-node
-              className="absolute overflow-hidden rounded-lg border border-border bg-surface-2 shadow-md"
-              style={{ left: pos.x, top: pos.y, width: ASSET_SIZE }}
-              title={a.caption ?? a.label}
-            >
-              <div className="relative" style={{ aspectRatio: a.kind === "image" ? "9/16" : "16/9" }}>
-                {a.url && a.kind === "image" ? (
-                  <img src={a.url} alt={a.label} className="h-full w-full object-cover" />
-                ) : a.url && a.kind === "video" ? (
-                  <video src={a.url} poster={a.poster} className="h-full w-full bg-black object-cover" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-[9px] text-muted-foreground">
-                    {a.status}
-                  </div>
+              <div className="flex items-center gap-1.5 px-3 pt-2 text-[11px] font-medium text-muted-foreground">
+                <GroupHeaderIcon kind={g.kind} />
+                <span className="truncate">{g.label}</span>
+                {g.assets.length > 1 && (
+                  <span className="ml-auto font-mono text-[10px] text-muted-foreground/70">
+                    {g.assets.length}
+                  </span>
                 )}
               </div>
-              <div className="flex items-center justify-between px-1 py-0.5">
-                <span className="font-mono text-[9px] text-accent">{a.label}</span>
-                <span className="truncate text-[9px] text-muted-foreground">{a.status}</span>
+              <div
+                className="flex flex-wrap px-3 pb-3 pt-2"
+                style={{ gap: ASSET_GAP }}
+              >
+                {g.assets.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => {
+                      focusAsset(a.id);
+                      openPreview(a.id);
+                    }}
+                    className="group/asset overflow-hidden rounded-lg border border-border bg-background shadow-sm transition-transform hover:-translate-y-0.5"
+                    style={{ width: ASSET_W }}
+                    title={a.caption ?? a.label}
+                  >
+                    <div
+                      className="relative bg-surface-2"
+                      style={{ width: ASSET_W, height: ASSET_H - 18 }}
+                    >
+                      {a.url && a.kind === "image" ? (
+                        <img src={a.url} alt={a.label} className="h-full w-full object-cover" />
+                      ) : a.url && a.kind === "video" ? (
+                        <video
+                          src={a.url}
+                          poster={a.poster}
+                          className="h-full w-full bg-black object-cover"
+                          muted
+                          playsInline
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-[9px] text-muted-foreground">
+                          {a.status}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between px-1.5 py-1">
+                      <span className="font-mono text-[9px] text-accent">{a.label}</span>
+                      <span className="truncate text-[9px] text-muted-foreground">
+                        {a.status}
+                      </span>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* zoom indicator */}
       <div className="pointer-events-none absolute bottom-3 right-3 rounded-md bg-surface px-2 py-1 font-mono text-[10px] text-muted-foreground shadow">
         {Math.round(zoom * 100)}%
       </div>

@@ -229,6 +229,9 @@ export interface TaskRecord {
   projectId?: string | null;
   /** User-marked favorite — pinned to top of sidebar Tasks list. */
   favorite?: boolean;
+  /** Full archived chat timeline (user ↔ agent messages, option cards, tool calls).
+   *  Persisted so historical task playback shows the EXACT original output, not a stub. */
+  archivedChat?: unknown[];
 }
 
 /** Chat agent 单条"直接改图"指令。 */

@@ -572,6 +572,9 @@ export const normalizeTaskRecord = (found: Partial<TaskRecord> & Pick<TaskRecord
     brief: normalizeBrief(found.brief, { prompt: found.prompt, title: found.title }),
     projectId: typeof found.projectId === "string" ? found.projectId : null,
     favorite: !!found.favorite,
+    archivedChat: Array.isArray((found as { archivedChat?: unknown }).archivedChat)
+      ? ((found as { archivedChat?: unknown[] }).archivedChat as unknown[])
+      : undefined,
   };
 };
 
@@ -758,7 +761,7 @@ export const useSC = create<SCState>((set, get) => {
 
   /** Persist current task snapshot into taskHistory */
   const persistCurrent = (status: TaskRecord["status"]) => {
-    const { taskId, taskTitle, brief, assets, taskHistory, taskKind, stages, script } = get();
+    const { taskId, taskTitle, brief, assets, taskHistory, taskKind, stages, script, chatLog } = get();
     if (!taskId) return;
     const now = Date.now();
     const existing = taskHistory.find((t) => t.id === taskId);
@@ -799,6 +802,9 @@ export const useSC = create<SCState>((set, get) => {
       failureReason: failureReason ?? existing?.failureReason,
       brief,
       projectId: currentProjectId ?? existing?.projectId ?? null,
+      favorite: existing?.favorite,
+      // Persist full chat timeline so historical playback shows the exact original output.
+      archivedChat: chatLog as unknown as unknown[],
     };
     const next = [record, ...taskHistory.filter((t) => t.id !== taskId)];
     set({ taskHistory: next });
@@ -824,6 +830,7 @@ export const useSC = create<SCState>((set, get) => {
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
         status: record.status,
+        archivedChat: record.archivedChat ?? [],
       };
       void upsertTaskSnapshot({
         data: {
@@ -3053,8 +3060,30 @@ export const useSC = create<SCState>((set, get) => {
         mode: "—",
       };
       const chatLog: ChatMsg[] = [];
+      // Restore the full archived chat timeline so historical playback shows the EXACT
+      // original output (user msgs, agent msgs, option cards, tool calls, thoughts).
+      const archived = (rec as unknown as { archivedChat?: unknown[] }).archivedChat;
+      if (Array.isArray(archived) && archived.length > 0) {
+        for (const raw of archived) {
+          if (!raw || typeof raw !== "object") continue;
+          const m = raw as Partial<ChatMsg>;
+          if (typeof m.id !== "string" || (m.role !== "user" && m.role !== "agent")) continue;
+          chatLog.push({
+            id: m.id,
+            role: m.role,
+            text: typeof m.text === "string" ? m.text : "",
+            ts: typeof m.ts === "number" ? m.ts : Date.now(),
+            actions: Array.isArray(m.actions) ? m.actions : undefined,
+            streaming: false,
+            toolCalls: Array.isArray(m.toolCalls) ? m.toolCalls : undefined,
+            thinking: typeof m.thinking === "string" ? m.thinking : undefined,
+            optionCards: Array.isArray(m.optionCards) ? m.optionCards : undefined,
+            skill: m.skill && typeof m.skill === "object" ? m.skill : undefined,
+          });
+        }
+      }
       // 历史归档恢复：给出一句友好提示，避免中间区域只剩一张空卡。
-      if (!hasRealBrief && rec.assets.length > 0) {
+      if (chatLog.length === 0 && !hasRealBrief && rec.assets.length > 0) {
         chatLog.push({
           id: `restore-${rec.id}-info`,
           role: "agent",
