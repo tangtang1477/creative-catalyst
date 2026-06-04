@@ -123,9 +123,10 @@ export function Workspace() {
                       <Logo size={28} glow />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-foreground">
+                      <h1 className="sr-only">Vibe Aideo — AI Ad-Video Creation Studio</h1>
+                      <p className="text-[28px] font-semibold leading-tight tracking-tight text-foreground">
                         Victoria, what are we creating today?
-                      </h1>
+                      </p>
                       <p className="mt-1 text-[13px] text-muted-foreground">
                         告诉我类型和目标，或直接选下面的方向 — 短片、剧集、广告、MV、纪录、UGC 都行。
                       </p>
