@@ -343,6 +343,7 @@ export const normalizeTaskRecord = (found: Partial<TaskRecord> & Pick<TaskRecord
     failureReason: found.failureReason ?? undefined,
     brief: found.brief ?? null,
     projectId: found.projectId ?? null,
+    favorite: !!found.favorite,
   };
 };
 
