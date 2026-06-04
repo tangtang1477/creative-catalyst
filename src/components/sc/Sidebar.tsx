@@ -139,8 +139,10 @@ export function Sidebar() {
             assets: [],
           }]
         : [];
-    const rest = taskHistory.filter((t) => t.id !== taskId).slice(0, 12);
-    return [...active, ...rest];
+    const rest = taskHistory.filter((t) => t.id !== taskId);
+    const favorites = rest.filter((t) => t.favorite);
+    const others = rest.filter((t) => !t.favorite).slice(0, 12);
+    return [...active, ...favorites, ...others];
   }, [phase, taskId, taskTitle, taskHistory, workspaceHydrated]);
 
   const handleNewTask = () => {
