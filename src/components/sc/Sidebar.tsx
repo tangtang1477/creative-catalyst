@@ -137,6 +137,7 @@ export function Sidebar() {
             status: phase === "done" ? "done" : phase === "failed" ? "failed" : "running" as const,
             kind: "oneoff" as const,
             assets: [],
+            favorite: false,
           }]
         : [];
     const rest = taskHistory.filter((t) => t.id !== taskId);
