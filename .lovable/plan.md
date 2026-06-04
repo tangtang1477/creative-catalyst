@@ -1,36 +1,40 @@
+# 修复计划
+
 ## 目标
-1. 在 Sidebar 的 Tasks 列表中添加「收藏」星星按钮，支持任务收藏/取消收藏，并将收藏的任务置顶展示。
-2. 把"不修改未提及的地方"这条规则写入项目记忆，避免未来误改。
+彻底修复“点击 task 闪退/白屏”的问题，只改这次点名的任务恢复链路，并在交付前实际点击测试，避免同类问题再次回归。
 
-## 1. Tasks 收藏功能
+## 我会做什么
+1. **锁定 task 恢复入口的异常点**
+   - 只检查这条链路：`Sidebar task 点击`、`项目详情页 task 点击`、`store.restoreTask()`。
+   - 补齐恢复历史任务时的防御逻辑，确保旧数据、残缺数据、远端回填数据都不会触发运行时崩溃。
 
-### 数据层（src/lib/sc/types.ts、store.ts）
-- 在 `TaskRecord` 上新增可选字段 `favorite?: boolean`。
-- 在 `useSC` store 中新增 `toggleFavorite(taskId)` action：翻转 `taskHistory` 中对应任务的 `favorite` 字段，并持久化到 localStorage（与现有 `deleteTask` 走相同的持久化链路）。
-- `normalizeTaskRecord` 中补一个默认值 `favorite: !!record.favorite`，确保历史/远端数据不报错（遵循 task-restore-safe 规则）。
+2. **加固 `restoreTask` 的恢复安全性**
+   - 对恢复出来的任务记录做更严格的标准化，不只兜底 `assets`，也兜底 `stageSnapshots / stageSummaries / brief / script / 状态 / rail` 所依赖的数据。
+   - 防止恢复后某些组件读取到不合法结构而报错。
 
-### UI 层（src/components/sc/Sidebar.tsx）
-- 在每个 task 行的 trash 按钮左侧新增一个星星按钮：
-  - 未收藏：`Star`（lucide）描边图标，hover 才显示，与 trash 按钮一致。
-  - 已收藏：填充态金色 `Star`（`fill-amber-400 text-amber-400`），常驻显示，hover 仍可点击切换。
-  - 点击 `stopPropagation` 后调用 `toggleFavorite(t.id)`，不触发任务恢复。
-- 排序：在 `useMemo` 的 `tasks` 计算中，把收藏的任务排到前面（active 任务依旧最顶），其余按现有 `updatedAt` 顺序。
-- 仅改 Tasks 列表区域，不动 Projects、Pricing、UserHoverCard、导航等任何其他模块。
+3. **收紧点击 task 的前置校验**
+   - 在 `Sidebar` 和项目详情页点击 task 前，统一确认目标 task 可恢复。
+   - 遇到本地未同步完成、数据不存在、或结构异常时，不再继续进入恢复流程，避免直接把页面带进异常状态。
 
-### 视觉
-- 与现有 trash 按钮保持同一套尺寸（`h-6 w-6`、`h-3 w-3` 图标），不引入新的颜色 token。
-- 收藏星星使用现有金色 token（如直接 `text-amber-400`，与项目中已有 `bg-amber-500/15` 等保持一致）。
+4. **保证恢复后的跳转和页面状态一致**
+   - 确保从项目详情页或 Sidebar 点击 task 后，恢复与跳回工作区的顺序稳定，不出现“状态已切但页面还停在旧页”这种被用户感知为闪退的情况。
+   - 只修这条行为，不顺带改其他模块。
 
-## 2. 写入记忆
+5. **加入防回归记忆**
+   - 把这次规则写进项目记忆：以后凡是改 task 恢复、Sidebar task 点击、项目详情 task 打开，必须先做真实点击测试，且不得改动未点名区域。
 
-新增 `mem://constraints/scope-discipline.md`：
-- 规则：除非用户在当前需求中明确点名，否则不要修改任何文件、模块、样式、复制、文案、行为。新功能也只在用户指定的位置落地，不顺手"优化"未提及的地方。
-- 适用范围：所有后续迭代。
+6. **交付前实测**
+   - 在预览里真实点击 task 复现并验证修复结果。
+   - 检查是否还有白屏、报错、打不开 task、跳转异常这几类问题。
 
-更新 `mem://index.md` 的 Core 段，追加一行：
-> 用户未明确提出的地方一律不动；新增功能只落在用户点名的位置，禁止顺带改动其它模块/样式/文案。
+## 影响范围
+仅限以下位置：
+- `src/lib/sc/store.ts`
+- `src/components/sc/Sidebar.tsx`
+- `src/routes/projects.$projectId.tsx`
+- 项目记忆（防回归规则）
 
-## 不做的事
-- 不动 Sidebar 其他区块（Projects、Pricing、Header、Nav）。
-- 不改任何路由、store hydration、credits、media、详情页逻辑。
-- 不做收藏的远端同步（仅本地持久化，遵循现有 taskHistory 的存储方式）。
+## 技术说明
+- 当前已确认问题核心仍在 **历史 task 恢复链路**，不是新增功能区域本身。
+- 现有代码虽然有 `normalizeTaskRecord()`，但恢复前校验和恢复后可用性保护还不够严，仍可能让残缺 task 数据进入 UI。
+- 本次不会扩大到其他 UI、样式、文案或重构。
