@@ -184,6 +184,7 @@ interface SCState {
   forceState: (s: string) => void;
   restoreTask: (id: string) => void;
   deleteTask: (id: string) => void;
+  toggleFavoriteTask: (id: string) => void;
   enterProject: (projectId: string) => void;
   applyAgentPatch: (dir: AgentDirectives) => void;
   retryStage: (id: StageId) => void;
