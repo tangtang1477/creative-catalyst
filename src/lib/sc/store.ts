@@ -1054,8 +1054,11 @@ export const useSC = create<SCState>((set, get) => {
           consume("wardrobe", `Wardrobe · ${w.id}`, 5, get().taskId);
         } catch (e) {
           console.error("[wardrobe] failed", w.id, e);
+          // Clear any partial-preview data URL — keeping it would make a failed
+          // asset look like "image generated but marked failed".
           updateAsset(w.id, {
             status: "Failed",
+            url: undefined,
             errorMessage: (e as Error).message,
             errorCode: "gen_failed",
           });
