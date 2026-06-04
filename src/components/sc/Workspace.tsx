@@ -62,7 +62,7 @@ export function Workspace() {
   }, [chatLog.length, stagesKey, assets.length]);
 
   return (
-    <div className="relative flex h-screen min-w-0 flex-1 flex-col">
+    <main className="relative flex h-screen min-w-0 flex-1 flex-col">
       {/* Top bar */}
       <header className="z-10 flex h-12 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur">
         <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
@@ -123,9 +123,10 @@ export function Workspace() {
                       <Logo size={28} glow />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-foreground">
+                      <h1 className="sr-only">Vibe Aideo — AI Ad-Video Creation Studio</h1>
+                      <p className="text-[28px] font-semibold leading-tight tracking-tight text-foreground">
                         Victoria, what are we creating today?
-                      </h1>
+                      </p>
                       <p className="mt-1 text-[13px] text-muted-foreground">
                         告诉我类型和目标，或直接选下面的方向 — 短片、剧集、广告、MV、纪录、UGC 都行。
                       </p>
@@ -422,7 +423,7 @@ export function Workspace() {
       <WorkspaceVersionDrawer />
       <CreateProjectDialog />
       <AssetPreviewDialog />
-    </div>
+    </main>
   );
 }
 

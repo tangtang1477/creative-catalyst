@@ -202,6 +202,7 @@ export function Sidebar() {
               <SCButton
                 key={it.id}
                 variant="ghost"
+                aria-label={it.label}
                 className={cn(
                   "w-full gap-2",
                   open ? "justify-start px-2" : "justify-center px-0",
