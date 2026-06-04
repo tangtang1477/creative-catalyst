@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Settings,
   Trash2,
+  Star,
 } from "lucide-react";
 import { SCButton } from "./Button";
 import { useSC } from "@/lib/sc/store";
