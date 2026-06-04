@@ -5,6 +5,19 @@ import { lovable } from "@/integrations/lovable/index";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
+  head: () => ({
+    meta: [
+      { title: "Login — vibe aideo" },
+      { name: "description", content: "Sign in to vibe aideo to keep building AI-generated ad videos from your briefs." },
+      { property: "og:title", content: "Login — vibe aideo" },
+      { property: "og:description", content: "Sign in to vibe aideo to keep building AI-generated ad videos from your briefs." },
+      { property: "og:url", content: "https://auto-ad-director.lovable.app/login" },
+      { name: "robots", content: "noindex" },
+    ],
+    links: [
+      { rel: "canonical", href: "https://auto-ad-director.lovable.app/login" },
+    ],
+  }),
 });
 
 function LoginPage() {
