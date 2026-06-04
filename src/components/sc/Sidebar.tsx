@@ -68,6 +68,7 @@ export function Sidebar() {
     taskHistory,
     restoreTask,
     deleteTask,
+    toggleFavoriteTask,
     hydrated: workspaceHydrated,
   } = useSC();
   const openPricing = useCredits((s) => s.openPricing);
