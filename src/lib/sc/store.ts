@@ -52,6 +52,13 @@ export interface AgentDirectives {
   rerun?: Array<"script" | "wardrobe" | "cast" | "paint">;
   /** 用户对某张已生成图片说"改成…"时，由模型产出的真改图指令。 */
   imageEdits?: Array<{ assetId: string; prompt: string; refs?: string[] }>;
+  /** 真正驱动 pipeline 的"动作"。chat-stream 在 chat 模式下也可下发。 */
+  actions?: Array<
+    | { kind: "retry-stage"; stageId: StageId }
+    | { kind: "resume-from"; stageId?: StageId }
+    | { kind: "rerun-all"; prompt?: string }
+    | { kind: "generate-next-episode"; prompt: string }
+  >;
 }
 
 
