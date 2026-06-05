@@ -2481,11 +2481,23 @@ export const useSC = create<SCState>((set, get) => {
         const handle = (ev: string, dataStr: string) => {
           let d: unknown;
           try { d = JSON.parse(dataStr); } catch { return; }
-          const data = d as { text?: string; questions?: unknown; id?: string; intent?: "preflight" | "refine" };
+          const data = d as {
+            text?: string;
+            questions?: unknown;
+            id?: string;
+            intent?: "preflight" | "refine";
+            fallback?: boolean;
+          };
           if (ev === "token" && data.text) {
             patchAgent((m) => ({ text: m.text + data.text! }));
           } else if (ev === "option-card") {
             const qs = Array.isArray(data.questions) ? (data.questions as import("./types").ChatOptionQuestion[]) : [];
+            // 空 questions 兜底：不再展示空卡片 / 误导性 outro，直接走 startRunning。
+            if (qs.length === 0) {
+              patchAgent(() => ({ streaming: false, outroText: undefined }));
+              startRunning();
+              return;
+            }
             patchAgent((m) => ({
               optionCards: [
                 ...(m.optionCards ?? []),
@@ -2498,6 +2510,11 @@ export const useSC = create<SCState>((set, get) => {
                 },
               ],
             }));
+          } else if (ev === "outro") {
+            // outro 单独走，会渲染在 optionCards 下方而不是上方
+            if (typeof data.text === "string") {
+              patchAgent((m) => ({ outroText: (m.outroText ?? "") + data.text! }));
+            }
           } else if (ev === "done") {
             patchAgent(() => ({ streaming: false }));
           }
