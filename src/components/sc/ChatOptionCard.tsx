@@ -55,7 +55,13 @@ export function ChatOptionCard({ msgId, card }: Props) {
         submitted && "opacity-80",
       )}
     >
+      {card.intro && (
+        <div className="mb-3 text-[12.5px] leading-relaxed text-foreground/85">
+          {card.intro}
+        </div>
+      )}
       <ol className="space-y-3.5">
+
         {card.questions.map((q, idx) => {
           const ans = answers[q.id] ?? { selected: [] };
           return (
