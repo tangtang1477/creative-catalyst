@@ -2701,6 +2701,12 @@ export const useSC = create<SCState>((set, get) => {
             stageId: a.stageId,
             hasUrl: true,
           }));
+        // 阶段状态摘要，让 AI 能识别"中断 / 失败"并提议 resume-from / retry-stage
+        const ctxStages = STAGE_ORDER
+          .map((sid) => ({ id: sid, status: s.stages[sid].status }))
+          .filter((st) => st.status !== "pending");
+        const failedStage = STAGE_ORDER.find((sid) => s.stages[sid].status === "failed");
+        const runningStage = STAGE_ORDER.find((sid) => s.stages[sid].status === "running" || s.stages[sid].status === "recovering");
         const payload = {
           messages: history,
           context: {
@@ -2708,6 +2714,10 @@ export const useSC = create<SCState>((set, get) => {
             brief: s.brief ?? undefined,
             script: ctxScript,
             assets: ctxAssets.length ? ctxAssets : undefined,
+            stages: ctxStages.length ? ctxStages : undefined,
+            failedStage,
+            runningStage,
+            taskTitle: s.taskTitle || undefined,
           },
         };
 
