@@ -1097,7 +1097,7 @@ export const useSC = create<SCState>((set, get) => {
     const taskId = get().taskId ?? undefined;
     const briefPrompt = get().brief?.prompt ?? "";
 
-    void (async () => {
+    const loop = async () => {
       const userId = await ensureUserId();
       if (!userId) {
         const reason = "请先登录后再生成服装/道具素材";
@@ -1117,6 +1117,13 @@ export const useSC = create<SCState>((set, get) => {
       }
       for (const w of wardrobeAssets) {
         if (get().runId !== startedRunId) return;
+        const cur = get().assets.find((a) => a.id === w.id);
+        if (cur?.status === "Ready" || cur?.status === "Failed") continue;
+        if (get().paused) {
+          // Will be re-fired on resume via the suspended-timer queue.
+          schedule(() => void loop(), 0);
+          return;
+        }
         updateAsset(w.id, { status: "Generating", errorMessage: undefined });
         const isProp = /^P/i.test(w.id);
         // Wardrobe/Prop reference shots: NOT cinematic keyframes. Strict product/
@@ -1141,12 +1148,15 @@ export const useSC = create<SCState>((set, get) => {
           `Project brief (context only — do NOT render the story here, only the wardrobe/prop): ${briefPrompt}`,
           `NEGATIVE: no scene, no environment, no cinematic shot, no keyframe, no story moment, no extra characters, no text, no watermark.${refLine}`,
         ].filter(Boolean).join("\n\n");
+        const ctrl = registerAbort();
         try {
           const b64 = await streamGenerateImage({
             prompt: fullPrompt,
             quality: "low",
+            signal: ctrl.signal,
             onPartial: (dataUrl) => {
               if (get().runId !== startedRunId) return;
+              if (get().paused) return;
               updateAsset(w.id, { url: dataUrl });
             },
           });
@@ -1156,6 +1166,13 @@ export const useSC = create<SCState>((set, get) => {
           updateAsset(w.id, { status: "Ready", url, errorMessage: undefined });
           consume("wardrobe", `Wardrobe · ${w.id}`, 5, get().taskId);
         } catch (e) {
+          if (isAbortError(e) || ctrl.signal.aborted) {
+            // Paused mid-flight: revert this asset so the next loop pass
+            // (after resume) picks it back up. Do NOT mark failed.
+            updateAsset(w.id, { status: "Queued", url: undefined });
+            schedule(() => void loop(), 0);
+            return;
+          }
           console.error("[wardrobe] failed", w.id, e);
           // Clear any partial-preview data URL — keeping it would make a failed
           // asset look like "image generated but marked failed".
@@ -1169,6 +1186,8 @@ export const useSC = create<SCState>((set, get) => {
             "wardrobe",
             `${w.id} 生成失败：${(e as Error).message}（未扣积分）`,
           );
+        } finally {
+          unregisterAbort(ctrl);
         }
       }
 
@@ -1179,7 +1198,8 @@ export const useSC = create<SCState>((set, get) => {
       collapseAfter("wardrobe", 1600);
       persistCurrent("running");
       openGate("wardrobe", () => runCast());
-    })();
+    };
+    void loop();
   };
 
   /**
