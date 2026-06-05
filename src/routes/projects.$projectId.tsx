@@ -188,7 +188,12 @@ function ProjectDetailPage() {
 
   const handleOpenTask = (taskId: string) => {
     try {
-      // Ensure the task is present in local taskHistory before restoring.
+      // 正在跑的活动任务 —— 直接跳回工作区查看实时进度
+      const currentTaskId = useSC.getState().taskId;
+      if (taskId === currentTaskId) {
+        void navigate({ to: "/" });
+        return;
+      }
       const candidate = useSC.getState().taskHistory.find((t) => t.id === taskId);
       if (!candidate) {
         console.warn("[projects/detail] open task: not in history, skip", taskId);
@@ -204,6 +209,7 @@ function ProjectDetailPage() {
       console.error("[projects/detail] handleOpenTask failed", e);
     }
   };
+
 
   const handleNewTask = () => {
     reset({ fromUserAction: true });
