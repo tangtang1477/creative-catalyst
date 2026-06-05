@@ -182,12 +182,15 @@ export function AssetCard({
 
   const onOpen = () => openPreview(asset.id);
 
+  const paused = useSC((s) => s.paused);
   const isGenerating =
-    asset.status === "Queued" ||
-    asset.status === "Generating" ||
-    asset.status === "Processing" ||
-    asset.status === "Recovering" ||
-    asset.status === "Status checked";
+    !paused && (
+      asset.status === "Queued" ||
+      asset.status === "Generating" ||
+      asset.status === "Processing" ||
+      asset.status === "Recovering" ||
+      asset.status === "Status checked"
+    );
   const showFullLoader = isGenerating && !asset.url;
   const showOverlayLoader = isGenerating && !!asset.url;
 

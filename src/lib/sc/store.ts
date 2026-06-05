@@ -598,10 +598,36 @@ export const useSC = create<SCState>((set, get) => {
   const pendingInfo = new Map<number, PendingTimerInfo>();
   let suspended: PendingTimerInfo[] = [];
 
+  // In-flight fetch / SSE requests for current run. Pause aborts them all so
+  // the user-visible "暂停" actually stops the network work, not just the
+  // post-completion scheduling.
+  const inflight = new Set<AbortController>();
+  const registerAbort = (): AbortController => {
+    const ctrl = new AbortController();
+    inflight.add(ctrl);
+    return ctrl;
+  };
+  const unregisterAbort = (ctrl: AbortController) => {
+    inflight.delete(ctrl);
+  };
+  const abortAllInflight = () => {
+    for (const ctrl of inflight) {
+      try { ctrl.abort(); } catch { /* noop */ }
+    }
+    inflight.clear();
+  };
+  const isAbortError = (e: unknown): boolean => {
+    if (!e) return false;
+    const err = e as { name?: string; message?: string };
+    return err.name === "AbortError"
+      || /aborted|abort/i.test(err.message ?? "");
+  };
+
   const clearTimers = () => {
     for (const t of get().timers) clearTimeout(t);
     pendingInfo.clear();
     suspended = [];
+    abortAllInflight();
     set({ timers: [], paused: false });
   };
 
@@ -637,6 +663,11 @@ export const useSC = create<SCState>((set, get) => {
     }
     pendingInfo.clear();
     suspended = [...suspended, ...moved];
+    // Abort any in-flight fetch/SSE so the running generation actually stops.
+    // Stage runners catch the abort, revert the current asset to "Queued" and
+    // re-enter the loop via schedule(...) so the next pass after resume picks
+    // it back up.
+    abortAllInflight();
     set({ timers: [], paused: true });
   };
 
@@ -1066,7 +1097,7 @@ export const useSC = create<SCState>((set, get) => {
     const taskId = get().taskId ?? undefined;
     const briefPrompt = get().brief?.prompt ?? "";
 
-    void (async () => {
+    const loop = async () => {
       const userId = await ensureUserId();
       if (!userId) {
         const reason = "请先登录后再生成服装/道具素材";
@@ -1086,6 +1117,13 @@ export const useSC = create<SCState>((set, get) => {
       }
       for (const w of wardrobeAssets) {
         if (get().runId !== startedRunId) return;
+        const cur = get().assets.find((a) => a.id === w.id);
+        if (cur?.status === "Ready" || cur?.status === "Failed") continue;
+        if (get().paused) {
+          // Will be re-fired on resume via the suspended-timer queue.
+          schedule(() => void loop(), 0);
+          return;
+        }
         updateAsset(w.id, { status: "Generating", errorMessage: undefined });
         const isProp = /^P/i.test(w.id);
         // Wardrobe/Prop reference shots: NOT cinematic keyframes. Strict product/
@@ -1110,12 +1148,15 @@ export const useSC = create<SCState>((set, get) => {
           `Project brief (context only — do NOT render the story here, only the wardrobe/prop): ${briefPrompt}`,
           `NEGATIVE: no scene, no environment, no cinematic shot, no keyframe, no story moment, no extra characters, no text, no watermark.${refLine}`,
         ].filter(Boolean).join("\n\n");
+        const ctrl = registerAbort();
         try {
           const b64 = await streamGenerateImage({
             prompt: fullPrompt,
             quality: "low",
+            signal: ctrl.signal,
             onPartial: (dataUrl) => {
               if (get().runId !== startedRunId) return;
+              if (get().paused) return;
               updateAsset(w.id, { url: dataUrl });
             },
           });
@@ -1125,6 +1166,13 @@ export const useSC = create<SCState>((set, get) => {
           updateAsset(w.id, { status: "Ready", url, errorMessage: undefined });
           consume("wardrobe", `Wardrobe · ${w.id}`, 5, get().taskId);
         } catch (e) {
+          if (isAbortError(e) || ctrl.signal.aborted) {
+            // Paused mid-flight: revert this asset so the next loop pass
+            // (after resume) picks it back up. Do NOT mark failed.
+            updateAsset(w.id, { status: "Queued", url: undefined });
+            schedule(() => void loop(), 0);
+            return;
+          }
           console.error("[wardrobe] failed", w.id, e);
           // Clear any partial-preview data URL — keeping it would make a failed
           // asset look like "image generated but marked failed".
@@ -1138,6 +1186,8 @@ export const useSC = create<SCState>((set, get) => {
             "wardrobe",
             `${w.id} 生成失败：${(e as Error).message}（未扣积分）`,
           );
+        } finally {
+          unregisterAbort(ctrl);
         }
       }
 
@@ -1148,7 +1198,8 @@ export const useSC = create<SCState>((set, get) => {
       collapseAfter("wardrobe", 1600);
       persistCurrent("running");
       openGate("wardrobe", () => runCast());
-    })();
+    };
+    void loop();
   };
 
   /**
@@ -1215,7 +1266,7 @@ export const useSC = create<SCState>((set, get) => {
       .assets.filter((a) => a.stageId === "wardrobe" && a.url && /^https?:\/\//.test(a.url))
       .map((a) => a.url as string);
 
-    void (async () => {
+    const loop = async () => {
       const userId = await ensureUserId();
       if (!userId) {
         const reason = "请先登录后再生成人物/场景素材";
@@ -1232,6 +1283,12 @@ export const useSC = create<SCState>((set, get) => {
 
       for (const c of castSpec) {
         if (get().runId !== startedRunId) return;
+        const cur = get().assets.find((a) => a.id === c.id);
+        if (cur?.status === "Ready" || cur?.status === "Failed") continue;
+        if (get().paused) {
+          schedule(() => void loop(), 0);
+          return;
+        }
         updateAsset(c.id, { status: "Generating", errorMessage: undefined });
         const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
         const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
@@ -1253,12 +1310,15 @@ export const useSC = create<SCState>((set, get) => {
           `Project brief (context only): ${briefPrompt}`,
           `NEGATIVE: no text, no watermark, no UI overlays.${refLine}`,
         ].filter(Boolean).join("\n\n");
+        const ctrl = registerAbort();
         try {
           const b64 = await streamGenerateImage({
             prompt: fullPrompt,
             quality: "low",
+            signal: ctrl.signal,
             onPartial: (dataUrl) => {
               if (get().runId !== startedRunId) return;
+              if (get().paused) return;
               updateAsset(c.id, { url: dataUrl });
             },
           });
@@ -1268,6 +1328,11 @@ export const useSC = create<SCState>((set, get) => {
           updateAsset(c.id, { status: "Ready", url, errorMessage: undefined });
           consume("cast", `Cast · ${c.id}`, 5, get().taskId);
         } catch (e) {
+          if (isAbortError(e) || ctrl.signal.aborted) {
+            updateAsset(c.id, { status: "Queued", url: undefined });
+            schedule(() => void loop(), 0);
+            return;
+          }
           console.error("[cast] failed", c.id, e);
           updateAsset(c.id, {
             status: "Failed",
@@ -1276,6 +1341,8 @@ export const useSC = create<SCState>((set, get) => {
             errorCode: "gen_failed",
           });
           appendSummary("cast", `${c.id} 生成失败：${(e as Error).message}（未扣积分）`);
+        } finally {
+          unregisterAbort(ctrl);
         }
       }
 
@@ -1331,7 +1398,8 @@ export const useSC = create<SCState>((set, get) => {
       collapseAfter("cast", 1600);
       persistCurrent("running");
       openGate("cast", () => runPaint());
-    })();
+    };
+    void loop();
   };
 
 
@@ -1406,7 +1474,7 @@ export const useSC = create<SCState>((set, get) => {
 
     // 串行真实生图
     const startedRunId = get().runId;
-    void (async () => {
+    const loop = async () => {
       const userId = await ensureUserId();
       const taskId = get().taskId ?? undefined;
       const briefPrompt = get().brief?.prompt ?? "";
@@ -1430,8 +1498,15 @@ export const useSC = create<SCState>((set, get) => {
 
       for (const r of SHOTS) {
         if (get().runId !== startedRunId) return;
+        const cur = get().assets.find((a) => a.id === r.shot);
+        if (cur?.status === "Ready" || cur?.status === "Failed") continue;
+        if (get().paused) {
+          schedule(() => void loop(), 0);
+          return;
+        }
         updateAsset(r.shot, { status: "Generating" });
         appendSummary("paint", `${r.shot} 生成中 · ${r.motion}`);
+        const ctrl = registerAbort();
         try {
           const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
           const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
@@ -1446,8 +1521,10 @@ export const useSC = create<SCState>((set, get) => {
           const b64 = await streamGenerateImage({
             prompt: fullPrompt,
             quality: "low",
+            signal: ctrl.signal,
             onPartial: (dataUrl) => {
               if (get().runId !== startedRunId) return;
+              if (get().paused) return;
               updateAsset(r.shot, { url: dataUrl });
             },
           });
@@ -1458,6 +1535,11 @@ export const useSC = create<SCState>((set, get) => {
           consume("paint", `Keyframe ${r.shot} · stream-gen`, 5, get().taskId);
           appendSummary("paint", `${r.shot} Ready · ${r.motion}`);
         } catch (e) {
+          if (isAbortError(e) || ctrl.signal.aborted) {
+            updateAsset(r.shot, { status: "Queued", url: undefined });
+            schedule(() => void loop(), 0);
+            return;
+          }
           console.error("[paint] failed", r.shot, e);
           updateAsset(r.shot, {
             status: "Failed",
@@ -1468,6 +1550,8 @@ export const useSC = create<SCState>((set, get) => {
             "paint",
             `${r.shot} 生成失败：${(e as Error).message}（未扣积分）`,
           );
+        } finally {
+          unregisterAbort(ctrl);
         }
       }
 
@@ -1480,7 +1564,8 @@ export const useSC = create<SCState>((set, get) => {
       collapseAfter("paint", 1800);
       persistCurrent("running");
       openGate("keyframe", () => runQC());
-    })();
+    };
+    void loop();
   };
 
   const runQC = () => {
@@ -1997,12 +2082,15 @@ export const useSC = create<SCState>((set, get) => {
         `Style direction: ${role}.`,
         `User brief (must reflect the actual subject, do NOT invent unrelated brands or scenes): ${briefPrompt}`,
       ].filter(Boolean).join("\n\n");
+      const ctrl = registerAbort();
       try {
         const b64 = await streamGenerateImage({
           prompt: fullPrompt,
           quality: "low",
+          signal: ctrl.signal,
           onPartial: (dataUrl) => {
             if (get().runId !== startedRunId) return;
+            if (get().paused) return;
             updateAsset(assetId, { url: dataUrl });
           },
         });
@@ -2017,12 +2105,19 @@ export const useSC = create<SCState>((set, get) => {
         consume("wardrobe", `Wardrobe · ${assetId} retry`, 5, get().taskId);
         appendSummary("wardrobe", `${assetId} 重做完成`);
       } catch (e) {
+        if (isAbortError(e) || ctrl.signal.aborted) {
+          updateAsset(assetId, { status: "Queued", url: undefined });
+          schedule(() => runWardrobeAsset(assetId), 0);
+          return;
+        }
         console.error("[wardrobe] single retry failed", assetId, e);
         updateAsset(assetId, {
           status: "Failed",
           errorMessage: (e as Error).message,
           errorCode: "gen_failed",
         });
+      } finally {
+        unregisterAbort(ctrl);
       }
     })();
   };
@@ -2059,12 +2154,15 @@ export const useSC = create<SCState>((set, get) => {
               ? `Shot ${shot.shot} · ${shot.scene} · ${shot.motion} · ${shot.elements}`
               : `Shot ${assetId} · ${asset.caption ?? ""}`,
           ].filter(Boolean).join("\n\n");
+      const ctrl = registerAbort();
       try {
         const b64 = await streamGenerateImage({
           prompt: fullPrompt,
           quality: "low",
+          signal: ctrl.signal,
           onPartial: (dataUrl) => {
             if (get().runId !== startedRunId) return;
+            if (get().paused) return;
             updateAsset(assetId, { url: dataUrl });
           },
         });
@@ -2079,12 +2177,19 @@ export const useSC = create<SCState>((set, get) => {
         consume("paint", `Keyframe ${assetId} · retry`, 5, get().taskId);
         appendSummary("paint", `${assetId} 重做完成`);
       } catch (e) {
+        if (isAbortError(e) || ctrl.signal.aborted) {
+          updateAsset(assetId, { status: "Queued", url: undefined });
+          schedule(() => runPaintShot(assetId), 0);
+          return;
+        }
         console.error("[paint] single retry failed", assetId, e);
         updateAsset(assetId, {
           status: "Failed",
           errorMessage: (e as Error).message,
           errorCode: "gen_failed",
         });
+      } finally {
+        unregisterAbort(ctrl);
       }
     })();
   };

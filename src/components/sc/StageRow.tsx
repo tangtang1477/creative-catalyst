@@ -80,16 +80,18 @@ export function StageRow({
   const { toggleStage } = useSC();
   const retryStage = useSC((s) => s.retryStage);
   const hydrated = useSC((s) => s.hydrated);
+  const paused = useSC((s) => s.paused);
   const Icon = stageIcon[id];
   const expanded = state.expanded;
   const isRunning = state.status === "running" || state.status === "recovering";
+  const showRunningIndicator = isRunning && !paused;
   const [, setTick] = useState(0);
 
   useEffect(() => {
-    if (!hydrated || !isRunning) return;
+    if (!hydrated || !showRunningIndicator) return;
     const timer = window.setInterval(() => setTick((v) => v + 1), 1000);
     return () => window.clearInterval(timer);
-  }, [hydrated, isRunning]);
+  }, [hydrated, showRunningIndicator]);
 
   if (state.status === "pending") return null;
 
@@ -125,10 +127,10 @@ export function StageRow({
         <span className="text-[13.5px] font-medium tracking-tight">
           {STAGE_LABEL[id]}
         </span>
-        {state.status === "running" && (
+        {state.status === "running" && !paused && (
           <Loader2 className="h-3 w-3 animate-spin text-status-generating" />
         )}
-        {state.status === "recovering" && (
+        {state.status === "recovering" && !paused && (
           <RotateCw className="h-3 w-3 animate-spin text-status-recovering" />
         )}
         {state.status === "ready" && (
@@ -217,11 +219,16 @@ export function StageRow({
         </div>
       )}
 
-      {isRunning && (
+      {showRunningIndicator && (
         <div className="mt-1.5 ml-7 inline-flex w-fit items-center gap-1.5 rounded-full border border-border/60 bg-surface/70 px-2.5 py-1 text-[11.5px] text-muted-foreground backdrop-blur">
           <Loader2 className="h-3 w-3 animate-spin text-accent" />
           <span className="font-mono">{thinkingVerb[id]}</span>
           <span className="thinking-dots text-accent" />
+        </div>
+      )}
+      {isRunning && paused && (
+        <div className="mt-1.5 ml-7 inline-flex w-fit items-center gap-1.5 rounded-full border border-border/60 bg-surface/70 px-2.5 py-1 text-[11.5px] text-muted-foreground backdrop-blur">
+          <span className="font-mono">已暂停 · 点击 ▶ 继续</span>
         </div>
       )}
 
