@@ -184,13 +184,15 @@ export function StageRow({
         </div>
       ) : (
         state.summary.length > 0 && (
-          <div className="truncate pl-7 text-[12px] text-muted-foreground">
+          <div className="whitespace-pre-wrap break-words pl-7 text-[12px] text-muted-foreground">
             {(() => {
               const last = state.summary[state.summary.length - 1];
               return typeof last === "string" ? last : last.text;
             })()}
           </div>
         )
+
+
 
       )}
 
