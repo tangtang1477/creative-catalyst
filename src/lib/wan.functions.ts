@@ -3,8 +3,8 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-/** WAN(vb.movieflow.ai) base host. */
-const WAN_HOST = process.env.WAN_HOST ?? "http://vb.movieflow.ai";
+/** WAN(vb.movieflow.ai) base host. 默认 https，可用 WAN_HOST 覆盖。 */
+const WAN_HOST = process.env.WAN_HOST ?? "https://vb.movieflow.ai";
 
 const ROUTES = [
   "text-to-video",
@@ -29,6 +29,17 @@ const ROUTE_DBKEY: Record<Route, string> = {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/** 规范化 video_name 为 [a-z0-9_]，避免上游对特殊字符（包括 `-`）的潜在限制。 */
+function normalizeVideoName(input: string): string {
+  const cleaned = input
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "");
+  const safe = cleaned.length > 0 ? cleaned : `vid_${Date.now().toString(36)}`;
+  return safe.slice(0, 120);
+}
+
 const SubmitInput = z.object({
   route: z.enum(ROUTES),
   videoTaskId: z.preprocess((v) => {
@@ -41,13 +52,9 @@ const SubmitInput = z.object({
   payload: z
     .object({
       prompt: z.string().min(1).max(4000),
-      // 仅在 first-frame-to-video 使用
       image_url: z.string().url().optional(),
-      // 仅在 reference-image-to-video 使用
       image_urls: z.array(z.string().url()).max(3).optional(),
-      // 旧的 16:9 / 9:16 字符串
       ratio: z.string().optional(),
-      // 也允许直接传 WAN 枚举
       aspect_ratio: z
         .enum([
           "VIDEO_ASPECT_RATIO_LANDSCAPE",
@@ -172,7 +179,19 @@ async function callWan<T>(path: string, body: unknown): Promise<T> {
   return json;
 }
 
-/** 提交 WAN 视频生成任务，返回 operations 数组（轮询需原样回传）。 */
+/**
+ * 基于 created_at 的伪进度：5s→~15%，30s→~55%，60s→~75%，120s→~88%，渐近 95%。
+ * 真正成功时会被 100 覆盖；失败时回 0。
+ */
+function pseudoProgress(createdAt: string | null | undefined): number {
+  if (!createdAt) return 5;
+  const elapsedSec = Math.max(0, (Date.now() - new Date(createdAt).getTime()) / 1000);
+  // 渐近曲线：95 * (1 - e^(-t/45))
+  const v = 95 * (1 - Math.exp(-elapsedSec / 45));
+  return Math.max(5, Math.min(95, Math.round(v)));
+}
+
+/** 提交 WAN 视频生成任务，并把 operations / 元数据持久化到 wan_jobs。 */
 export const submitVideoTask = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => SubmitInput.parse(input))
@@ -185,9 +204,10 @@ export const submitVideoTask = createServerFn({ method: "POST" })
     );
     const projectId =
       data.payload.project_id ?? data.videoTaskId ?? "adhoc";
-    const videoName =
+    const rawName =
       data.payload.video_name ??
       `${(data.videoTaskId ?? "adhoc").slice(0, 24)}_${Date.now().toString(36)}`;
+    const videoName = normalizeVideoName(rawName);
 
     const base = {
       guid: "WAN" as const,
@@ -234,8 +254,16 @@ export const submitVideoTask = createServerFn({ method: "POST" })
       status: "pending",
       operations: ops as unknown as never,
       request_payload: body as unknown as never,
+      video_name: videoName,
+      project_id: projectId,
+      aspect_ratio: aspect,
     });
-    if (error) console.error("[wan] insert job failed", error);
+    if (error) {
+      console.error("[wan] insert job failed", error);
+      throw new Error(
+        `[submit_failed] WAN 任务已提交但落库失败：${error.message}`,
+      );
+    }
 
     return {
       taskId: taskName,
@@ -247,31 +275,22 @@ export const submitVideoTask = createServerFn({ method: "POST" })
   });
 
 const PollInput = z.object({
-  operations: z.array(z.any()).min(1),
-  videoName: z.string().min(1).max(120),
-  projectId: z.string().min(1).max(120),
-  aspectRatio: z
-    .enum([
-      "VIDEO_ASPECT_RATIO_LANDSCAPE",
-      "VIDEO_ASPECT_RATIO_PORTRAIT",
-      "VIDEO_ASPECT_RATIO_SQUARE",
-    ])
-    .optional(),
+  taskId: z.string().min(1).max(200),
 });
 
-/** 轮询 WAN 任务，成功后落 assets 表 + 更新 wan_jobs/video_tasks。 */
+/** 轮询 WAN 任务。后端从 wan_jobs 自取 operations / video_name / project_id / aspect_ratio。 */
 export const pollVideoTask = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => PollInput.parse(input))
   .handler(async ({ data, context }) => {
     const { userId } = context;
-    const ops = data.operations as WanOperation[];
-    const taskName = ops[0]?.operation?.name;
-    if (!taskName) throw new Error("operations[0].operation.name missing");
+    const taskName = data.taskId;
 
     const { data: job } = await supabaseAdmin
       .from("wan_jobs")
-      .select("task_id, user_id, video_task_id, asset_id, status, oss_url")
+      .select(
+        "task_id, user_id, video_task_id, asset_id, status, oss_url, operations, video_name, project_id, aspect_ratio, created_at",
+      )
       .eq("task_id", taskName)
       .maybeSingle();
     if (!job || job.user_id !== userId) throw new Error("Task not found");
@@ -281,20 +300,32 @@ export const pollVideoTask = createServerFn({ method: "POST" })
         status: "success" as const,
         progress: 100,
         ossUrl: job.oss_url,
-        operations: ops,
         assetId: job.asset_id,
         errorCode: null,
         errorMessage: null,
       };
     }
+    if (job.status === "failed") {
+      return {
+        status: "failed" as const,
+        progress: 0,
+        ossUrl: null,
+        assetId: job.asset_id,
+        errorCode: "submit_failed" as const,
+        errorMessage: "WAN 任务失败",
+      };
+    }
+
+    const ops = (job.operations ?? []) as WanOperation[];
+    if (!ops[0]?.operation?.name) throw new Error("wan_jobs.operations missing");
 
     const envelope = await callWan<WanCheckResp>(
       "/video-base/check-video-status",
       {
         guid: "WAN",
-        project_id: data.projectId,
-        video_name: data.videoName,
-        aspect_ratio: data.aspectRatio ?? "VIDEO_ASPECT_RATIO_LANDSCAPE",
+        project_id: job.project_id ?? "adhoc",
+        video_name: job.video_name ?? taskName,
+        aspect_ratio: job.aspect_ratio ?? "VIDEO_ASPECT_RATIO_LANDSCAPE",
         operations: ops,
       },
     );
@@ -307,6 +338,7 @@ export const pollVideoTask = createServerFn({ method: "POST" })
         .from("wan_jobs")
         .update({
           status: "failed",
+          progress: 0,
           raw: envelope as unknown as never,
           error_message: cls.message,
         })
@@ -321,7 +353,6 @@ export const pollVideoTask = createServerFn({ method: "POST" })
         status: "failed" as const,
         progress: 0,
         ossUrl: null,
-        operations: envelope.result?.operations ?? ops,
         assetId: job.asset_id ?? null,
         errorCode: cls.code,
         errorMessage: cls.message,
@@ -334,8 +365,7 @@ export const pollVideoTask = createServerFn({ method: "POST" })
     const upstreamStatus = (op0?.status ?? "").toUpperCase();
     const success =
       envelope.finished === true &&
-      (!!ossUrl ||
-        upstreamStatus === "MEDIA_GENERATION_STATUS_SUCCESSFUL");
+      (!!ossUrl || upstreamStatus === "MEDIA_GENERATION_STATUS_SUCCESSFUL");
 
     if (success && ossUrl) {
       let assetId = job.asset_id ?? null;
@@ -396,18 +426,19 @@ export const pollVideoTask = createServerFn({ method: "POST" })
         status: "success" as const,
         progress: 100,
         ossUrl,
-        operations: nextOps,
         assetId,
         errorCode: null,
         errorMessage: null,
       };
     }
 
-    // processing — 把最新 operations 写回 wan_jobs
+    // processing — 写回最新 ops + 伪进度
+    const progress = pseudoProgress(job.created_at);
     await supabaseAdmin
       .from("wan_jobs")
       .update({
         status: "processing",
+        progress,
         operations: nextOps as unknown as never,
         raw: envelope as unknown as never,
       })
@@ -415,9 +446,8 @@ export const pollVideoTask = createServerFn({ method: "POST" })
 
     return {
       status: "processing" as const,
-      progress: 0,
+      progress,
       ossUrl: null,
-      operations: nextOps,
       assetId: job.asset_id ?? null,
       errorCode: null,
       errorMessage: null,
