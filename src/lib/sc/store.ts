@@ -2082,12 +2082,15 @@ export const useSC = create<SCState>((set, get) => {
         `Style direction: ${role}.`,
         `User brief (must reflect the actual subject, do NOT invent unrelated brands or scenes): ${briefPrompt}`,
       ].filter(Boolean).join("\n\n");
+      const ctrl = registerAbort();
       try {
         const b64 = await streamGenerateImage({
           prompt: fullPrompt,
           quality: "low",
+          signal: ctrl.signal,
           onPartial: (dataUrl) => {
             if (get().runId !== startedRunId) return;
+            if (get().paused) return;
             updateAsset(assetId, { url: dataUrl });
           },
         });
@@ -2102,12 +2105,19 @@ export const useSC = create<SCState>((set, get) => {
         consume("wardrobe", `Wardrobe · ${assetId} retry`, 5, get().taskId);
         appendSummary("wardrobe", `${assetId} 重做完成`);
       } catch (e) {
+        if (isAbortError(e) || ctrl.signal.aborted) {
+          updateAsset(assetId, { status: "Queued", url: undefined });
+          schedule(() => runWardrobeAsset(assetId), 0);
+          return;
+        }
         console.error("[wardrobe] single retry failed", assetId, e);
         updateAsset(assetId, {
           status: "Failed",
           errorMessage: (e as Error).message,
           errorCode: "gen_failed",
         });
+      } finally {
+        unregisterAbort(ctrl);
       }
     })();
   };
