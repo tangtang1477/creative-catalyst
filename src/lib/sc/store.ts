@@ -25,7 +25,7 @@ import { inferTaskTitle } from "./intake-engine";
 import { useCredits } from "./credits-store";
 import { supabase } from "@/integrations/supabase/client";
 import { streamGenerateImage, uploadBase64Image } from "@/lib/upload-image";
-import { submitVideoTask, pollVideoTask } from "@/lib/seedance.functions";
+import { submitVideoTask, pollVideoTask } from "@/lib/wan.functions";
 import { generateScript, type GeneratedScript } from "@/lib/script.functions";
 import { parseFormatDuration, parseFormatRatio, formatDurationLabel, clampSeedanceDuration } from "@/lib/sc/format-utils";
 import { useProjects } from "@/lib/sc/projects-store";
