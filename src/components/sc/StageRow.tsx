@@ -80,16 +80,18 @@ export function StageRow({
   const { toggleStage } = useSC();
   const retryStage = useSC((s) => s.retryStage);
   const hydrated = useSC((s) => s.hydrated);
+  const paused = useSC((s) => s.paused);
   const Icon = stageIcon[id];
   const expanded = state.expanded;
   const isRunning = state.status === "running" || state.status === "recovering";
+  const showRunningIndicator = isRunning && !paused;
   const [, setTick] = useState(0);
 
   useEffect(() => {
-    if (!hydrated || !isRunning) return;
+    if (!hydrated || !showRunningIndicator) return;
     const timer = window.setInterval(() => setTick((v) => v + 1), 1000);
     return () => window.clearInterval(timer);
-  }, [hydrated, isRunning]);
+  }, [hydrated, showRunningIndicator]);
 
   if (state.status === "pending") return null;
 
