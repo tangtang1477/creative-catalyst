@@ -1266,7 +1266,7 @@ export const useSC = create<SCState>((set, get) => {
       .assets.filter((a) => a.stageId === "wardrobe" && a.url && /^https?:\/\//.test(a.url))
       .map((a) => a.url as string);
 
-    void (async () => {
+    const loop = async () => {
       const userId = await ensureUserId();
       if (!userId) {
         const reason = "请先登录后再生成人物/场景素材";
@@ -1283,6 +1283,12 @@ export const useSC = create<SCState>((set, get) => {
 
       for (const c of castSpec) {
         if (get().runId !== startedRunId) return;
+        const cur = get().assets.find((a) => a.id === c.id);
+        if (cur?.status === "Ready" || cur?.status === "Failed") continue;
+        if (get().paused) {
+          schedule(() => void loop(), 0);
+          return;
+        }
         updateAsset(c.id, { status: "Generating", errorMessage: undefined });
         const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
         const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
@@ -1304,12 +1310,15 @@ export const useSC = create<SCState>((set, get) => {
           `Project brief (context only): ${briefPrompt}`,
           `NEGATIVE: no text, no watermark, no UI overlays.${refLine}`,
         ].filter(Boolean).join("\n\n");
+        const ctrl = registerAbort();
         try {
           const b64 = await streamGenerateImage({
             prompt: fullPrompt,
             quality: "low",
+            signal: ctrl.signal,
             onPartial: (dataUrl) => {
               if (get().runId !== startedRunId) return;
+              if (get().paused) return;
               updateAsset(c.id, { url: dataUrl });
             },
           });
@@ -1319,6 +1328,11 @@ export const useSC = create<SCState>((set, get) => {
           updateAsset(c.id, { status: "Ready", url, errorMessage: undefined });
           consume("cast", `Cast · ${c.id}`, 5, get().taskId);
         } catch (e) {
+          if (isAbortError(e) || ctrl.signal.aborted) {
+            updateAsset(c.id, { status: "Queued", url: undefined });
+            schedule(() => void loop(), 0);
+            return;
+          }
           console.error("[cast] failed", c.id, e);
           updateAsset(c.id, {
             status: "Failed",
@@ -1327,6 +1341,8 @@ export const useSC = create<SCState>((set, get) => {
             errorCode: "gen_failed",
           });
           appendSummary("cast", `${c.id} 生成失败：${(e as Error).message}（未扣积分）`);
+        } finally {
+          unregisterAbort(ctrl);
         }
       }
 
@@ -1382,7 +1398,8 @@ export const useSC = create<SCState>((set, get) => {
       collapseAfter("cast", 1600);
       persistCurrent("running");
       openGate("cast", () => runPaint());
-    })();
+    };
+    void loop();
   };
 
 
