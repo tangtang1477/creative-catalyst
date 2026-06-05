@@ -602,7 +602,7 @@ export const useSC = create<SCState>((set, get) => {
     for (const t of get().timers) clearTimeout(t);
     pendingInfo.clear();
     suspended = [];
-    set({ timers: [] });
+    set({ timers: [], paused: false });
   };
 
   const schedule = (fn: () => void, delay: number) => {
