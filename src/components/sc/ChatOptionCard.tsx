@@ -55,7 +55,13 @@ export function ChatOptionCard({ msgId, card }: Props) {
         submitted && "opacity-80",
       )}
     >
+      {card.intro && (
+        <div className="mb-3 text-[12.5px] leading-relaxed text-foreground/85">
+          {card.intro}
+        </div>
+      )}
       <ol className="space-y-3.5">
+
         {card.questions.map((q, idx) => {
           const ans = answers[q.id] ?? { selected: [] };
           return (
@@ -116,6 +122,14 @@ export function ChatOptionCard({ msgId, card }: Props) {
           );
         })}
       </ol>
+
+      {!submitted && card.outro && (
+        <div className="mt-3 text-[12px] leading-relaxed text-muted-foreground">
+          {card.outro}
+        </div>
+      )}
+
+
 
       {!submitted && (
         <div className="mt-3.5 flex items-center justify-end gap-1.5 border-t border-border/40 pt-2.5">

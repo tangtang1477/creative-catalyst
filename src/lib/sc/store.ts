@@ -52,6 +52,13 @@ export interface AgentDirectives {
   rerun?: Array<"script" | "wardrobe" | "cast" | "paint">;
   /** 用户对某张已生成图片说"改成…"时，由模型产出的真改图指令。 */
   imageEdits?: Array<{ assetId: string; prompt: string; refs?: string[] }>;
+  /** 真正驱动 pipeline 的"动作"。chat-stream 在 chat 模式下也可下发。 */
+  actions?: Array<
+    | { kind: "retry-stage"; stageId: StageId }
+    | { kind: "resume-from"; stageId?: StageId }
+    | { kind: "rerun-all"; prompt?: string }
+    | { kind: "generate-next-episode"; prompt: string }
+  >;
 }
 
 
@@ -103,6 +110,8 @@ interface ChatMsg {
   optionCards?: import("./types").ChatOptionCard[];
   /** ai turn 顶部一行 skill 标题 */
   skill?: { name: string; sub?: string };
+  /** preflight 卡里渲染在 optionCards **下方**的引导语（"选择好后请点继续…"）。 */
+  outroText?: string;
 }
 
 
@@ -2472,11 +2481,25 @@ export const useSC = create<SCState>((set, get) => {
         const handle = (ev: string, dataStr: string) => {
           let d: unknown;
           try { d = JSON.parse(dataStr); } catch { return; }
-          const data = d as { text?: string; questions?: unknown; id?: string; intent?: "preflight" | "refine" };
+          const data = d as {
+            text?: string;
+            questions?: unknown;
+            id?: string;
+            intent?: "preflight" | "refine";
+            fallback?: boolean;
+            intro?: string;
+            outro?: string;
+          };
           if (ev === "token" && data.text) {
             patchAgent((m) => ({ text: m.text + data.text! }));
           } else if (ev === "option-card") {
             const qs = Array.isArray(data.questions) ? (data.questions as import("./types").ChatOptionQuestion[]) : [];
+            // 空 questions 兜底：不再展示空卡片 / 误导性 outro，直接走 startRunning。
+            if (qs.length === 0) {
+              patchAgent(() => ({ streaming: false }));
+              startRunning();
+              return;
+            }
             patchAgent((m) => ({
               optionCards: [
                 ...(m.optionCards ?? []),
@@ -2486,6 +2509,8 @@ export const useSC = create<SCState>((set, get) => {
                   status: "awaiting",
                   intent: data.intent ?? "preflight",
                   primaryLabel: "Continue",
+                  intro: data.intro,
+                  outro: data.outro,
                 },
               ],
             }));
@@ -2675,6 +2700,12 @@ export const useSC = create<SCState>((set, get) => {
             stageId: a.stageId,
             hasUrl: true,
           }));
+        // 阶段状态摘要，让 AI 能识别"中断 / 失败"并提议 resume-from / retry-stage
+        const ctxStages = STAGE_ORDER
+          .map((sid) => ({ id: sid, status: s.stages[sid].status }))
+          .filter((st) => st.status !== "pending");
+        const failedStage = STAGE_ORDER.find((sid) => s.stages[sid].status === "failed");
+        const runningStage = STAGE_ORDER.find((sid) => s.stages[sid].status === "running" || s.stages[sid].status === "recovering");
         const payload = {
           messages: history,
           context: {
@@ -2682,6 +2713,10 @@ export const useSC = create<SCState>((set, get) => {
             brief: s.brief ?? undefined,
             script: ctxScript,
             assets: ctxAssets.length ? ctxAssets : undefined,
+            stages: ctxStages.length ? ctxStages : undefined,
+            failedStage,
+            runningStage,
+            taskTitle: s.taskTitle || undefined,
           },
         };
 
@@ -3359,6 +3394,34 @@ export const useSC = create<SCState>((set, get) => {
             { label: "整任务重跑", kind: "rerun-all" as const },
           ],
         });
+      } else if (rec.status === "interrupted") {
+        // 中断的任务：找到第一个非 ready 的 stage 作为续跑起点
+        const interruptedStage =
+          STAGE_ORDER.find((sid) => {
+            const st = stages[sid];
+            return st.status === "running" || st.status === "recovering" || st.status === "failed";
+          }) ?? STAGE_ORDER.find((sid) => stages[sid].status === "pending");
+        const stageLabel = interruptedStage ? STAGE_LABEL[interruptedStage] : "未知阶段";
+        chatLog.push({
+          id: `restore-interrupted-${rec.id}`,
+          role: "agent",
+          ts: Date.now(),
+          text: `这个任务在「${stageLabel}」阶段被中断了。要从这一步继续，还是从头重跑？也可以直接在下方输入框告诉我你想怎么改。`,
+          actions: [
+            ...(interruptedStage
+              ? [{ label: `从「${stageLabel}」继续`, kind: "retry-stage" as const, stageId: interruptedStage }]
+              : []),
+            { label: "整任务重跑", kind: "rerun-all" as const },
+          ],
+        });
+      } else if (rec.status === "done") {
+        // 已完成的任务被点开：提示用户可以基于现有结果继续指挥 AI
+        chatLog.push({
+          id: `restore-done-${rec.id}`,
+          role: "agent",
+          ts: Date.now(),
+          text: `「${rec.title}」已完成。如果想继续生成下一集、重做某一步，或者改其中某个镜头，直接在下方输入框告诉我即可。`,
+        });
       }
       set((s) => ({
         runId: s.runId + 1,
@@ -3545,6 +3608,53 @@ export const useSC = create<SCState>((set, get) => {
       const patch = dir.patch ?? {};
       const rerun = Array.isArray(dir.rerun) ? dir.rerun : [];
       const imageEdits = Array.isArray(dir.imageEdits) ? dir.imageEdits : [];
+      const actions = Array.isArray(dir.actions) ? dir.actions : [];
+
+      // 1) actions —— 真正驱动 pipeline 的"动作"，由 chat 自然语言触发。
+      //    在 patch/imageEdits 之前先消费 actions，因为 retryStage / submit 会
+      //    清掉下游 stage assets，再去做 imageEdits 没意义。
+      if (actions.length) {
+        for (const a of actions) {
+          if (!a || typeof a !== "object") continue;
+          try {
+            if (a.kind === "retry-stage" && a.stageId && STAGE_ORDER.includes(a.stageId)) {
+              get().retryStage(a.stageId);
+              return;
+            }
+            if (a.kind === "resume-from") {
+              // 找到第一个非 ready / pending 之外的 stage（failed / running 中断）
+              const stages = get().stages;
+              const target =
+                a.stageId && STAGE_ORDER.includes(a.stageId)
+                  ? a.stageId
+                  : STAGE_ORDER.find(
+                      (sid) => stages[sid].status === "failed" || stages[sid].status === "running",
+                    ) ?? STAGE_ORDER.find((sid) => stages[sid].status === "pending");
+              if (target) {
+                get().retryStage(target);
+                return;
+              }
+            }
+            if (a.kind === "rerun-all") {
+              const prompt = a.prompt?.trim() || get().brief?.prompt || "";
+              if (prompt) {
+                get().submit(prompt);
+                return;
+              }
+            }
+            if (a.kind === "generate-next-episode") {
+              const prompt = a.prompt?.trim();
+              if (prompt) {
+                get().submit(prompt);
+                return;
+              }
+            }
+          } catch (e) {
+            console.warn("[applyAgentPatch] action failed", a, e);
+          }
+        }
+      }
+
       if (
         !patch.brief &&
         !patch.script &&

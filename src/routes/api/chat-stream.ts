@@ -44,6 +44,10 @@ export const Route = createFileRoute("/api/chat-stream")({
               stageId?: string;
               hasUrl?: boolean;
             }>;
+            stages?: Array<{ id: string; status: string }>;
+            failedStage?: string;
+            runningStage?: string;
+            taskTitle?: string;
           };
         };
         try {
@@ -61,9 +65,16 @@ export const Route = createFileRoute("/api/chat-stream")({
         const ctx = body.context;
         const ctxLines: string[] = [];
         if (ctx?.phase) ctxLines.push(`当前阶段：${ctx.phase}`);
+        if (ctx?.taskTitle) ctxLines.push(`任务名：${ctx.taskTitle}`);
         if (ctx?.brief?.prompt) ctxLines.push(`用户需求：${ctx.brief.prompt}`);
         if (ctx?.brief?.adType) ctxLines.push(`视频类型：${ctx.brief.adType}`);
         if (ctx?.brief?.format) ctxLines.push(`规格：${ctx.brief.format}`);
+        if (ctx?.script?.mood) ctxLines.push(`情绪：${ctx.script.mood}`);
+        if (ctx?.failedStage) ctxLines.push(`失败阶段：${ctx.failedStage}（建议用 actions.retry-stage 或 resume-from）`);
+        if (ctx?.runningStage) ctxLines.push(`中断时停留阶段：${ctx.runningStage}（可用 actions.resume-from 续跑）`);
+        if (ctx?.stages?.length) {
+          ctxLines.push("阶段状态：" + ctx.stages.map((st) => `${st.id}=${st.status}`).join("，"));
+        }
         if (ctx?.script?.mood) ctxLines.push(`情绪：${ctx.script.mood}`);
         if (ctx?.script?.shots?.length) {
           ctxLines.push(
@@ -172,22 +183,16 @@ export const Route = createFileRoute("/api/chat-stream")({
                   ),
                 );
               };
-              // 流式吐 intro
-              for (const ch of intro) {
-                emit("token", { text: ch });
-                await new Promise((r) => setTimeout(r, 12));
-              }
-              emit("token", { text: "\n\n" });
+              // 引导语和"选完点继续"全部塞进 card 内部，由 ChatOptionCard
+              // 分别渲染在选项上方 / 下方，避免文字位置和选项不在一起。
               emit("option-card", {
                 id: `oc_${Date.now().toString(36)}`,
                 questions,
                 intent: "preflight",
+                fallback: questions.length === 0,
+                intro: questions.length > 0 ? intro : undefined,
+                outro: questions.length > 0 ? outro : undefined,
               });
-              emit("token", { text: "\n" });
-              for (const ch of outro) {
-                emit("token", { text: ch });
-                await new Promise((r) => setTimeout(r, 12));
-              }
               emit("done", {});
               controller.close();
             },
@@ -225,8 +230,8 @@ export const Route = createFileRoute("/api/chat-stream")({
           "",
           "（接着直接输出给用户的最终回复，中文，简洁专业，不超过 120 字，不要 markdown 标题，不要再出现 <thinking> 标签）",
           "",
-          "**指令协议（重要）**：如果用户的话**明确要求改动**当前 brief / 脚本 / 角色 / 场景（例如\"把女主换成男主\"\"场景改成雨夜地铁\"\"时长改成 30 秒\"），在回复正文之后追加一个 `<directives>...</directives>` JSON 块（不要 markdown 代码块），schema：",
-          '{"patch":{"brief":{"prompt"?:string,"adType"?:string,"format"?:string},"script":{"mood"?:string,"shots"?:[{"shot":string,"duration"?:string,"scene"?:string,"motion"?:string,"elements"?:string,"prompt"?:string}]},"characters":[{"id":string,"name"?:string,"look"?:string}],"scenes":[{"id":string,"name"?:string,"description"?:string}]},"rerun":["script"|"wardrobe"|"cast"|"paint"],"imageEdits":[{"assetId":string,"prompt":string,"refs"?:string[]}]}',
+          "**指令协议（重要）**：如果用户的话**明确要求改动**当前 brief / 脚本 / 角色 / 场景（例如\"把女主换成男主\"\"场景改成雨夜地铁\"\"时长改成 30 秒\"），或者要求**继续 / 续跑 / 重做 / 再来一集**这类驱动 pipeline 的动作，在回复正文之后追加一个 `<directives>...</directives>` JSON 块（不要 markdown 代码块），schema：",
+          '{"patch":{"brief":{"prompt"?:string,"adType"?:string,"format"?:string},"script":{"mood"?:string,"shots"?:[{"shot":string,"duration"?:string,"scene"?:string,"motion"?:string,"elements"?:string,"prompt"?:string}]},"characters":[{"id":string,"name"?:string,"look"?:string}],"scenes":[{"id":string,"name"?:string,"description"?:string}]},"rerun":["script"|"wardrobe"|"cast"|"paint"],"imageEdits":[{"assetId":string,"prompt":string,"refs"?:string[]}],"actions":[{"kind":"retry-stage","stageId":"scene|structure|wardrobe|cast|paint|qc|life|details"}|{"kind":"resume-from","stageId"?:"..."}|{"kind":"rerun-all","prompt"?:string}|{"kind":"generate-next-episode","prompt":string}]}',
           "- 只输出**真正需要改动**的字段，无须改动就**完全不要**输出 <directives> 标签。",
           "- rerun 数组只能用于「用户明确说要**重新生成 / 重画 / 重做**某阶段」的场景。",
           "- 用户说「合并/拆分/调整时长/改时长/微调/再润色/把 A0X 改成…/把 brief.format 改成 30s 9:16」这类**局部 patch**，必须**只输出 patch**，rerun **留空数组或不输出**——否则会清空用户已生成的关键帧 / 视频片段。",
@@ -234,6 +239,13 @@ export const Route = createFileRoute("/api/chat-stream")({
           "- 仅当用户说「重新分镜 / 整套服装重画 / 角色重做 / 关键帧重出」这种破坏性请求时，才允许出现对应 rerun。",
           "- **imageEdits**：当用户对某张**已生成的具体图片**（关键帧 A0X / 角色 W0X / 服装 P0X / 人物 C0X）说\"把这张改成…/给它加…/换背景…/改成雨夜\"等局部改图诉求时，使用 imageEdits 而**不要**用 rerun；assetId 必须从上下文「已生成素材」列表中精确选取，禁止瞎编 id；refs 可填同列表中的其它 id（角色/道具参考），最多 4 个。",
           "- imageEdits 与 rerun **不要同时输出**；与 patch 可以共存（例如修脚本里 A03 的 prompt 同时把现有 A03 关键帧真改图）。",
+          "- **actions（重要）**：",
+          "  · 用户说「从这一步继续 / 接着上次跑 / 把中断的接着做完」→ `actions:[{\"kind\":\"resume-from\"}]`；如能从上下文判断到具体阶段，再加 stageId。",
+          "  · 用户说「重做关键帧 / 重新跑视频 / 把 life 阶段再来一次」→ `actions:[{\"kind\":\"retry-stage\",\"stageId\":\"paint|life|..\"}]`。",
+          "  · 用户说「整任务重跑 / 推倒重来 / 全部重新生成」→ `actions:[{\"kind\":\"rerun-all\"}]`（可选 prompt 覆写）。",
+          "  · 用户说「再来一集 / 下一集做 X / 续写第二集」→ `actions:[{\"kind\":\"generate-next-episode\",\"prompt\":\"...这一集的具体诉求...\"}]`。",
+          "  · actions 与 rerun **不要同时输出**；触发 actions 时 patch / imageEdits 也通常不应出现（会被清空）。",
+          "  · 只有用户**明确表达**了上述意图才输出 actions；模糊的「再看看 / 这个不错」不要触发。",
           "- JSON 之外不要任何额外字符。",
           "",
           "规则：每个 ## 小节只写 1-2 行；最终回复必须紧扣用户输入，禁止套用 YSL/巴黎/丝绒 等无关案例。",
