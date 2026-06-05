@@ -44,6 +44,10 @@ export const Route = createFileRoute("/api/chat-stream")({
               stageId?: string;
               hasUrl?: boolean;
             }>;
+            stages?: Array<{ id: string; status: string }>;
+            failedStage?: string;
+            runningStage?: string;
+            taskTitle?: string;
           };
         };
         try {
