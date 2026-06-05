@@ -1858,7 +1858,7 @@ export const useSC = create<SCState>((set, get) => {
     }
 
     updateStage("life", { status: "running", expanded: true });
-    runTool("life", "skill", "reference-image-to-video · Seedance", 1200, 0);
+    runTool("life", "skill", "reference-image-to-video · WAN", 1200, 0);
 
     const totalSeconds = segments.reduce((s, n) => s + n, 0);
     appendSummary(
@@ -1866,7 +1866,7 @@ export const useSC = create<SCState>((set, get) => {
       `计划：${segments.length} 段 · ${segments.join("+")}s ≈ ${totalSeconds}s ${
         totalSeconds === requestedDuration
           ? ""
-          : `（用户期望 ${requestedDuration}s，按 Seedance 5s/10s 颗粒拼接）`
+          : `（用户期望 ${requestedDuration}s，按 WAN 8s/10s 颗粒拼接）`
       }`.trim(),
     );
 
