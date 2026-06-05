@@ -386,6 +386,72 @@ export type Database = {
         }
         Relationships: []
       }
+      wan_jobs: {
+        Row: {
+          asset_id: string | null
+          created_at: string
+          error_message: string | null
+          operations: Json | null
+          oss_url: string | null
+          progress: number
+          raw: Json | null
+          request_payload: Json | null
+          route: string
+          status: string
+          task_id: string
+          updated_at: string
+          user_id: string
+          video_task_id: string | null
+        }
+        Insert: {
+          asset_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          operations?: Json | null
+          oss_url?: string | null
+          progress?: number
+          raw?: Json | null
+          request_payload?: Json | null
+          route: string
+          status?: string
+          task_id: string
+          updated_at?: string
+          user_id: string
+          video_task_id?: string | null
+        }
+        Update: {
+          asset_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          operations?: Json | null
+          oss_url?: string | null
+          progress?: number
+          raw?: Json | null
+          request_payload?: Json | null
+          route?: string
+          status?: string
+          task_id?: string
+          updated_at?: string
+          user_id?: string
+          video_task_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wan_jobs_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wan_jobs_video_task_id_fkey"
+            columns: ["video_task_id"]
+            isOneToOne: false
+            referencedRelation: "video_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

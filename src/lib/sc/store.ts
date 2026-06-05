@@ -25,9 +25,9 @@ import { inferTaskTitle } from "./intake-engine";
 import { useCredits } from "./credits-store";
 import { supabase } from "@/integrations/supabase/client";
 import { streamGenerateImage, uploadBase64Image } from "@/lib/upload-image";
-import { submitVideoTask, pollVideoTask } from "@/lib/seedance.functions";
+import { submitVideoTask, pollVideoTask } from "@/lib/wan.functions";
 import { generateScript, type GeneratedScript } from "@/lib/script.functions";
-import { parseFormatDuration, parseFormatRatio, formatDurationLabel, clampSeedanceDuration } from "@/lib/sc/format-utils";
+import { parseFormatDuration, parseFormatRatio, formatDurationLabel } from "@/lib/sc/format-utils";
 import { useProjects } from "@/lib/sc/projects-store";
 import { upsertTaskSnapshot, listProjectTasks, backfillLegacyTasksForProject } from "@/lib/tasks.functions";
 
@@ -1858,7 +1858,7 @@ export const useSC = create<SCState>((set, get) => {
     }
 
     updateStage("life", { status: "running", expanded: true });
-    runTool("life", "skill", "reference-image-to-video · Seedance", 1200, 0);
+    runTool("life", "skill", "reference-image-to-video · WAN", 1200, 0);
 
     const totalSeconds = segments.reduce((s, n) => s + n, 0);
     appendSummary(
@@ -1866,7 +1866,7 @@ export const useSC = create<SCState>((set, get) => {
       `计划：${segments.length} 段 · ${segments.join("+")}s ≈ ${totalSeconds}s ${
         totalSeconds === requestedDuration
           ? ""
-          : `（用户期望 ${requestedDuration}s，按 Seedance 5s/10s 颗粒拼接）`
+          : `（用户期望 ${requestedDuration}s，按 WAN 8s/10s 颗粒拼接）`
       }`.trim(),
     );
 
@@ -1972,9 +1972,8 @@ export const useSC = create<SCState>((set, get) => {
                     videoTaskId: currentTaskId ?? null,
                     payload: {
                       prompt: segPrompt,
-                      image_urls: [...wardrobeRefs, keyUrl].slice(0, 6),
+                      image_urls: [...wardrobeRefs, keyUrl].slice(0, 3),
                       ratio: videoRatio,
-                      duration: dur,
                     } as unknown as { prompt: string },
                   }
                 : {
@@ -1983,13 +1982,13 @@ export const useSC = create<SCState>((set, get) => {
                     payload: {
                       prompt: `${segPrompt}\n(无真人参考，请按描述生成)`,
                       ratio: videoRatio,
-                      duration: dur,
                     } as unknown as { prompt: string },
                   };
-            const { taskId: seedanceTaskId } = await submitVideoTask({ data: submitArgs });
+            const submitRes = await submitVideoTask({ data: submitArgs });
             if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
-            appendSummary("life", `${sa.id} Seedance task: ${seedanceTaskId}${mode === "text-only" ? "（已降级为纯文本）" : ""}`);
+            appendSummary("life", `${sa.id} WAN task: ${submitRes.taskId}${mode === "text-only" ? "（已降级为纯文本）" : ""}`);
 
+            let currentOps = submitRes.operations;
             const started = Date.now();
             while (true) {
               if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
@@ -1997,24 +1996,30 @@ export const useSC = create<SCState>((set, get) => {
               if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
               let r;
               try {
-                r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
+                r = await pollVideoTask({ data: {
+                  operations: currentOps,
+                  videoName: submitRes.videoName,
+                  projectId: submitRes.projectId,
+                  aspectRatio: submitRes.aspectRatio,
+                } });
               } catch (e) {
                 console.error(`[life] ${sa.id} poll error`, e);
                 continue;
               }
               if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
+              if (r.operations) currentOps = r.operations;
               if (r.status === "success" && r.ossUrl) {
                 return { ok: true, ossUrl: r.ossUrl };
               }
               if (r.status === "failed") {
                 return {
                   ok: false,
-                  code: r.errorCode ?? "seedance_failed",
-                  message: r.errorMessage ?? "Seedance 渲染失败",
+                  code: r.errorCode ?? "wan_failed",
+                  message: r.errorMessage ?? "WAN 渲染失败",
                 };
               }
               if (Date.now() - started > 5 * 60_000) {
-                return { ok: false, code: "timeout", message: "Seedance 轮询超时（5min）" };
+                return { ok: false, code: "timeout", message: "WAN 轮询超时（5min）" };
               }
               updateAsset(sa.id, { status: "Processing" });
             }
@@ -2045,7 +2050,7 @@ export const useSC = create<SCState>((set, get) => {
             errorMessage: undefined,
             errorCode: undefined,
           });
-          consume("life", `Video ${sa.id} · seedance`, VIDEO_COST_PER_SEG, get().taskId);
+          consume("life", `Video ${sa.id} · wan`, VIDEO_COST_PER_SEG, get().taskId);
           appendSummary("life", `${sa.id} Ready`);
           return true;
         }
@@ -2312,9 +2317,8 @@ export const useSC = create<SCState>((set, get) => {
                   videoTaskId: get().taskId ?? null,
                   payload: {
                     prompt: segPrompt,
-                    image_urls: [...wardrobeRefs, keyUrl].slice(0, 6),
+                    image_urls: [...wardrobeRefs, keyUrl].slice(0, 3),
                     ratio: videoRatio,
-                    duration: segDur,
                   } as unknown as { prompt: string },
                 }
               : {
@@ -2323,15 +2327,15 @@ export const useSC = create<SCState>((set, get) => {
                   payload: {
                     prompt: `${segPrompt}\n(无真人参考，请按描述生成)`,
                     ratio: videoRatio,
-                    duration: segDur,
                   } as unknown as { prompt: string },
                 };
-          const { taskId: seedanceTaskId } = await submitVideoTask({ data: submitArgs });
+          const submitRes = await submitVideoTask({ data: submitArgs });
           if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
           appendSummary(
             "life",
-            `${asset.id} Seedance task: ${seedanceTaskId}${mode === "text-only" ? "（已降级为纯文本）" : ""}`,
+            `${asset.id} WAN task: ${submitRes.taskId}${mode === "text-only" ? "（已降级为纯文本）" : ""}`,
           );
+          let currentOps = submitRes.operations;
           const started = Date.now();
           while (true) {
             if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
@@ -2339,22 +2343,28 @@ export const useSC = create<SCState>((set, get) => {
             if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
             let r;
             try {
-              r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
+              r = await pollVideoTask({ data: {
+                operations: currentOps,
+                videoName: submitRes.videoName,
+                projectId: submitRes.projectId,
+                aspectRatio: submitRes.aspectRatio,
+              } });
             } catch (e) {
               console.error(`[life] segment ${asset.id} poll error`, e);
               continue;
             }
             if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
+            if (r.operations) currentOps = r.operations;
             if (r.status === "success" && r.ossUrl) return { ok: true, ossUrl: r.ossUrl };
             if (r.status === "failed") {
               return {
                 ok: false,
-                code: r.errorCode ?? "seedance_failed",
-                message: r.errorMessage ?? "Seedance 渲染失败",
+                code: r.errorCode ?? "wan_failed",
+                message: r.errorMessage ?? "WAN 渲染失败",
               };
             }
             if (Date.now() - started > 5 * 60_000) {
-              return { ok: false, code: "timeout", message: "Seedance 轮询超时（5min）" };
+              return { ok: false, code: "timeout", message: "WAN 轮询超时（5min）" };
             }
             updateAsset(asset.id, { status: "Processing" });
           }
@@ -2380,7 +2390,7 @@ export const useSC = create<SCState>((set, get) => {
           errorMessage: undefined,
           errorCode: undefined,
         });
-        consume("life", `Video ${asset.id} · seedance retry`, VIDEO_COST_PER_SEG, get().taskId);
+        consume("life", `Video ${asset.id} · wan retry`, VIDEO_COST_PER_SEG, get().taskId);
         appendSummary("life", `${asset.id} Ready`);
         const allLife = get().assets.filter((a) => a.stageId === "life");
         if (allLife.every((a) => a.status === "Ready")) {

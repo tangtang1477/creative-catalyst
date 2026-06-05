@@ -165,7 +165,7 @@ export const backfillLegacyTasksForProject = createServerFn({ method: "POST" })
           id: a.id,
           kind: a.kind,
           url: a.url,
-          source: a.source ?? "seedance",
+          source: a.source ?? "wan",
           stageId: isVideo ? ("life" as const) : ("paint" as const),
           status: "Ready" as const,
           version: a.version ?? 1,
