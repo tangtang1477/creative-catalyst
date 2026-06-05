@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { streamGenerateImage, uploadBase64Image } from "@/lib/upload-image";
-import { submitVideoTask, pollVideoTask } from "@/lib/seedance.functions";
+import { submitVideoTask, pollVideoTask } from "@/lib/wan.functions";
 
 export const Route = createFileRoute("/test")({
   component: TestPage,
