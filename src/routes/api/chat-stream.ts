@@ -172,21 +172,21 @@ export const Route = createFileRoute("/api/chat-stream")({
                   ),
                 );
               };
-              // 流式吐 intro
+              // 流式吐 intro（"请点选您喜欢的选项："等引导语）
               for (const ch of intro) {
                 emit("token", { text: ch });
                 await new Promise((r) => setTimeout(r, 12));
               }
-              emit("token", { text: "\n\n" });
+              // 选项卡（无 questions 时不发卡，由前端走 fallback）
               emit("option-card", {
                 id: `oc_${Date.now().toString(36)}`,
                 questions,
                 intent: "preflight",
+                fallback: questions.length === 0,
               });
-              emit("token", { text: "\n" });
-              for (const ch of outro) {
-                emit("token", { text: ch });
-                await new Promise((r) => setTimeout(r, 12));
+              // outro 单独走 event:outro，前端会把它渲染在 optionCards **下方**而不是上方
+              if (questions.length > 0) {
+                emit("outro", { text: outro });
               }
               emit("done", {});
               controller.close();
