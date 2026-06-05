@@ -183,22 +183,16 @@ export const Route = createFileRoute("/api/chat-stream")({
                   ),
                 );
               };
-              // 流式吐 intro（"请点选您喜欢的选项："等引导语）
-              for (const ch of intro) {
-                emit("token", { text: ch });
-                await new Promise((r) => setTimeout(r, 12));
-              }
-              // 选项卡（无 questions 时不发卡，由前端走 fallback）
+              // 引导语和"选完点继续"全部塞进 card 内部，由 ChatOptionCard
+              // 分别渲染在选项上方 / 下方，避免文字位置和选项不在一起。
               emit("option-card", {
                 id: `oc_${Date.now().toString(36)}`,
                 questions,
                 intent: "preflight",
                 fallback: questions.length === 0,
+                intro: questions.length > 0 ? intro : undefined,
+                outro: questions.length > 0 ? outro : undefined,
               });
-              // outro 单独走 event:outro，前端会把它渲染在 optionCards **下方**而不是上方
-              if (questions.length > 0) {
-                emit("outro", { text: outro });
-              }
               emit("done", {});
               controller.close();
             },
