@@ -176,6 +176,9 @@ interface SCState {
   cancelMerge: () => void;
   cancelSoftGate: () => void;
   cancel: () => void;
+  paused: boolean;
+  pauseTask: () => void;
+  resumeTask: () => void;
   reset: (opts?: { fromUserAction?: boolean }) => void;
   toggleStage: (id: StageId) => void;
   toggleThought: (stageId: StageId, thoughtId: string) => void;
@@ -582,19 +585,81 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 
 export const useSC = create<SCState>((set, get) => {
   let pendingQcIssues: import("@/lib/qc.functions").QcIssue[] = [];
+
+  // Pause-aware timer tracking. The native setTimeout ids live in store.timers
+  // (for the existing clearTimers path); the metadata mirror below lets
+  // pauseTask() compute remaining delay and resumeTask() re-schedule.
+  interface PendingTimerInfo {
+    fn: () => void;
+    delay: number;
+    scheduledAt: number;
+    runId: number;
+  }
+  const pendingInfo = new Map<number, PendingTimerInfo>();
+  let suspended: PendingTimerInfo[] = [];
+
   const clearTimers = () => {
     for (const t of get().timers) clearTimeout(t);
-    set({ timers: [] });
+    pendingInfo.clear();
+    suspended = [];
+    set({ timers: [], paused: false });
   };
 
   const schedule = (fn: () => void, delay: number) => {
     const startedRunId = get().runId;
+    // If currently paused, queue directly into suspended instead of starting a
+    // native timer that will fire while the user expects "stopped".
+    if (get().paused) {
+      suspended.push({ fn, delay, scheduledAt: Date.now(), runId: startedRunId });
+      return -1;
+    }
+    const scheduledAt = Date.now();
     const id = window.setTimeout(() => {
+      pendingInfo.delete(id);
       if (get().runId !== startedRunId) return;
       fn();
     }, delay) as unknown as number;
+    pendingInfo.set(id, { fn, delay, scheduledAt, runId: startedRunId });
     set({ timers: [...get().timers, id] });
     return id;
+  };
+
+  const pauseTask = () => {
+    const { phase, paused } = get();
+    if (paused) return;
+    if (phase !== "running" && phase !== "thinking" && phase !== "intake") return;
+    const now = Date.now();
+    const moved: PendingTimerInfo[] = [];
+    for (const [id, info] of pendingInfo) {
+      clearTimeout(id);
+      const remaining = Math.max(0, info.delay - (now - info.scheduledAt));
+      moved.push({ fn: info.fn, delay: remaining, scheduledAt: now, runId: info.runId });
+    }
+    pendingInfo.clear();
+    suspended = [...suspended, ...moved];
+    set({ timers: [], paused: true });
+  };
+
+  const resumeTask = () => {
+    if (!get().paused) return;
+    const toRestore = suspended;
+    suspended = [];
+    set({ paused: false });
+    const currentRunId = get().runId;
+    for (const info of toRestore) {
+      // If runId has bumped (cancel/reset), the scheduled fn would be a no-op
+      // because the inner schedule() check also gates on runId.
+      if (info.runId !== currentRunId) continue;
+      const scheduledAt = Date.now();
+      const startedRunId = info.runId;
+      const id = window.setTimeout(() => {
+        pendingInfo.delete(id);
+        if (get().runId !== startedRunId) return;
+        info.fn();
+      }, info.delay) as unknown as number;
+      pendingInfo.set(id, { fn: info.fn, delay: info.delay, scheduledAt, runId: startedRunId });
+      set((s) => ({ timers: [...s.timers, id] }));
+    }
   };
 
   const updateStage = (id: StageId, patch: Partial<StageState>) =>
@@ -2316,6 +2381,9 @@ export const useSC = create<SCState>((set, get) => {
     viewMode: "list",
     autoMode: "auto",
     timers: [],
+    paused: false,
+    pauseTask,
+    resumeTask,
     runId: 0,
     selection: [],
     chatLog: [],

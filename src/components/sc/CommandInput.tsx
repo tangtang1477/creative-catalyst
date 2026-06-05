@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, type KeyboardEvent } from "react";
-import { Plus, ArrowUp, Square, X } from "lucide-react";
+import { Plus, ArrowUp, Pause, Play, X } from "lucide-react";
 import { useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
 import { ModelMenu } from "./ModelMenu";
@@ -27,7 +27,9 @@ export function CommandInput({ placeholder, compact = false }: Props) {
   const {
     submit,
     phase,
-    cancel,
+    paused,
+    pauseTask,
+    resumeTask,
     prompt,
     clearAttachments,
     intakeOthers,
@@ -50,7 +52,7 @@ export function CommandInput({ placeholder, compact = false }: Props) {
 
   const isProcessing =
     phase === "running" || phase === "thinking" || phase === "intake";
-  const isThinking = phase === "thinking";
+  const isThinking = phase === "thinking" && !paused;
   const inputDisabled = isThinking;
   // Chat mode: once a task is active, the bottom bar is a conversation with
   // the current task — not a brand-new prompt entry.
@@ -199,8 +201,9 @@ export function CommandInput({ placeholder, compact = false }: Props) {
           {isProcessing ? (
             <button
               type="button"
-              aria-label="cancel"
-              onClick={cancel}
+              aria-label={paused ? "resume" : "pause"}
+              title={paused ? "继续生成" : "暂停生成"}
+              onClick={paused ? resumeTask : pauseTask}
               className={cn(
                 "inline-flex h-9 w-9 items-center justify-center rounded-full bg-accent text-accent-foreground outline-none transition-all",
                 "hover:brightness-110 hover:shadow-[0_0_12px_rgba(113,240,246,0.5)]",
@@ -208,7 +211,7 @@ export function CommandInput({ placeholder, compact = false }: Props) {
                 "focus-visible:ring-2 focus-visible:ring-accent",
               )}
             >
-              <Square className="h-3.5 w-3.5 fill-current" />
+              {paused ? <Play className="h-3.5 w-3.5 fill-current" /> : <Pause className="h-3.5 w-3.5 fill-current" />}
             </button>
           ) : (
             <button
