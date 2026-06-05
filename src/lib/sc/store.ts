@@ -1993,7 +1993,8 @@ export const useSC = create<SCState>((set, get) => {
             const started = Date.now();
             while (true) {
               if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
-              await new Promise((r) => setTimeout(r, 3000));
+              await pausableSleep(3000);
+              if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
               let r;
               try {
                 r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
@@ -2334,7 +2335,8 @@ export const useSC = create<SCState>((set, get) => {
           const started = Date.now();
           while (true) {
             if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
-            await new Promise((r) => setTimeout(r, 3000));
+            await pausableSleep(3000);
+            if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
             let r;
             try {
               r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
