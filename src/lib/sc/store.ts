@@ -110,6 +110,8 @@ interface ChatMsg {
   optionCards?: import("./types").ChatOptionCard[];
   /** ai turn 顶部一行 skill 标题 */
   skill?: { name: string; sub?: string };
+  /** preflight 卡里渲染在 optionCards **下方**的引导语（"选择好后请点继续…"）。 */
+  outroText?: string;
 }
 
 
