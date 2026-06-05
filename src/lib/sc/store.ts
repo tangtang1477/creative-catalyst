@@ -2492,6 +2492,10 @@ export const useSC = create<SCState>((set, get) => {
           }
         };
         while (true) {
+          // Pause-aware: if user paused, freeze here until they resume. The
+          // server may keep streaming into the TCP buffer but the screen
+          // stops updating, which matches the visible "暂停" semantic.
+          await waitForResume();
           const { value, done } = await reader.read();
           if (done) break;
           buf += decoder.decode(value, { stream: true });
