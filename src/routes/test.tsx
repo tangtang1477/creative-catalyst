@@ -77,21 +77,28 @@ function TestPage() {
       });
       setTaskId(r.taskId); setPollStatus("processing");
       log("video.submitted", r);
-      startPolling(r.taskId);
+      startPolling(r.operations, r.videoName, r.projectId, r.aspectRatio);
     } catch (e) {
       setErr((e as Error).message);
       log("video.submit.error", (e as Error).message);
     } finally { setBusy(null); }
   }
 
-  function startPolling(tid: string) {
+  function startPolling(
+    initialOps: unknown[],
+    videoName: string,
+    projectId: string,
+    aspectRatio: "VIDEO_ASPECT_RATIO_LANDSCAPE" | "VIDEO_ASPECT_RATIO_PORTRAIT" | "VIDEO_ASPECT_RATIO_SQUARE",
+  ) {
     if (pollTimer.current) window.clearInterval(pollTimer.current);
     const started = Date.now();
+    let ops = initialOps;
     const tick = async () => {
       try {
-        const r = await pollFn({ data: { taskId: tid } });
+        const r = await pollFn({ data: { operations: ops, videoName, projectId, aspectRatio } });
         setPollStatus(r.status);
         log("video.poll", r);
+        if (r.operations) ops = r.operations;
         if (r.ossUrl) setOssUrl(r.ossUrl);
         if (r.status === "success" || r.status === "failed") {
           if (pollTimer.current) window.clearInterval(pollTimer.current);
