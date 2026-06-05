@@ -2050,7 +2050,7 @@ export const useSC = create<SCState>((set, get) => {
             errorMessage: undefined,
             errorCode: undefined,
           });
-          consume("life", `Video ${sa.id} · seedance`, VIDEO_COST_PER_SEG, get().taskId);
+          consume("life", `Video ${sa.id} · wan`, VIDEO_COST_PER_SEG, get().taskId);
           appendSummary("life", `${sa.id} Ready`);
           return true;
         }
