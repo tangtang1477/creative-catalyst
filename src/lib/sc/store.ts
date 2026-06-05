@@ -2460,9 +2460,13 @@ export const useSC = create<SCState>((set, get) => {
 
     void (async () => {
       try {
+        const { data: { session: __s1 } } = await supabase.auth.getSession();
         const res = await fetch("/api/chat-stream", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(__s1?.access_token ? { Authorization: `Bearer ${__s1.access_token}` } : {}),
+          },
           body: JSON.stringify({
             mode: "preflight-options",
             messages: [{ role: "user", content: brief.prompt }],
@@ -2739,9 +2743,13 @@ export const useSC = create<SCState>((set, get) => {
         };
 
         try {
+          const { data: { session: __s2 } } = await supabase.auth.getSession();
           const res = await fetch("/api/chat-stream", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...(__s2?.access_token ? { Authorization: `Bearer ${__s2.access_token}` } : {}),
+            },
             body: JSON.stringify(payload),
           });
           if (!res.ok || !res.body) {
