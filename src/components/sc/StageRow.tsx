@@ -219,11 +219,16 @@ export function StageRow({
         </div>
       )}
 
-      {isRunning && (
+      {showRunningIndicator && (
         <div className="mt-1.5 ml-7 inline-flex w-fit items-center gap-1.5 rounded-full border border-border/60 bg-surface/70 px-2.5 py-1 text-[11.5px] text-muted-foreground backdrop-blur">
           <Loader2 className="h-3 w-3 animate-spin text-accent" />
           <span className="font-mono">{thinkingVerb[id]}</span>
           <span className="thinking-dots text-accent" />
+        </div>
+      )}
+      {isRunning && paused && (
+        <div className="mt-1.5 ml-7 inline-flex w-fit items-center gap-1.5 rounded-full border border-border/60 bg-surface/70 px-2.5 py-1 text-[11.5px] text-muted-foreground backdrop-blur">
+          <span className="font-mono">已暂停 · 点击 ▶ 继续</span>
         </div>
       )}
 
