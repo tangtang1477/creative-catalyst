@@ -2154,12 +2154,15 @@ export const useSC = create<SCState>((set, get) => {
               ? `Shot ${shot.shot} · ${shot.scene} · ${shot.motion} · ${shot.elements}`
               : `Shot ${assetId} · ${asset.caption ?? ""}`,
           ].filter(Boolean).join("\n\n");
+      const ctrl = registerAbort();
       try {
         const b64 = await streamGenerateImage({
           prompt: fullPrompt,
           quality: "low",
+          signal: ctrl.signal,
           onPartial: (dataUrl) => {
             if (get().runId !== startedRunId) return;
+            if (get().paused) return;
             updateAsset(assetId, { url: dataUrl });
           },
         });
@@ -2174,12 +2177,19 @@ export const useSC = create<SCState>((set, get) => {
         consume("paint", `Keyframe ${assetId} · retry`, 5, get().taskId);
         appendSummary("paint", `${assetId} 重做完成`);
       } catch (e) {
+        if (isAbortError(e) || ctrl.signal.aborted) {
+          updateAsset(assetId, { status: "Queued", url: undefined });
+          schedule(() => runPaintShot(assetId), 0);
+          return;
+        }
         console.error("[paint] single retry failed", assetId, e);
         updateAsset(assetId, {
           status: "Failed",
           errorMessage: (e as Error).message,
           errorCode: "gen_failed",
         });
+      } finally {
+        unregisterAbort(ctrl);
       }
     })();
   };
