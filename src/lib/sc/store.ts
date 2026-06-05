@@ -177,6 +177,10 @@ interface SCState {
   cancelSoftGate: () => void;
   cancel: () => void;
   paused: boolean;
+  /** Timestamp when the user clicked pause; null when not paused. Used by
+   *  countdown UIs (IntakeCard / ApprovalChips) to freeze the displayed
+   *  "X s 后自动继续" text during pause. */
+  pausedAt: number | null;
   pauseTask: () => void;
   resumeTask: () => void;
   reset: (opts?: { fromUserAction?: boolean }) => void;
