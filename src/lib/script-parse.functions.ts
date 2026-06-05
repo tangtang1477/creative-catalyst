@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import type { GeneratedScript } from "@/lib/script.functions";
 
@@ -11,7 +12,7 @@ const PdfInput = z.object({
   base64: z.string().min(1).max(28_000_000), // ~20MB binary
 });
 
-export const extractPdfText = createServerFn({ method: "POST" })
+export const extractPdfText = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => PdfInput.parse(input))
   .handler(async ({ data }): Promise<{ text: string }> => {
     const bin = Uint8Array.from(atob(data.base64), (c) => c.charCodeAt(0));
@@ -150,7 +151,7 @@ const TOOL = {
  * 把用户上传的剧本纯文本解析成 GeneratedScript 结构。
  * 与 generateScript 共用 tool schema，前端可直接灌进 store.script。
  */
-export const parseScriptText = createServerFn({ method: "POST" })
+export const parseScriptText = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => ParseInput.parse(input))
   .handler(async ({ data }): Promise<GeneratedScript> => {
     const key = process.env.LOVABLE_API_KEY;

@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
 const GenerateScriptInput = z.object({
@@ -120,7 +121,7 @@ const TOOL = {
   },
 };
 
-export const generateScript = createServerFn({ method: "POST" })
+export const generateScript = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => GenerateScriptInput.parse(input))
   .handler(async ({ data }): Promise<GeneratedScript> => {
     const key = process.env.LOVABLE_API_KEY;

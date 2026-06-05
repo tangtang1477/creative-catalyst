@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
 const Msg = z.object({
@@ -37,7 +38,7 @@ const ChatReplyInput = z.object({
     .optional(),
 });
 
-export const chatReply = createServerFn({ method: "POST" })
+export const chatReply = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => ChatReplyInput.parse(input))
   .handler(async ({ data }): Promise<{ reply: string; error?: string }> => {
     const key = process.env.LOVABLE_API_KEY;

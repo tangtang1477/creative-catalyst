@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
 const EditInput = z.object({
@@ -54,7 +55,7 @@ async function callGeminiImageEdit(
  * Multimodal image edit via Gemini Nano Banana.
  * Accepts up to 6 reference image URLs + an instruction prompt.
  */
-export const editImageWithRefs = createServerFn({ method: "POST" })
+export const editImageWithRefs = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => EditInput.parse(input))
   .handler(async ({ data }): Promise<{ b64: string }> => {
     return callGeminiImageEdit(data.prompt, data.imageUrls);
@@ -70,7 +71,7 @@ const LayerEditInput = z.object({
   layers: z.array(z.string().min(1).max(40)).max(8).optional(),
 });
 
-export const editAssetWithLayers = createServerFn({ method: "POST" })
+export const editAssetWithLayers = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => LayerEditInput.parse(input))
   .handler(async ({ data }): Promise<{ b64: string }> => {
     const layerLine = data.layers && data.layers.length
