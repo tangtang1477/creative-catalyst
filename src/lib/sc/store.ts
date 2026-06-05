@@ -2487,6 +2487,8 @@ export const useSC = create<SCState>((set, get) => {
             id?: string;
             intent?: "preflight" | "refine";
             fallback?: boolean;
+            intro?: string;
+            outro?: string;
           };
           if (ev === "token" && data.text) {
             patchAgent((m) => ({ text: m.text + data.text! }));
@@ -2494,7 +2496,7 @@ export const useSC = create<SCState>((set, get) => {
             const qs = Array.isArray(data.questions) ? (data.questions as import("./types").ChatOptionQuestion[]) : [];
             // 空 questions 兜底：不再展示空卡片 / 误导性 outro，直接走 startRunning。
             if (qs.length === 0) {
-              patchAgent(() => ({ streaming: false, outroText: undefined }));
+              patchAgent(() => ({ streaming: false }));
               startRunning();
               return;
             }
@@ -2507,14 +2509,11 @@ export const useSC = create<SCState>((set, get) => {
                   status: "awaiting",
                   intent: data.intent ?? "preflight",
                   primaryLabel: "Continue",
+                  intro: data.intro,
+                  outro: data.outro,
                 },
               ],
             }));
-          } else if (ev === "outro") {
-            // outro 单独走，会渲染在 optionCards 下方而不是上方
-            if (typeof data.text === "string") {
-              patchAgent((m) => ({ outroText: (m.outroText ?? "") + data.text! }));
-            }
           } else if (ev === "done") {
             patchAgent(() => ({ streaming: false }));
           }
