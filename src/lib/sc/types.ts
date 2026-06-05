@@ -157,6 +157,10 @@ export interface ChatOptionCard {
   primaryLabel?: string;
   /** which downstream action to fire on submit */
   intent?: "preflight" | "refine";
+  /** 渲染在选项上方的引导语（例："好的！请点选您喜欢的选项："） */
+  intro?: string;
+  /** 渲染在选项下方的引导语（例："选完点继续，我就开始制作"） */
+  outro?: string;
 }
 
 
