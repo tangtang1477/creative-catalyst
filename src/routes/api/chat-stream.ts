@@ -65,9 +65,16 @@ export const Route = createFileRoute("/api/chat-stream")({
         const ctx = body.context;
         const ctxLines: string[] = [];
         if (ctx?.phase) ctxLines.push(`当前阶段：${ctx.phase}`);
+        if (ctx?.taskTitle) ctxLines.push(`任务名：${ctx.taskTitle}`);
         if (ctx?.brief?.prompt) ctxLines.push(`用户需求：${ctx.brief.prompt}`);
         if (ctx?.brief?.adType) ctxLines.push(`视频类型：${ctx.brief.adType}`);
         if (ctx?.brief?.format) ctxLines.push(`规格：${ctx.brief.format}`);
+        if (ctx?.script?.mood) ctxLines.push(`情绪：${ctx.script.mood}`);
+        if (ctx?.failedStage) ctxLines.push(`失败阶段：${ctx.failedStage}（建议用 actions.retry-stage 或 resume-from）`);
+        if (ctx?.runningStage) ctxLines.push(`中断时停留阶段：${ctx.runningStage}（可用 actions.resume-from 续跑）`);
+        if (ctx?.stages?.length) {
+          ctxLines.push("阶段状态：" + ctx.stages.map((st) => `${st.id}=${st.status}`).join("，"));
+        }
         if (ctx?.script?.mood) ctxLines.push(`情绪：${ctx.script.mood}`);
         if (ctx?.script?.shots?.length) {
           ctxLines.push(
