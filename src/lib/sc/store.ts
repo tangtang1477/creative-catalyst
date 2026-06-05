@@ -1988,7 +1988,6 @@ export const useSC = create<SCState>((set, get) => {
             if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
             appendSummary("life", `${sa.id} WAN task: ${submitRes.taskId}${mode === "text-only" ? "（已降级为纯文本）" : ""}`);
 
-            let currentOps = submitRes.operations;
             const started = Date.now();
             while (true) {
               if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
@@ -1996,18 +1995,12 @@ export const useSC = create<SCState>((set, get) => {
               if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
               let r;
               try {
-                r = await pollVideoTask({ data: {
-                  operations: currentOps,
-                  videoName: submitRes.videoName,
-                  projectId: submitRes.projectId,
-                  aspectRatio: submitRes.aspectRatio,
-                } });
+                r = await pollVideoTask({ data: { taskId: submitRes.taskId } });
               } catch (e) {
                 console.error(`[life] ${sa.id} poll error`, e);
                 continue;
               }
               if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
-              if (r.operations) currentOps = r.operations;
               if (r.status === "success" && r.ossUrl) {
                 return { ok: true, ossUrl: r.ossUrl };
               }
