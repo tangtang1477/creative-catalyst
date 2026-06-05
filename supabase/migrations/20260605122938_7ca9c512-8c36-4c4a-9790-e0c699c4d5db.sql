@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Users insert own credit ledger" ON public.credit_ledger;
