@@ -3385,6 +3385,34 @@ export const useSC = create<SCState>((set, get) => {
             { label: "整任务重跑", kind: "rerun-all" as const },
           ],
         });
+      } else if (rec.status === "interrupted") {
+        // 中断的任务：找到第一个非 ready 的 stage 作为续跑起点
+        const interruptedStage =
+          STAGE_ORDER.find((sid) => {
+            const st = stages[sid];
+            return st.status === "running" || st.status === "recovering" || st.status === "failed";
+          }) ?? STAGE_ORDER.find((sid) => stages[sid].status === "pending");
+        const stageLabel = interruptedStage ? STAGE_LABEL[interruptedStage] : "未知阶段";
+        chatLog.push({
+          id: `restore-interrupted-${rec.id}`,
+          role: "agent",
+          ts: Date.now(),
+          text: `这个任务在「${stageLabel}」阶段被中断了。要从这一步继续，还是从头重跑？也可以直接在下方输入框告诉我你想怎么改。`,
+          actions: [
+            ...(interruptedStage
+              ? [{ label: `从「${stageLabel}」继续`, kind: "retry-stage" as const, stageId: interruptedStage }]
+              : []),
+            { label: "整任务重跑", kind: "rerun-all" as const },
+          ],
+        });
+      } else if (rec.status === "done") {
+        // 已完成的任务被点开：提示用户可以基于现有结果继续指挥 AI
+        chatLog.push({
+          id: `restore-done-${rec.id}`,
+          role: "agent",
+          ts: Date.now(),
+          text: `「${rec.title}」已完成。如果想继续生成下一集、重做某一步，或者改其中某个镜头，直接在下方输入框告诉我即可。`,
+        });
       }
       set((s) => ({
         runId: s.runId + 1,
