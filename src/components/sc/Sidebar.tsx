@@ -331,7 +331,7 @@ export function Sidebar() {
                   const isActive = t.id === taskId;
                   const isRunning = t.status === "running";
                   const isFailed = t.status === "failed";
-                  const disabled = isActive || isRunning;
+                  const disabled = isActive;
                   return (
                     <div
                       key={t.id}
@@ -351,11 +351,17 @@ export function Sidebar() {
                         onClick={() => {
                           if (disabled) return;
                           try {
-                             const candidate = useSC.getState().taskHistory.find((task) => task.id === t.id);
-                             if (!candidate || !canRestoreTaskRecord(candidate)) {
-                               console.warn("[sidebar] skipped non-restorable task", t.id, candidate);
-                               return;
-                             }
+                            const currentTaskId = useSC.getState().taskId;
+                            // 正在跑的活动任务 —— 直接跳回工作区，避免打断状态机
+                            if (t.id === currentTaskId) {
+                              void navigate({ to: "/" });
+                              return;
+                            }
+                            const candidate = useSC.getState().taskHistory.find((task) => task.id === t.id);
+                            if (!candidate || !canRestoreTaskRecord(candidate)) {
+                              console.warn("[sidebar] skipped non-restorable task", t.id, candidate);
+                              return;
+                            }
                             restoreTask(t.id);
                             void navigate({ to: "/" });
                           } catch (error) {
@@ -363,13 +369,14 @@ export function Sidebar() {
                           }
                         }}
                         disabled={disabled}
-                        title={isRunning && !isActive ? "该任务正在运行，无法回放" : undefined}
+                        title={isRunning && !isActive ? "查看当前进度" : undefined}
                         className={cn(
                           "flex h-7 min-w-0 flex-1 items-center justify-between gap-2 px-1.5 text-[12px]",
                           isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                           disabled && !isActive && "cursor-not-allowed opacity-60",
                         )}
                       >
+
                         <span className="truncate text-left">{t.title}</span>
                         {isRunning && <PulseDot />}
                         {isFailed && (

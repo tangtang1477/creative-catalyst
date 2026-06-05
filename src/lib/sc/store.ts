@@ -879,8 +879,14 @@ export const useSC = create<SCState>((set, get) => {
     if (onDone) schedule(onDone, startDelay + lines.length * perLineDelay);
   };
 
-  const collapseAfter = (id: StageId, delay = 1400) =>
+  /** 默认关闭：保持各阶段始终展开，让用户能看到完整无省略的流程。
+   *  用户仍可通过 toggleStage 手动折叠某一段。 */
+  const AUTO_COLLAPSE_STAGES = false;
+  const collapseAfter = (id: StageId, delay = 1400) => {
+    if (!AUTO_COLLAPSE_STAGES) return;
     schedule(() => updateStage(id, { expanded: false }), delay);
+  };
+
 
   const isAuto = () => get().autoMode === "auto";
 
