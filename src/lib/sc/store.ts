@@ -1972,9 +1972,8 @@ export const useSC = create<SCState>((set, get) => {
                     videoTaskId: currentTaskId ?? null,
                     payload: {
                       prompt: segPrompt,
-                      image_urls: [...wardrobeRefs, keyUrl].slice(0, 6),
+                      image_urls: [...wardrobeRefs, keyUrl].slice(0, 3),
                       ratio: videoRatio,
-                      duration: dur,
                     } as unknown as { prompt: string },
                   }
                 : {
@@ -1983,13 +1982,13 @@ export const useSC = create<SCState>((set, get) => {
                     payload: {
                       prompt: `${segPrompt}\n(无真人参考，请按描述生成)`,
                       ratio: videoRatio,
-                      duration: dur,
                     } as unknown as { prompt: string },
                   };
-            const { taskId: seedanceTaskId } = await submitVideoTask({ data: submitArgs });
+            const submitRes = await submitVideoTask({ data: submitArgs });
             if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
-            appendSummary("life", `${sa.id} Seedance task: ${seedanceTaskId}${mode === "text-only" ? "（已降级为纯文本）" : ""}`);
+            appendSummary("life", `${sa.id} WAN task: ${submitRes.taskId}${mode === "text-only" ? "（已降级为纯文本）" : ""}`);
 
+            let currentOps = submitRes.operations;
             const started = Date.now();
             while (true) {
               if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
@@ -1997,24 +1996,30 @@ export const useSC = create<SCState>((set, get) => {
               if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
               let r;
               try {
-                r = await pollVideoTask({ data: { taskId: seedanceTaskId } });
+                r = await pollVideoTask({ data: {
+                  operations: currentOps,
+                  videoName: submitRes.videoName,
+                  projectId: submitRes.projectId,
+                  aspectRatio: submitRes.aspectRatio,
+                } });
               } catch (e) {
                 console.error(`[life] ${sa.id} poll error`, e);
                 continue;
               }
               if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
+              if (r.operations) currentOps = r.operations;
               if (r.status === "success" && r.ossUrl) {
                 return { ok: true, ossUrl: r.ossUrl };
               }
               if (r.status === "failed") {
                 return {
                   ok: false,
-                  code: r.errorCode ?? "seedance_failed",
-                  message: r.errorMessage ?? "Seedance 渲染失败",
+                  code: r.errorCode ?? "wan_failed",
+                  message: r.errorMessage ?? "WAN 渲染失败",
                 };
               }
               if (Date.now() - started > 5 * 60_000) {
-                return { ok: false, code: "timeout", message: "Seedance 轮询超时（5min）" };
+                return { ok: false, code: "timeout", message: "WAN 轮询超时（5min）" };
               }
               updateAsset(sa.id, { status: "Processing" });
             }
