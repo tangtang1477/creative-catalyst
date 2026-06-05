@@ -2491,6 +2491,7 @@ export const useSC = create<SCState>((set, get) => {
     autoMode: "auto",
     timers: [],
     paused: false,
+    pausedAt: null,
     pauseTask,
     resumeTask,
     runId: 0,
