@@ -598,10 +598,36 @@ export const useSC = create<SCState>((set, get) => {
   const pendingInfo = new Map<number, PendingTimerInfo>();
   let suspended: PendingTimerInfo[] = [];
 
+  // In-flight fetch / SSE requests for current run. Pause aborts them all so
+  // the user-visible "暂停" actually stops the network work, not just the
+  // post-completion scheduling.
+  const inflight = new Set<AbortController>();
+  const registerAbort = (): AbortController => {
+    const ctrl = new AbortController();
+    inflight.add(ctrl);
+    return ctrl;
+  };
+  const unregisterAbort = (ctrl: AbortController) => {
+    inflight.delete(ctrl);
+  };
+  const abortAllInflight = () => {
+    for (const ctrl of inflight) {
+      try { ctrl.abort(); } catch { /* noop */ }
+    }
+    inflight.clear();
+  };
+  const isAbortError = (e: unknown): boolean => {
+    if (!e) return false;
+    const err = e as { name?: string; message?: string };
+    return err.name === "AbortError"
+      || /aborted|abort/i.test(err.message ?? "");
+  };
+
   const clearTimers = () => {
     for (const t of get().timers) clearTimeout(t);
     pendingInfo.clear();
     suspended = [];
+    abortAllInflight();
     set({ timers: [], paused: false });
   };
 
@@ -637,6 +663,11 @@ export const useSC = create<SCState>((set, get) => {
     }
     pendingInfo.clear();
     suspended = [...suspended, ...moved];
+    // Abort any in-flight fetch/SSE so the running generation actually stops.
+    // Stage runners catch the abort, revert the current asset to "Queued" and
+    // re-enter the loop via schedule(...) so the next pass after resume picks
+    // it back up.
+    abortAllInflight();
     set({ timers: [], paused: true });
   };
 
