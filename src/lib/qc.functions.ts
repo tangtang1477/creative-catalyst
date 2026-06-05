@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
 const ShotInput = z.object({
@@ -98,7 +99,7 @@ const TOOL = {
   },
 };
 
-export const checkConsistency = createServerFn({ method: "POST" })
+export const checkConsistency = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => QcInput.parse(input))
   .handler(async ({ data }): Promise<QcResult> => {
     const key = process.env.LOVABLE_API_KEY;

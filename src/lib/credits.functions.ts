@@ -40,7 +40,8 @@ export const consumeCredits = createServerFn({ method: "POST" })
   .inputValidator((input) => ConsumeInput.parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { error } = await supabase.from("credit_ledger").insert({
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("credit_ledger").insert({
       user_id: userId,
       task_id: data.taskId ?? null,
       stage: data.stage,
@@ -58,7 +59,8 @@ export const topUpCredits = createServerFn({ method: "POST" })
   .inputValidator((input) => TopUpInput.parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { error } = await supabase.from("credit_ledger").insert({
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("credit_ledger").insert({
       user_id: userId,
       task_id: null,
       stage: "topup",

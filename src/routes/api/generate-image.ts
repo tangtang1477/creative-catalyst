@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { requireUserFromRequest } from "@/lib/sc/server-auth";
 
 /**
  * 流式图片生成 (gpt-image-2).
@@ -11,6 +12,9 @@ export const Route = createFileRoute("/api/generate-image")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const auth = await requireUserFromRequest(request);
+        if (auth instanceof Response) return auth;
+
         const key = process.env.LOVABLE_API_KEY;
         if (!key) {
           return new Response("Missing LOVABLE_API_KEY", { status: 500 });
