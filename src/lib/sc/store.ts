@@ -632,7 +632,7 @@ export const useSC = create<SCState>((set, get) => {
     pendingInfo.clear();
     suspended = [];
     abortAllInflight();
-    set({ timers: [], paused: false });
+    set({ timers: [], paused: false, pausedAt: null });
   };
 
   const schedule = (fn: () => void, delay: number) => {
@@ -654,6 +654,38 @@ export const useSC = create<SCState>((set, get) => {
     return id;
   };
 
+  /**
+   * Resolve immediately if not paused; otherwise wait for resumeTask() to
+   * flip `paused` back to false. Used by every long-running runner (chat
+   * stream reader loops, seedance polling) so a pause click freezes the
+   * entire pipeline, not just the wardrobe/cast/paint runners.
+   */
+  const waitForResume = (): Promise<void> => {
+    if (!get().paused) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const unsub = useSC.subscribe((s) => {
+        if (!s.paused) {
+          unsub();
+          resolve();
+        }
+      });
+    });
+  };
+
+  /**
+   * Pause-aware sleep. Uses schedule() so the underlying setTimeout gets
+   * suspended on pauseTask() and re-scheduled with the remaining delay on
+   * resumeTask(). After the sleep elapses we additionally waitForResume in
+   * case the user paused exactly when the timer fired.
+   */
+  const pausableSleep = (ms: number): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      schedule(() => {
+        void waitForResume().then(resolve);
+      }, ms);
+    });
+  };
+
   const pauseTask = () => {
     const { phase, paused } = get();
     if (paused) return;
@@ -672,14 +704,23 @@ export const useSC = create<SCState>((set, get) => {
     // re-enter the loop via schedule(...) so the next pass after resume picks
     // it back up.
     abortAllInflight();
-    set({ timers: [], paused: true });
+    set({ timers: [], paused: true, pausedAt: now });
   };
 
   const resumeTask = () => {
     if (!get().paused) return;
     const toRestore = suspended;
     suspended = [];
-    set({ paused: false });
+    // Shift softGate fireAt by the paused duration so the countdown picks up
+    // where it left off instead of immediately firing.
+    const prevPausedAt = get().pausedAt;
+    const shift = prevPausedAt ? Date.now() - prevPausedAt : 0;
+    const sg = get().softGate;
+    set({
+      paused: false,
+      pausedAt: null,
+      softGate: sg && shift > 0 ? { ...sg, fireAt: sg.fireAt + shift } : sg,
+    });
     const currentRunId = get().runId;
     for (const info of toRestore) {
       // If runId has bumped (cancel/reset), the scheduled fn would be a no-op
