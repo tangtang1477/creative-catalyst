@@ -2390,7 +2390,7 @@ export const useSC = create<SCState>((set, get) => {
           errorMessage: undefined,
           errorCode: undefined,
         });
-        consume("life", `Video ${asset.id} · seedance retry`, VIDEO_COST_PER_SEG, get().taskId);
+        consume("life", `Video ${asset.id} · wan retry`, VIDEO_COST_PER_SEG, get().taskId);
         appendSummary("life", `${asset.id} Ready`);
         const allLife = get().assets.filter((a) => a.stageId === "life");
         if (allLife.every((a) => a.status === "Ready")) {
