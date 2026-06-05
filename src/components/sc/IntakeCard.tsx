@@ -35,6 +35,7 @@ export function IntakeCard() {
     setIntakeSel,
     autoMode,
     attachments,
+    paused,
   } = useSC();
   const intake = useMemo(
     () =>
@@ -139,7 +140,9 @@ export function IntakeCard() {
     });
   };
 
-  // 20s soft-countdown for auto mode after streaming is ready
+  // 20s soft-countdown for auto mode after streaming is ready. Pause-aware:
+  // while `paused` is true we freeze the displayed number and do not fire the
+  // auto-continue; resuming continues from the remaining seconds.
   const [countdown, setCountdown] = useState<number | null>(null);
   const [cancelled, setCancelled] = useState(false);
   useEffect(() => {
@@ -147,19 +150,29 @@ export function IntakeCard() {
       setCountdown(null);
       return;
     }
-    setCountdown(20);
-    const start = Date.now();
+    let remaining = 20;
+    setCountdown(remaining);
+    let last = Date.now();
     const tick = window.setInterval(() => {
-      const left = Math.max(0, 20 - Math.floor((Date.now() - start) / 1000));
-      setCountdown(left);
-      if (left <= 0) {
+      const now = Date.now();
+      if (paused) {
+        // Don't decrement while paused; just keep `last` advancing so the
+        // resume tick doesn't double-count the paused window.
+        last = now;
+        return;
+      }
+      remaining = Math.max(0, remaining - (now - last) / 1000);
+      last = now;
+      const display = Math.ceil(remaining);
+      setCountdown(display);
+      if (remaining <= 0) {
         window.clearInterval(tick);
         onContinue();
       }
     }, 200);
     return () => window.clearInterval(tick);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, autoMode, cancelled]);
+  }, [phase, autoMode, cancelled, paused]);
 
   return (
     <div className="space-y-4 [animation:stream-fade_320ms_ease-out_both]">
@@ -243,9 +256,9 @@ export function IntakeCard() {
           <div className="mt-5 space-y-2 [animation:stream-fade_320ms_ease-out_both]">
             {autoMode === "auto" && countdown !== null && countdown > 0 && (
               <div className="flex items-center gap-2 rounded-xl bg-accent/10 px-3 py-1.5 text-[11.5px] text-foreground/80">
-                <Timer className={cn("h-3 w-3 text-accent", countdown <= 5 && "animate-pulse")} />
+                <Timer className={cn("h-3 w-3 text-accent", !paused && countdown <= 5 && "animate-pulse")} />
                 <span>
-                  {countdown}s 后将按当前选择自动继续 ·
+                  {paused ? `已暂停 · ${countdown}s 待继续 ·` : `${countdown}s 后将按当前选择自动继续 ·`}
                 </span>
                 <button
                   type="button"

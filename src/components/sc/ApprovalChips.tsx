@@ -21,20 +21,27 @@ export function ApprovalChips() {
     approveMerge,
     cancelMerge,
     cancelSoftGate,
+    paused,
+    pausedAt,
   } = useSC();
 
   // tick for countdown
   const [, force] = useState(0);
   useEffect(() => {
-    if (!softGate) return;
+    if (!softGate || paused) return;
     const t = window.setInterval(() => force((n) => n + 1), 200);
     return () => clearInterval(t);
-  }, [softGate]);
+  }, [softGate, paused]);
 
   if (!gate) return null;
 
+  // Freeze the displayed remaining seconds while paused (use pausedAt as the
+  // reference time so the number does not tick down). resumeTask() in the
+  // store shifts softGate.fireAt by the paused duration so the countdown
+  // continues from where it stopped.
+  const refNow = paused && pausedAt ? pausedAt : Date.now();
   const remaining = softGate
-    ? Math.max(0, Math.ceil((softGate.fireAt - Date.now()) / 1000))
+    ? Math.max(0, Math.ceil((softGate.fireAt - refNow) / 1000))
     : 0;
 
   const variants: Record<
@@ -117,9 +124,9 @@ export function ApprovalChips() {
       </div>
       {softGate && remaining > 0 && (
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          <Timer className={cn("h-3 w-3", remaining <= 5 && "text-accent animate-pulse")} />
+          <Timer className={cn("h-3 w-3", !paused && remaining <= 5 && "text-accent animate-pulse")} />
           <span>
-            {remaining}s 后将自动按推荐继续 ·
+            {paused ? `已暂停 · ${remaining}s 待继续 ·` : `${remaining}s 后将自动按推荐继续 ·`}
           </span>
           <button
             type="button"
