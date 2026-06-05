@@ -79,6 +79,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "google-site-verification", content: "Zjh7PhrkOgpEmNM0moGwVX8YL5Up0Nd7_CrYBHSaLCE" },
       { title: "vibe aideo — AI Ad-Video Agent for Commercials" },
       { name: "description", content: "vibe aideo is an AI ad-video agent that turns briefs into polished product commercials with a dark, premium creative workstation." },
       { name: "author", content: "vibe aideo" },
