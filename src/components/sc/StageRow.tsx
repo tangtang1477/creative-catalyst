@@ -127,10 +127,10 @@ export function StageRow({
         <span className="text-[13.5px] font-medium tracking-tight">
           {STAGE_LABEL[id]}
         </span>
-        {state.status === "running" && (
+        {state.status === "running" && !paused && (
           <Loader2 className="h-3 w-3 animate-spin text-status-generating" />
         )}
-        {state.status === "recovering" && (
+        {state.status === "recovering" && !paused && (
           <RotateCw className="h-3 w-3 animate-spin text-status-recovering" />
         )}
         {state.status === "ready" && (
