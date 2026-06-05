@@ -316,7 +316,7 @@ export const pollVideoTask = createServerFn({ method: "POST" })
       };
     }
 
-    const ops = (job.operations ?? []) as WanOperation[];
+    const ops = (job.operations ?? []) as unknown as WanOperation[];
     if (!ops[0]?.operation?.name) throw new Error("wan_jobs.operations missing");
 
     const envelope = await callWan<WanCheckResp>(
