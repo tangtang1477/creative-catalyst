@@ -2815,6 +2815,8 @@ export const useSC = create<SCState>((set, get) => {
           };
 
           while (true) {
+            // Pause-aware: block here when user paused, resume drains queued chunks.
+            await waitForResume();
             const { value, done } = await reader.read();
             if (done) break;
             buf += decoder.decode(value, { stream: true });
