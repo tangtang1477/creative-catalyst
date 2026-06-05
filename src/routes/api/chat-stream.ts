@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { requireUserFromRequest } from "@/lib/sc/server-auth";
 
 /**
  * In-task chat 分阶段 SSE 流。
@@ -16,10 +17,14 @@ export const Route = createFileRoute("/api/chat-stream")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const auth = await requireUserFromRequest(request);
+        if (auth instanceof Response) return auth;
+
         const key = process.env.LOVABLE_API_KEY;
         if (!key) {
           return new Response("Missing LOVABLE_API_KEY", { status: 500 });
         }
+
 
         let body: {
           messages?: Array<{ role: "user" | "assistant"; content: string }>;
