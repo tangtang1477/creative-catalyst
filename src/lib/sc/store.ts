@@ -1474,7 +1474,7 @@ export const useSC = create<SCState>((set, get) => {
 
     // 串行真实生图
     const startedRunId = get().runId;
-    void (async () => {
+    const loop = async () => {
       const userId = await ensureUserId();
       const taskId = get().taskId ?? undefined;
       const briefPrompt = get().brief?.prompt ?? "";
@@ -1498,8 +1498,15 @@ export const useSC = create<SCState>((set, get) => {
 
       for (const r of SHOTS) {
         if (get().runId !== startedRunId) return;
+        const cur = get().assets.find((a) => a.id === r.shot);
+        if (cur?.status === "Ready" || cur?.status === "Failed") continue;
+        if (get().paused) {
+          schedule(() => void loop(), 0);
+          return;
+        }
         updateAsset(r.shot, { status: "Generating" });
         appendSummary("paint", `${r.shot} 生成中 · ${r.motion}`);
+        const ctrl = registerAbort();
         try {
           const { styleToPromptFragment } = await import("@/lib/sc/intake-engine");
           const styleFragment = styleToPromptFragment(get().brief?.visualStyle);
@@ -1514,8 +1521,10 @@ export const useSC = create<SCState>((set, get) => {
           const b64 = await streamGenerateImage({
             prompt: fullPrompt,
             quality: "low",
+            signal: ctrl.signal,
             onPartial: (dataUrl) => {
               if (get().runId !== startedRunId) return;
+              if (get().paused) return;
               updateAsset(r.shot, { url: dataUrl });
             },
           });
@@ -1526,6 +1535,11 @@ export const useSC = create<SCState>((set, get) => {
           consume("paint", `Keyframe ${r.shot} · stream-gen`, 5, get().taskId);
           appendSummary("paint", `${r.shot} Ready · ${r.motion}`);
         } catch (e) {
+          if (isAbortError(e) || ctrl.signal.aborted) {
+            updateAsset(r.shot, { status: "Queued", url: undefined });
+            schedule(() => void loop(), 0);
+            return;
+          }
           console.error("[paint] failed", r.shot, e);
           updateAsset(r.shot, {
             status: "Failed",
@@ -1536,6 +1550,8 @@ export const useSC = create<SCState>((set, get) => {
             "paint",
             `${r.shot} 生成失败：${(e as Error).message}（未扣积分）`,
           );
+        } finally {
+          unregisterAbort(ctrl);
         }
       }
 
@@ -1548,7 +1564,8 @@ export const useSC = create<SCState>((set, get) => {
       collapseAfter("paint", 1800);
       persistCurrent("running");
       openGate("keyframe", () => runQC());
-    })();
+    };
+    void loop();
   };
 
   const runQC = () => {
