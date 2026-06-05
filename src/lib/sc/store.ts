@@ -3571,6 +3571,53 @@ export const useSC = create<SCState>((set, get) => {
       const patch = dir.patch ?? {};
       const rerun = Array.isArray(dir.rerun) ? dir.rerun : [];
       const imageEdits = Array.isArray(dir.imageEdits) ? dir.imageEdits : [];
+      const actions = Array.isArray(dir.actions) ? dir.actions : [];
+
+      // 1) actions —— 真正驱动 pipeline 的"动作"，由 chat 自然语言触发。
+      //    在 patch/imageEdits 之前先消费 actions，因为 retryStage / submit 会
+      //    清掉下游 stage assets，再去做 imageEdits 没意义。
+      if (actions.length) {
+        for (const a of actions) {
+          if (!a || typeof a !== "object") continue;
+          try {
+            if (a.kind === "retry-stage" && a.stageId && STAGE_ORDER.includes(a.stageId)) {
+              get().retryStage(a.stageId);
+              return;
+            }
+            if (a.kind === "resume-from") {
+              // 找到第一个非 ready / pending 之外的 stage（failed / running 中断）
+              const stages = get().stages;
+              const target =
+                a.stageId && STAGE_ORDER.includes(a.stageId)
+                  ? a.stageId
+                  : STAGE_ORDER.find(
+                      (sid) => stages[sid].status === "failed" || stages[sid].status === "running",
+                    ) ?? STAGE_ORDER.find((sid) => stages[sid].status === "pending");
+              if (target) {
+                get().retryStage(target);
+                return;
+              }
+            }
+            if (a.kind === "rerun-all") {
+              const prompt = a.prompt?.trim() || get().brief?.prompt || "";
+              if (prompt) {
+                get().submit(prompt);
+                return;
+              }
+            }
+            if (a.kind === "generate-next-episode") {
+              const prompt = a.prompt?.trim();
+              if (prompt) {
+                get().submit(prompt);
+                return;
+              }
+            }
+          } catch (e) {
+            console.warn("[applyAgentPatch] action failed", a, e);
+          }
+        }
+      }
+
       if (
         !patch.brief &&
         !patch.script &&
