@@ -67,9 +67,15 @@ export async function streamGenerateImage(opts: {
   onPartial?: (dataUrl: string) => void;
   signal?: AbortSignal;
 }): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) throw new Error("Unauthorized: please sign in to generate images");
   const res = await fetch("/api/generate-image", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify({
       prompt: opts.prompt,
       size: opts.size,
