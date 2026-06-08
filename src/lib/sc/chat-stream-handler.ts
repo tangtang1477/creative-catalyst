@@ -370,16 +370,23 @@ const stream = new ReadableStream<Uint8Array>({
       }
       const combined = replyTail + chunk;
       const openIdx = combined.indexOf("<directives>");
-      if (openIdx >= 0) {
-        const visible = combined.slice(0, openIdx);
+      // 裸 JSON 兜底：模型偶尔会忘记 <directives> 包裹，直接吐 `{"actions":...}` /
+      // `{"patch":...}` 等。命中后从该 `{` 处截断，后续内容全部进 replyAcc 待最后解析。
+      const bareIdx = combined.search(
+        /\{[\s\S]{0,40}"(actions|patch|rerun|imageEdits)"/,
+      );
+      const cutIdx =
+        openIdx >= 0 && (bareIdx < 0 || openIdx <= bareIdx) ? openIdx : bareIdx;
+      if (cutIdx >= 0) {
+        const visible = combined.slice(0, cutIdx);
         if (visible) emit("token", { text: visible });
         replyTail = "";
-        replyAcc += combined; // 保留全量含 tag，后处理解析
+        replyAcc += combined; // 保留全量
         directivesOpen = true;
         return;
       }
-      // 保留最后 SAFE 个字符在 tail，避免 "<directives" 跨 chunk 漏判
-      const SAFE = 16; // len("<directives>") + 4 安全余量
+      // 保留最后 SAFE 个字符在 tail，避免 "<directives" / `{"actions` 跨 chunk 漏判
+      const SAFE = 24;
       if (combined.length > SAFE) {
         const visible = combined.slice(0, combined.length - SAFE);
         emit("token", { text: visible });
@@ -397,6 +404,7 @@ const stream = new ReadableStream<Uint8Array>({
         replyTail = "";
       }
     };
+
 
     const flushSection = (idx: number) => {
       if (idx <= lastSectionFlushIdx) return;
