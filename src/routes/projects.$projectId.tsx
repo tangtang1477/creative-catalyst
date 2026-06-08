@@ -200,15 +200,12 @@ function ProjectDetailPage() {
         toast.error("该任务尚未同步到本地，请稍后刷新再试。");
         return;
       }
-      // 另一个会话还在跑的任务：不在新会话冷启动恢复，避免半截 running state 让工作区闪退
-      if (candidate.status === "running" && taskId !== currentTaskId) {
-        toast.info("该任务正在另一个会话中生成，请稍后回来查看。");
-        return;
-      }
       if (!canRestoreTaskRecord(candidate)) {
         toast.error("该任务的归档数据不完整，无法恢复。");
         return;
       }
+      // running 任务由 restoreTask 内部 normalize 成 interrupted/pending 状态，
+      // 让 Workspace 自行接管；若确属另一个会话在跑，进入后会显示中断态，用户可重试。
       restoreTask(taskId);
       void navigate({ to: "/" });
     } catch (e) {
