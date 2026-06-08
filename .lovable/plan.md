@@ -1,57 +1,30 @@
-## 目标
+## 改动计划
 
-让 WAN 视频段在轮询期间遇到网络/接口异常时自动指数退避重试，超出上限后归类为可识别的失败码并展示在 asset 卡片与 sidebar/项目页的 task 卡片上。
+### 1. 撤掉 Sidebar 上的"失败原因"红字
+- 修改 `src/components/sc/Sidebar.tsx`：移除上一轮新增的 `isFailed && t.failureReason` 那段 `<p>失败原因：…</p>`，恢复成只有任务标题的一行布局。
+- 保留 `store.ts` 里 `pickTopFailReason()` 与 `failureReason` 字段（项目详情页可能用得到，不主动删），但 Sidebar 不再渲染。
+- 不动其它任何文案/样式。
 
-## 现状
+### 2. 确认视频生成走的是真实 WAN，不是假视频
 
-- `src/lib/sc/store.ts` 中两处轮询循环（`runLife` ~L2007、`retryLifeSegment` ~L2347）对 `pollVideoTask` 抛出的错误只做 `console.error + continue`，没有上限、没有任何用户可见信号，要硬等 5 分钟超时。
-- 后端返回 `status:"failed"` 时直接终止，但当上游是 5xx/超时这种瞬态故障时也会被等同处理。
-- asset 上有 `errorMessage / errorCode`，task 级 `failureReason` 已在 `persistCurrent` 时从最后一条 stage summary 取；项目页 `projects.$projectId.tsx` L341 已显示，sidebar 没有。
+排查结论（已读过代码）：
+- `src/lib/sc/store.ts` 的 `runLife()` (L1851+) 和 `runLifeSegment()` (L2306+) 都调用 `@/lib/wan.functions` 的 `submitVideoTask` + `pollVideoTask`，最终命中 `vb.movieflow.ai/video-base/generate-video*` 真实接口。
+- `SAMPLE_VIDEO`（Google 公共 mp4）只出现在两类入口：
+  - `forceState()` 调试入口（`case "ready" / "video-processing" / "series-demo" / "failed"`），生产 UI 没有调用点；
+  - `?state=series-demo` 这种 demo URL。
+- 正常任务流程不会塞 `SAMPLE_VIDEO`。
 
-## 改动
+用户截图里 V01/V02/V03 出现"手表"成片，看起来像样片。为了排除"真接口被绕过"的疑虑，我会：
+- 在 `runLife()` 提交段落处加一行 `console.info("[life] submit WAN", { route, taskId: submitRes.taskId, project_id })`，让浏览器控制台能直观看到每一段都打到 WAN。
+- 在沙箱里直接用 curl 复跑一次 `POST /video-base/generate-video`，确认上游接口当前 200 + 返回 `gen_type=wan` 的 operation name（之前测过一次仍 OK，会再跑一次贴结果）。
+- 不引入任何"自动 fallback 到 SAMPLE_VIDEO"的逻辑——如果接口失败就让任务真实失败。
 
-### 1. `src/lib/sc/store.ts` — 轮询加入重试/退避
+如果用户那张图确实是假视频，最可能原因是该任务是早期通过 `forceState`/`?state=` demo 路径生成的旧记录；新任务一律走 WAN。需要的话我可以另开任务清理历史 demo 资产，但本轮不动数据。
 
-抽出一个本地工具：
+### 不动的部分
+- `store.ts` 的轮询重试 / 降级逻辑、`failureReason` 计算、`wan.functions.ts`、`projects.$projectId.tsx` 上的失败原因展示，全部保持原样。
+- 不改动用户没点名的任何其它模块/样式。
 
-```ts
-const POLL_INTERVAL_MS = 3000;
-const POLL_MAX_TRANSIENT = 5;          // 连续异常上限
-const POLL_BACKOFFS = [3000, 5000, 8000, 13000, 20000];
-const POLL_TIMEOUT_MS = 5 * 60_000;
-```
-
-在两个循环里替换 `try/catch{ continue }` 为：
-
-- 维护 `transientFails` 计数与最近一条 `lastTransientMsg`。
-- `pollVideoTask` 抛错时：`transientFails++`，按 `POLL_BACKOFFS[min(idx, last)]` 等待；同时 `updateAsset(id, { status: "Recovering", errorMessage: "网络异常，自动重试 N/M …", errorCode: "poll_transient" })` 给出可见降级提示。
-- 成功一次轮询则把计数清零，并清除 `errorCode === "poll_transient"` 的临时错误信息。
-- `transientFails > POLL_MAX_TRANSIENT` → 返回 `{ ok:false, code:"poll_failed", message:"WAN 轮询连续异常，已停止重试" }`。
-- 整体仍受 `POLL_TIMEOUT_MS` 兜底。
-
-后端返回 `status:"failed"` 的分支保持不变（已分类好 `errorCode/errorMessage`）。
-
-### 2. 失败原因写入 task 卡片
-
-`runLife` 末尾已经 `updateStage("life", { status:"failed", errorMessage: msg })`，`persistCurrent("failed")` 会把 `msg` 抓为 `failureReason`。在新增的 `poll_failed` / `timeout` 分支里，确保失败汇总文本带上失败原因，例如：
-
-- 全部失败：`"全部视频段渲染失败：<最多见的 errorMessage>"`（按 `errorCode` 分桶取 mode）。
-- 部分失败：保持当前提示，但追加 `"，常见原因：<msg>"`。
-
-这样 sidebar/项目页读到 `failureReason` 就有真原因，而不只是“全部视频段渲染失败”。
-
-### 3. Sidebar 任务卡片显示 failureReason
-
-`src/components/sc/Sidebar.tsx`：在 task list item 中，对 `t.status === "failed" && t.failureReason` 追加一行 `text-xs text-destructive truncate` 提示，与项目页 L341 视觉一致（同一段文案，不改交互）。
-
-### 4. 不动的部分
-
-- `src/lib/wan.functions.ts` 后端逻辑、`classifyWanError` 分类、`submitVideoTask` 行为不变。
-- `policy_real_person / policy_violation` 自动降级 `refs → text-only` 逻辑保留。
-- 不引入新的 toast / dialog；只复用现有 `errorMessage` 字段与已有 UI。
-
-## 验证
-
-1. 临时把 `WAN_HOST` 指向不可达地址，触发 `pollVideoTask` 抛错：asset 卡片应出现“网络异常，自动重试 N/5 …”，5 次后整体失败，task 卡片显示 `失败原因：WAN 轮询连续异常…`，sidebar 同步展示。
-2. 正常视频任务：重试计数应在成功一次轮询后清零，不留下残余 `errorMessage`。
-3. 后端真返回 `status:"failed"` 时：仍按现有分类直接失败，不再多余等待。
+### 验证
+- 重新加载首页，确认 Sidebar 任务行不再出现红色"失败原因：…"文字。
+- 新建一个真实任务，跑到 life 阶段，浏览器 console 应出现 `[life] submit WAN { taskId: "…" }`；同时贴出 curl 真实接口的 200 响应。
