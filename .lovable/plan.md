@@ -1,62 +1,64 @@
+## 现象与根因定位
 
-## 问题定位
+从录屏可以看到：在项目详情页点击 task 卡片 → 跳到 `/`，但工作区直接显示「Victoria, what are we creating today?」首页空状态（phase=empty），任务并没有被恢复。这就是用户感知的「闪退回首页」。
 
-**问题 1：引导语 "请选择…点击 Continue" 还在最后**
-当前 `ChatOptionCard.tsx` 把 `intro` 渲染在选项**上方**、`outro` 渲染在选项**下方**。AI 在 preflight system prompt 中被要求把"intro=开场寒暄、outro=点 Continue 即可开始"分开写，因此"请选择您偏好的选项，点击 Continue 即可开始制作"这条**真正的操作指引**永远出现在选项下方/最末位。
+走查后定位到根因链路（按概率排序，本次一并修掉）：
 
-**问题 2：AI 暂不可用：Failed to fetch**
-network 抓包显示 `POST /api/chat-stream` 返回 `Failed to fetch`（不是 4xx/5xx，是 TCP/Worker 直接断开）。chat-stream 路由在以下场景会触发同类异常：
-- upstream `ai.gateway.lovable.dev` 调用挂起超过 worker 边界 timeout；
-- POST handler 在 try 之外抛出未捕获异常（例如 `requireUserFromRequest` 之外的同步错误）；
-- 前端 `chatMessage` 把 `TypeError: Failed to fetch` 直接当成原始错误显示，没有重试、没有友好兜底。
+1. **`handleOpenTask` 用 id 二次查表，存在竞态与不一致**
+   `projects.$projectId.tsx#handleOpenTask` 当前是：
+   ```ts
+   const candidate = useSC.getState().taskHistory.find(t => t.id === taskId);
+   if (!candidate) { toast.error(...); return; }
+   if (!canRestoreTaskRecord(candidate)) { toast.error(...); return; }
+   restoreTask(taskId);
+   navigate({ to: "/" });
+   ```
+   渲染出来的 `tasks` 来自 `useMemo([...taskHistory], project)`，而点击时再去 `useSC.getState().taskHistory.find` 取一次。理论上一致，但当远端 ingest 的写入与 React 渲染之间出现一帧错位，或者用户在 loading 完成前点击，`candidate` 可能是 `undefined`，这时函数 return，可看到 toast；但更隐蔽的是：即便能查到，`restoreTask` 内部又做了一次 `canRestoreTaskRecord(found)` 校验（store.ts:3287），任一关失败就**静默 `return`**，**而上层 `navigate({ to: "/" })` 已无条件执行** —— 这就是「跳到 / 但工作区是空首页」的直接原因。
 
-**问题 3：项目详情页点 task 闪退**
-`handleOpenTask` 已加 `canRestoreTaskRecord` 校验，但是：
-- `restoreTask` 对 `status === "running"` 的历史任务（其实是另一个会话还在跑的活动任务）也会 setState，把 `phase` 设成 "running" 但 timers/stages 都是空，工作区随后渲染半截的 running 任务、轮询触发 `undefined` 引用导致整页崩；
-- 路由 `index` 没有 `errorComponent`，一旦 Workspace 子树抛错就白屏 / 闪退。
+2. **远端 ingest 出来的 TaskRecord 可能 `snapshot` 为空**
+   `listProjectTasks` 返回的旧记录里 `snapshot` 可能是 `null`，`projects.$projectId.tsx` 的 `ingest()` 会把它 normalize 成 `assets:[] / stageSummaries:{} / stageSnapshots:{} / script:null`。然后 `restoreTask` 走到末尾，把 `phase` 置为 `"done"`，但 `chatLog` / `stages` / `assets` 全空 —— 视觉上虽然不是首页，但只有一句「已完成…可以继续」的孤立提示，用户也容易误判为「没进去」。再加上路径 1 的静默 return，整体就是闪退。
 
-## 修复方案
+3. **`restoreTask` 失败时没有任何用户反馈，也没回写 phase**
+   静默 return 后 caller 仍然 navigate，导致跳到 `/` 后 phase 维持 caller 之前的值（在 SSR 首次进入项目详情时 phase 一直是初始 `empty`），表现就是「点了一下，回到首页」。
 
-### 1. 引导语统一渲染在选项上方
-- `src/components/sc/ChatOptionCard.tsx`：
-  - 删除选项**下方**的 `outro` 块；
-  - 在选项**上方**先后渲染 `intro` 和 `outro`（两段并列，outro 用次级灰度），确保所有引导文本都在 chips 之前；
-  - submit 之后保留 intro，作为已采纳状态的上下文。
-- `src/routes/api/chat-stream.ts` (preflight system prompt)：
-  - 把 outro 字段的语义改为"可选的轻量备注"，并明确**主要指引（点选 + Continue）必须写在 intro 里**；
-  - 默认兜底 `intro = "好的，先确认几个关键方向，选完点 Continue 我就开始制作。"`，outro 默认空字符串而不是带"Continue"的句子。
+## 修复方案（仅改三个文件，不动样式 / 文案 / 其它模块）
 
-### 2. chat-stream 稳定性 + Failed to fetch 兜底
-- `src/routes/api/chat-stream.ts`：
-  - 在 POST handler 最外层用 `try/catch` 包住整段逻辑，任何未预期异常都返回 `Response.json({ error: "internal", detail }, { status: 500 })`，**绝不**让 worker 静默断流；
-  - upstream `fetch(ai.gateway.lovable.dev)` 加 `AbortController`（45s 超时）+ 上游网络错误时 `emit("error", …)` 并 `controller.close()`；
-  - 流读取 `while (true)` 也包 try/catch，错误同样走 `emit("error")`。
-- `src/lib/sc/store.ts.chatMessage`：
-  - 捕获 `fetch` 自身抛出的 `TypeError`（Failed to fetch），统一走 `failWith("网络异常，请稍后重试")`；
-  - 在 catch 分支里**自动重试一次**（最多 1 次，间隔 800ms），仍失败再展示错误；
-  - failWith 的文案改成 "AI 暂时无法响应：{reason}，请重试或检查网络"，并附一个 "重试" chip（action 触发 `chatMessage(原 prompt)`）。
+### 1) `src/lib/sc/store.ts`
+- 将 `restoreTask` 的静默 `return` 改为返回 **布尔值**（`true = 已恢复 / false = 数据不足`），保留 normalize 容错；同时把校验放宽到「只要有 id 就尝试恢复」，对缺数据的旧记录走「**最小可视恢复**」分支：
+  - `phase` 强制设为 `"done"`（即使 `assets=[]`），保证 Workspace 进入 inFlow 渲染、不会回落到首页空状态。
+  - chatLog 注入一条友好提示：「该任务的归档数据已不可用，但仍可基于当前项目继续创作 / 重做某一步」。
+  - 不再因 `canRestoreTaskRecord=false` 就 return；这条防线移交给 caller 决定是否提示，**store 端永远把 phase 接管到非 empty 状态**。
+- 修改签名：`restoreTask: (id: string) => boolean`。
 
-### 3. 项目详情页点 task 不再闪退
-- `src/lib/sc/store.ts`：
-  - `canRestoreTaskRecord`：若 `rec.status === "running"` 且 `rec.id !== get().taskId`，返回 false（活动任务不能在新会话冷启动恢复）；
-  - `restoreTask`：把"另一个会话残留的 running" 视同 `interrupted`，restoredPhase 走 `failed` 兜底分支，所有 stage 中 `running/recovering` 强制降级为 `failed/pending`，并清空 `videoTasks` / 计时器。
-- `src/routes/projects.$projectId.tsx.handleOpenTask`：
-  - 当 `candidate.status === "running"` 且不是当前 task，直接 `toast` 提示"该任务正在另一会话中生成，请稍后再来查看"，不跳转；
-  - try/catch 失败时同样 toast 而不是静默 console.error。
-- `src/routes/index.tsx`：
-  - 给 `createFileRoute("/")` 补 `errorComponent`，渲染"工作区加载失败 + 返回首页 + 重置"按钮，避免 Workspace 子树异常时整页白屏。
-- `src/components/sc/Workspace.tsx`（仅根层）：包一层 `StageBoundary`/通用 ErrorBoundary，让 stage 渲染错误不会冒泡到 route 级别。
+### 2) `src/routes/projects.$projectId.tsx`
+- `handleOpenTask` 改为：
+  - 直接拿 `useMemo` 渲染时手里的 `TaskRecord`（把整条记录传进 onClick，不再用 id 二次查表，避免任何竞态）。
+  - 调用 `restoreTask(record.id)` 并读返回值；只有返回 `true` 才 `navigate({ to: "/" })`，否则在原地 toast `已知失败原因`，**不再无条件跳走**。
+  - 对 store 已统一兜底为 `done` 的记录，返回值始终是 `true`，从而保证：只要 task 卡片可见，点击就一定能落到 Workspace 的非空界面。
+- `tasks.map(...)` 把当前 `t` 直接传给 `handleOpenTask(t)`。
 
-## 验收
+### 3) `src/components/sc/Sidebar.tsx`
+- 同步收口 Sidebar 的 task 点击逻辑：消费 `restoreTask` 的布尔返回值，仅在成功时 `navigate({ to: "/" })`；与项目详情页保持一致，避免另一处再触发同样的闪退。
 
-1. 进入新任务、确认 brief 后，**所有引导文本都在选项 chips 之前**；点击选项后引导文本保留为已采纳上下文。
-2. 故意制造网络异常（或 upstream 503）→ 聊天框不再只显示 "Failed to fetch"，而是友好提示 + 自动重试 + 重试按钮。
-3. 从 `/projects/:id` 列表点击：
-   - 已完成任务：正常进入工作区回放，不闪退；
-   - 失败 / 中断任务：进入后看到 stage 恢复 + 重做 chips；
-   - 仍在另一会话运行中的任务：toast 提示且不跳转；
-   - 工作区内部如有渲染错误：route errorComponent 提供"重试 / 返回首页"，绝不白屏。
+## 不动的部分
 
-## 不动的范围
+- 不动 `__root.tsx`、Workspace、Sidebar 样式与文案。
+- 不动 hydrateFromStorage / Index useEffect / projects-store。
+- 不动远端 ingest / backfill 逻辑（数据完整性问题用「最小可视恢复」覆盖即可，无需改 server）。
 
-不动 Sidebar、视频生成 pipeline、credit ledger、storage 桶策略、其他路由与样式系统；只触达上面列出的文件。
+## 验证步骤
+
+实施完成后，按 memory 要求实地验证：
+
+1. 在项目详情页点击「做一个30秒 9:16 的连续剧第一集」→ 应进入 `/`，Workspace 显示该 task 的恢复界面（最少能看到一条引导消息和顶栏 task 名），**不再回到「Victoria…」首页**。
+2. Sidebar 点同一个 task → 行为一致。
+3. 点击任意其它历史 task（含 localStorage 旧记录、远端 snapshot 为空的记录）→ 都不再闪退。
+4. 故意删 localStorage `sc.tasks` 后再点远端 task，验证「最小可视恢复」生效。
+
+## 与既有 memory 的关系
+
+完全遵守 `mem://constraints/task-restore-safe.md`：
+- 仍 normalize 残缺 TaskRecord；
+- 仍保留 `canRestoreTaskRecord` 作为「值不值得给出明确错误提示」的参考，但**不再用它作为静默退出条件**；
+- 项目详情页 / Sidebar 仍 `navigate({ to: "/" })`，但**只在恢复成功后**；
+- 时间格式化、errorComponent、SSR 守卫保持不变。

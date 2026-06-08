@@ -198,7 +198,7 @@ interface SCState {
   setRailOpen: (v: boolean) => void;
   focusAsset: (id: string) => void;
   forceState: (s: string) => void;
-  restoreTask: (id: string) => void;
+  restoreTask: (id: string) => boolean;
   deleteTask: (id: string) => void;
   toggleFavoriteTask: (id: string) => void;
   enterProject: (projectId: string) => void;
@@ -3282,11 +3282,13 @@ export const useSC = create<SCState>((set, get) => {
       const found = get().taskHistory.find((t) => t.id === id);
       if (!found) {
         console.warn("[restoreTask] task not found in local history", id);
-        return;
+        return false;
       }
-      if (!canRestoreTaskRecord(found)) {
-        console.warn("[restoreTask] task is not restorable", id, found);
-        return;
+      // 即使 canRestoreTaskRecord 不通过，也走"最小可视恢复"分支：
+      // 把 phase 接管到 done，避免 caller 已 navigate("/") 之后落回 empty 首页。
+      const minimalRestore = !canRestoreTaskRecord(found);
+      if (minimalRestore) {
+        console.warn("[restoreTask] minimal restore (snapshot incomplete)", id);
       }
       const rec = normalizeTaskRecord(found);
       clearTimers();
@@ -3444,7 +3446,12 @@ export const useSC = create<SCState>((set, get) => {
           id: `restore-done-${rec.id}`,
           role: "agent",
           ts: Date.now(),
-          text: `「${rec.title}」已完成。如果想继续生成下一集、重做某一步，或者改其中某个镜头，直接在下方输入框告诉我即可。`,
+          text: minimalRestore
+            ? `「${rec.title}」的归档数据不完整（远端 snapshot 缺失），但项目上下文已恢复。可以直接在下方输入框告诉我下一步要做什么，或选择整任务重跑。`
+            : `「${rec.title}」已完成。如果想继续生成下一集、重做某一步，或者改其中某个镜头，直接在下方输入框告诉我即可。`,
+          actions: minimalRestore
+            ? [{ label: "整任务重跑", kind: "rerun-all" as const }]
+            : undefined,
         });
       }
       set((s) => ({
@@ -3474,6 +3481,7 @@ export const useSC = create<SCState>((set, get) => {
           useProjects.getState().setCurrentProject(rec.projectId ?? null);
         } catch { /* ignore */ }
       })();
+      return true;
     },
 
 

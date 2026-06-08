@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/sc/Sidebar";
 import { DotGridBackground } from "@/components/sc/DotGridBackground";
 import { useTheme } from "@/hooks/use-theme";
 import { useProjects } from "@/lib/sc/projects-store";
-import { useSC, titleMatchesProject, normalizeTaskRecord, canRestoreTaskRecord } from "@/lib/sc/store";
+import { useSC, titleMatchesProject, normalizeTaskRecord } from "@/lib/sc/store";
 import { listProjectTasks, backfillLegacyTasksForProject, attachTaskToProject } from "@/lib/tasks.functions";
 import type { TaskRecord } from "@/lib/sc/types";
 import { supabase } from "@/integrations/supabase/client";
@@ -187,26 +187,25 @@ function ProjectDetailPage() {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [taskHistory, project, workspaceHydrated]);
 
-  const handleOpenTask = (taskId: string) => {
+  const handleOpenTask = (record: TaskRecord) => {
     try {
+      const taskId = record.id;
       // 正在跑的活动任务 —— 直接跳回工作区查看实时进度
       const currentTaskId = useSC.getState().taskId;
       if (taskId === currentTaskId) {
         void navigate({ to: "/" });
         return;
       }
-      const candidate = useSC.getState().taskHistory.find((t) => t.id === taskId);
-      if (!candidate) {
-        toast.error("该任务尚未同步到本地，请稍后刷新再试。");
+      // 确保 store 里有这条记录（直接覆盖一次，避免远端 ingest 与渲染时序错位）
+      const existing = useSC.getState().taskHistory.find((t) => t.id === taskId);
+      if (!existing) {
+        useSC.setState((s) => ({ taskHistory: [record, ...s.taskHistory] }));
+      }
+      const ok = restoreTask(taskId);
+      if (!ok) {
+        toast.error("该任务无法恢复，请稍后重试。");
         return;
       }
-      if (!canRestoreTaskRecord(candidate)) {
-        toast.error("该任务的归档数据不完整，无法恢复。");
-        return;
-      }
-      // running 任务由 restoreTask 内部 normalize 成 interrupted/pending 状态，
-      // 让 Workspace 自行接管；若确属另一个会话在跑，进入后会显示中断态，用户可重试。
-      restoreTask(taskId);
       void navigate({ to: "/" });
     } catch (e) {
       console.error("[projects/detail] handleOpenTask failed", e);
@@ -321,7 +320,7 @@ function ProjectDetailPage() {
                           <button
                             key={t.id}
                             type="button"
-                            onClick={() => handleOpenTask(t.id)}
+                            onClick={() => handleOpenTask(t)}
                             className="group block w-full rounded-2xl border border-border bg-surface px-4 py-3 text-left transition-colors hover:border-accent/60 hover:bg-accent/5"
                           >
                             <div className="flex items-start justify-between gap-3">
