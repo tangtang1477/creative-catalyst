@@ -91,6 +91,19 @@ if (ctx?.assets?.length) {
     );
   }
 }
+if (ctx?.refs?.length) {
+  ctxLines.push(
+    "用户引用素材（必须在 imageEdits.assetId 中使用这些 id）：" +
+      ctx.refs
+        .map(
+          (r) =>
+            `${r.assetId ?? r.id}(${r.kind ?? "asset"})${r.name ? " " + r.name : ""}`,
+        )
+        .join("；"),
+  );
+}
+
+
 
 // ===== Preflight options 分支：让模型直接产出 JSON 问题卡 =====
 if (mode === "preflight-options") {
