@@ -39,6 +39,7 @@ let body: {
     failedStage?: string;
     runningStage?: string;
     taskTitle?: string;
+    refs?: Array<{ id: string; kind?: string; name?: string; url?: string; assetId?: string }>;
   };
 };
 try {
