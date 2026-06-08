@@ -2718,6 +2718,7 @@ export const useSC = create<SCState>((set, get) => {
     chatMessage: (text) => {
       const t = text.trim();
       if (!t) return;
+      const refs = get().attachments;
       const userMsg: ChatMsg = {
         id: uid(),
         role: "user",
@@ -2734,7 +2735,10 @@ export const useSC = create<SCState>((set, get) => {
         thinking: "",
         toolCalls: [],
       };
-      set((s) => ({ chatLog: [...s.chatLog, userMsg, agentMsg] }));
+      set((s) => ({
+        chatLog: [...s.chatLog, userMsg, agentMsg],
+        attachments: [],
+      }));
 
       const patchAgent = (
         updater: (msg: ChatMsg) => Partial<ChatMsg>,
@@ -2747,6 +2751,17 @@ export const useSC = create<SCState>((set, get) => {
 
       void (async () => {
         const s = get();
+        const refsCtx = refs.map((a) => ({
+          id: a.id,
+          kind: a.kind,
+          name: a.displayName ?? a.name,
+          url: a.url,
+          assetId: a.ref,
+        }));
+        const refTag = refsCtx.length
+          ? `[引用素材：${refsCtx.map((r) => r.assetId ?? r.name ?? r.id).join(", ")}] `
+          : "";
+        const taggedT = refTag + t;
         const history = s.chatLog
           .slice(-12)
           .filter((m) => m.id !== agentId && m.text)
@@ -2757,7 +2772,9 @@ export const useSC = create<SCState>((set, get) => {
             content: m.text,
           }));
         if (!history.length || history[history.length - 1]?.content !== t) {
-          history.push({ role: "user", content: t });
+          history.push({ role: "user", content: taggedT });
+        } else if (refTag) {
+          history[history.length - 1] = { role: "user", content: taggedT };
         }
         const ctxScript = s.script
           ? {
