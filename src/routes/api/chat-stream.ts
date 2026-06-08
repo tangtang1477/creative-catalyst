@@ -299,7 +299,7 @@ export const Route = createFileRoute("/api/chat-stream")({
             { status: 502, headers: { "Content-Type": "application/json" } },
           );
         }
-
+        clearTimeout(upstreamTimeout);
 
         if (!upstream.ok || !upstream.body) {
           const text = await upstream.text().catch(() => "");
