@@ -2391,6 +2391,8 @@ export const useSC = create<SCState>((set, get) => {
                 };
           const submitRes = await submitVideoTask({ data: submitArgs });
           if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
+          console.info("[life] retry WAN", { assetId: asset.id, route: submitArgs.route, taskId: submitRes.taskId, projectId: submitRes.projectId });
+
           appendSummary(
             "life",
             `${asset.id} WAN task: ${submitRes.taskId}${mode === "text-only" ? "（已降级为纯文本）" : ""}`,
