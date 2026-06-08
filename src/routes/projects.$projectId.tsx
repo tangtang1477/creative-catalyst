@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/sc/Sidebar";
 import { DotGridBackground } from "@/components/sc/DotGridBackground";
 import { useTheme } from "@/hooks/use-theme";
 import { useProjects } from "@/lib/sc/projects-store";
-import { useSC, titleMatchesProject, normalizeTaskRecord, canRestoreTaskRecord } from "@/lib/sc/store";
+import { useSC, titleMatchesProject, normalizeTaskRecord } from "@/lib/sc/store";
 import { listProjectTasks, backfillLegacyTasksForProject, attachTaskToProject } from "@/lib/tasks.functions";
 import type { TaskRecord } from "@/lib/sc/types";
 import { supabase } from "@/integrations/supabase/client";
@@ -320,7 +320,7 @@ function ProjectDetailPage() {
                           <button
                             key={t.id}
                             type="button"
-                            onClick={() => handleOpenTask(t.id)}
+                            onClick={() => handleOpenTask(t)}
                             className="group block w-full rounded-2xl border border-border bg-surface px-4 py-3 text-left transition-colors hover:border-accent/60 hover:bg-accent/5"
                           >
                             <div className="flex items-start justify-between gap-3">
