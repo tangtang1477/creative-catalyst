@@ -177,8 +177,11 @@ export const Route = createFileRoute("/api/chat-stream")({
           } catch {
             parsed = {};
           }
-          const intro = typeof parsed.intro === "string" ? parsed.intro : "好的，先确认几个关键方向：";
-          const outro = typeof parsed.outro === "string" ? parsed.outro : "选完点 Continue，我就开始制作。";
+          const intro = typeof parsed.intro === "string" && parsed.intro.trim()
+            ? parsed.intro
+            : "好的，先确认几个关键方向 —— 请在下方点选偏好，选完点 Continue 我就开始制作。";
+          const outro = typeof parsed.outro === "string" ? parsed.outro : "";
+
           const questions = Array.isArray(parsed.questions) ? parsed.questions : [];
 
           const encoder = new TextEncoder();
