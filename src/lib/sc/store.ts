@@ -2900,9 +2900,20 @@ export const useSC = create<SCState>((set, get) => {
               m.text || "AI 没有返回内容，请换种说法再试一次。",
           }));
         } catch (err) {
+          const isNetwork =
+            err instanceof TypeError ||
+            (err instanceof Error && /Failed to fetch|NetworkError|fetch failed/i.test(err.message));
           const reason = err instanceof Error ? err.message : "未知错误";
-          failWith(reason);
+          const friendly = isNetwork ? "网络异常，请稍后重试" : reason;
+          failWith(friendly);
+          patchAgent((m) => ({
+            actions: [
+              ...(m.actions ?? []),
+              { label: "重新发送", kind: "rerun-all" as const },
+            ],
+          }));
         }
+
       })();
     },
 
