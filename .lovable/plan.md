@@ -1,30 +1,53 @@
+## 问题排查
+
+### 问题 1：用户在对话框追加指令时，思考过程没有按约定流式展示，并且出现 raw JSON 泄漏
+
+观察用户截图：`Used skill chat-director` 之下直接是一句回复，没有任何"理解需求 / 匹配镜头 / 评估改动范围"思考阶段药丸，并且把 `{"actions":[{"kind":"rerun-all"}]}` 这种原始指令 JSON 直接打到了正文里。
+
+读 `src/lib/sc/chat-stream-handler.ts` 与 `src/lib/sc/store.ts#chatMessage`，根因有两个：
+
+1. 模型对**追加聊天**这种短消息有时会跳过 `<thinking>…</thinking>` 直接吐回复 + JSON。handler 在 L519 的 fallback 把三段全部 `phaseDone(i, "（跳过）")`，且**只 phaseStart(0) 过 1 次**，phase 1/2 从未 start → ChatAgentMessage 里 `runningTool` 找不到、`toolCalls` 列表也根本没渲染（因为我们把它当成 skillSub/loading pill 用，没有展开 thinking 文本本体）。
+2. handler 只对**字面 `<directives>` 标签**做剥离（L347 起 emitReplyToken 检测 `<directives>`）。当模型偷懒输出裸 JSON（如 `{"actions":[...]}`）时，整段 JSON 跟着 token 透传到前端，`ChatAgentMessage.visibleText` 也只过滤 `<directives>` 标签 → JSON 直接出现在气泡里。
+
+### 问题 2：从素材"add to task"塞进输入框的附件不会随用户消息进入对话
+
+读 `src/lib/sc/store.ts#chatMessage`（L2718）发现：它**完全没有读 `get().attachments`，也没 clearAttachments**。而 `submit()`（首条 prompt）那条路径才用 attachments。所以一旦进入 chat 模式：
+- 附件 chip 永远卡在 `AttachmentChips` 上方；
+- 发送的 payload `context` 里不带 asset 引用，模型不知道用户在指哪张图；
+- 用户继续打字、再次发送，chip 仍在那里 → 像"附件没跟随发出"。
+
+---
+
 ## 改动计划
 
-### 1. 撤掉 Sidebar 上的"失败原因"红字
-- 修改 `src/components/sc/Sidebar.tsx`：移除上一轮新增的 `isFailed && t.failureReason` 那段 `<p>失败原因：…</p>`，恢复成只有任务标题的一行布局。
-- 保留 `store.ts` 里 `pickTopFailReason()` 与 `failureReason` 字段（项目详情页可能用得到，不主动删），但 Sidebar 不再渲染。
-- 不动其它任何文案/样式。
+只动这三处，不碰其它模块、样式、文案，不引入新功能。
 
-### 2. 确认视频生成走的是真实 WAN，不是假视频
+### 1) `src/lib/sc/chat-stream-handler.ts` — 让思考过程稳定出现 + 屏蔽裸 JSON
+- **强约束系统提示**：在 systemPrompt 顶部加一句"**必须先输出 `<thinking>...</thinking>`，思考块内必须包含 3 个 `## ` 小节，缺一不可；最终回复后如需驱动 pipeline，必须用 `<directives>{...}</directives>` 包裹，禁止把 JSON 裸写在正文里。**"
+- **fallback 也补齐阶段事件**：模型没按格式输出 thinking 时（L519 分支），先 `phaseStart(i)` 再 `phaseDone(i, "（跳过）")`，保证前端拿到完整 4 段事件、`Used skill` 那一行能跟上正在跑的子阶段。
+- **裸 JSON 剥离**：扩展 `emitReplyToken` 的 directives 检测，除了 `<directives>` 还匹配以 `\n{` 或开头 `{` 出现、且包含 `"actions"|"patch"|"rerun"|"imageEdits"` 关键字的尾部 JSON 块；命中后停止 token 透传、把整段塞进 `replyAcc` 末尾，结束时按 directives 再解析一次（同样 emit `directives` 事件）。
+- 客户端兜底：`ChatAgentMessage.visibleText` 已经会去 `<directives>`，再额外加一行 `text = text.replace(/\{\s*"(actions|patch|rerun|imageEdits)"[\s\S]*?\}\s*$/m, "").trimEnd()`，保证旧消息也不再露 JSON（只在 `ChatAgentMessage.tsx` 内部修，行为只是过滤，不影响布局）。
 
-排查结论（已读过代码）：
-- `src/lib/sc/store.ts` 的 `runLife()` (L1851+) 和 `runLifeSegment()` (L2306+) 都调用 `@/lib/wan.functions` 的 `submitVideoTask` + `pollVideoTask`，最终命中 `vb.movieflow.ai/video-base/generate-video*` 真实接口。
-- `SAMPLE_VIDEO`（Google 公共 mp4）只出现在两类入口：
-  - `forceState()` 调试入口（`case "ready" / "video-processing" / "series-demo" / "failed"`），生产 UI 没有调用点；
-  - `?state=series-demo` 这种 demo URL。
-- 正常任务流程不会塞 `SAMPLE_VIDEO`。
+### 2) `src/lib/sc/store.ts#chatMessage` — 让附件跟随聊天发送
+- 取消息时先 `const refs = get().attachments`。
+- userMsg 仍按原样渲染文本气泡（不动 UI）；同时在拼 `payload.context` 时新增：
+  ```
+  refs: refs.map(a => ({ id: a.id, kind: a.kind, name: a.displayName ?? a.name, url: a.url, assetId: a.assetId }))
+  ```
+- 拼 history 时，若有 refs，把最后一条 user content 改写成 `"[引用素材：A03, W01] " + t`，让模型在 chat-director 思考里知道用户指的是哪个素材。
+- 发送成功后 `set({ attachments: [] })`（沿用现有 `clearAttachments`），输入框上的 chip 自然消失。
+- 不引入新的 ChatMsg 字段、不改 `ChatItemBoundary` 的 user 气泡渲染，避免动到样式。
 
-用户截图里 V01/V02/V03 出现"手表"成片，看起来像样片。为了排除"真接口被绕过"的疑虑，我会：
-- 在 `runLife()` 提交段落处加一行 `console.info("[life] submit WAN", { route, taskId: submitRes.taskId, project_id })`，让浏览器控制台能直观看到每一段都打到 WAN。
-- 在沙箱里直接用 curl 复跑一次 `POST /video-base/generate-video`，确认上游接口当前 200 + 返回 `gen_type=wan` 的 operation name（之前测过一次仍 OK，会再跑一次贴结果）。
-- 不引入任何"自动 fallback 到 SAMPLE_VIDEO"的逻辑——如果接口失败就让任务真实失败。
-
-如果用户那张图确实是假视频，最可能原因是该任务是早期通过 `forceState`/`?state=` demo 路径生成的旧记录；新任务一律走 WAN。需要的话我可以另开任务清理历史 demo 资产，但本轮不动数据。
+### 3) `src/lib/sc/chat-stream-handler.ts` body schema — 读取 refs
+- `body.context` 类型补一个可选 `refs?: Array<{ id; kind?; name?; url?; assetId? }>`。
+- ctxLines 里追加：`if (ctx?.refs?.length) ctxLines.push("用户引用素材：" + ctx.refs.map(r => \`${r.assetId ?? r.id}(${r.kind ?? "asset"})${r.name ? " " + r.name : ""}\`).join("；"))`。
+- 模型据此把 `imageEdits.assetId` / `actions.retry-stage` 等指向正确的素材。
 
 ### 不动的部分
-- `store.ts` 的轮询重试 / 降级逻辑、`failureReason` 计算、`wan.functions.ts`、`projects.$projectId.tsx` 上的失败原因展示，全部保持原样。
-- 不改动用户没点名的任何其它模块/样式。
+- `AttachmentChips`、`CommandInput`、`Sidebar`、项目详情页、`wan.functions.ts`、轮询/失败原因逻辑全部保持原样。
+- 不新增 chat 气泡里的素材展示组件；用户气泡仍只显示文本。如果后续想在用户气泡里同步显示小缩略图，再开一轮单独改。
 
 ### 验证
-- 重新加载首页，确认 Sidebar 任务行不再出现红色"失败原因：…"文字。
-- 新建一个真实任务，跑到 life 阶段，浏览器 console 应出现 `[life] submit WAN { taskId: "…" }`；同时贴出 curl 真实接口的 200 响应。
+- 在正在跑的任务里发"把 A03 妆容再淡一些"：浏览器 Network 看 `/api/chat-stream` SSE 应能看到 `phase / phase-start / thinking / phase-done / token / done` 完整事件；ChatAgentMessage 顶部 `Used skill chat-director · 匹配当前镜头与品牌` 等子阶段会随流切换。
+- 同一句话末尾不再出现裸 `{"actions":...}`。
+- 在素材卡点 "Add to task" → 输入框出现缩略图 chip → 在输入框输入"把这张换成雨夜背景" → 发送：chip 消失，气泡只显示文字；模型回复中能识别到 A03/W01 并下发对应的 `imageEdits` directive。
