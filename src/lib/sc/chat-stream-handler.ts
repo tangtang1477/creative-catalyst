@@ -532,7 +532,10 @@ const stream = new ReadableStream<Uint8Array>({
         }
       } else if (currentPhaseIdx < 3) {
         // 模型没有按格式输出 thinking，所有内容当 reply
-        for (let i = currentPhaseIdx; i < 3; i++) phaseDone(i, "（跳过）");
+        for (let i = currentPhaseIdx; i < 3; i++) {
+          phaseStart(i);
+          phaseDone(i, "（跳过）");
+        }
         currentPhaseIdx = 3;
         phaseStart(3);
         if (!replyAcc) {
