@@ -17,9 +17,9 @@ export const Route = createFileRoute("/api/chat-stream")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        try {
         const auth = await requireUserFromRequest(request);
         if (auth instanceof Response) return auth;
+
 
 
         const key = process.env.LOVABLE_API_KEY;
