@@ -278,6 +278,9 @@ export function AssetCard({
               src={asset.url}
               poster={asset.poster}
               controls
+              playsInline
+              preload="metadata"
+              crossOrigin="anonymous"
               className="block w-full bg-black"
               style={{ aspectRatio: aspectCss, maxHeight: maxH }}
             />
