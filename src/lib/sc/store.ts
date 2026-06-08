@@ -3318,16 +3318,27 @@ export const useSC = create<SCState>((set, get) => {
           if (rec.status === "failed" && sid === "life" && !failedStageId) failedStageId = sid;
         }
       }
+      // 把"另一会话残留的 running" 视为 interrupted，避免冷启动一个假活动任务。
+      const effectiveStatus: TaskRecord["status"] =
+        rec.status === "running" ? "interrupted" : rec.status;
+      // 对于被降级的 interrupted 任务，把 stage 中残留的 running/recovering 清掉。
+      if (rec.status === "running") {
+        for (const sid of STAGE_ORDER) {
+          const st = stages[sid];
+          if (st.status === "running" || st.status === "recovering") {
+            stages[sid] = { ...st, status: "pending" };
+          }
+        }
+      }
       const restoredPhase: Phase =
-        rec.status === "done"
+        effectiveStatus === "done"
           ? "done"
-          : rec.status === "failed"
+          : effectiveStatus === "failed"
             ? "failed"
-            : rec.status === "running"
-              ? "running"
-              : rec.assets.length > 0
-                ? "done"
-                : "failed";
+            : rec.assets.length > 0
+              ? "done"
+              : "failed";
+
       const hasRealBrief = !!rec.brief && !!(rec.brief as Brief).adType;
       const restoredBrief: Brief = (rec.brief as Brief | undefined) ?? {
         prompt: rec.prompt || rec.title || "",
