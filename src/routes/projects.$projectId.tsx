@@ -9,6 +9,7 @@ import { useSC, titleMatchesProject, normalizeTaskRecord, canRestoreTaskRecord }
 import { listProjectTasks, backfillLegacyTasksForProject, attachTaskToProject } from "@/lib/tasks.functions";
 import type { TaskRecord } from "@/lib/sc/types";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 const EMPTY_TASKS: TaskRecord[] = [];
@@ -196,19 +197,26 @@ function ProjectDetailPage() {
       }
       const candidate = useSC.getState().taskHistory.find((t) => t.id === taskId);
       if (!candidate) {
-        console.warn("[projects/detail] open task: not in history, skip", taskId);
+        toast.error("该任务尚未同步到本地，请稍后刷新再试。");
+        return;
+      }
+      // 另一个会话还在跑的任务：不在新会话冷启动恢复，避免半截 running state 让工作区闪退
+      if (candidate.status === "running" && taskId !== currentTaskId) {
+        toast.info("该任务正在另一个会话中生成，请稍后回来查看。");
         return;
       }
       if (!canRestoreTaskRecord(candidate)) {
-        console.warn("[projects/detail] open task: not restorable, skip", taskId, candidate);
+        toast.error("该任务的归档数据不完整，无法恢复。");
         return;
       }
       restoreTask(taskId);
       void navigate({ to: "/" });
     } catch (e) {
       console.error("[projects/detail] handleOpenTask failed", e);
+      toast.error("打开任务失败：" + (e instanceof Error ? e.message : String(e)));
     }
   };
+
 
 
   const handleNewTask = () => {

@@ -1,96 +1,62 @@
-## 背景
 
-截图里两个问题：
+## 问题定位
 
-1. **历史 / 中断项目里 chat 没法控制重生成。** `CommandInput.doSubmit` 在 `phase !== "empty"` 时一律走 `chatMessage()`，只会用 `/api/chat-stream` 给一段文字回复。`chatMessage` 只在模型主动吐 `<directives>` 时才有副作用（`applyAgentPatch` → 局部改图 / 偶发 retryStage）。当用户对一个 `done / failed / interrupted` 的项目说"继续生成"、"重新做下一集"、"接着上一步往下跑"这种意图，pipeline 永远不会再启动，agent 也没有"使用 tools / skills 的思考流"展示，只剩干巴巴的文字。
+**问题 1：引导语 "请选择…点击 Continue" 还在最后**
+当前 `ChatOptionCard.tsx` 把 `intro` 渲染在选项**上方**、`outro` 渲染在选项**下方**。AI 在 preflight system prompt 中被要求把"intro=开场寒暄、outro=点 Continue 即可开始"分开写，因此"请选择您偏好的选项，点击 Continue 即可开始制作"这条**真正的操作指引**永远出现在选项下方/最末位。
 
-2. **preflight 选项提示语顺序错。** `chat-stream.ts` preflight 分支按 `intro → option-card → outro` 顺序 emit；但 `ChatAgentMessage` 把 `visibleText`（intro+outro 拼一起）整段渲染在 `optionCards` **之前**。结果用户看到的是：开场白 + "选择好后请点击继续" **连在一起**，选项卡被推到下面（甚至 questions 解析失败时干脆没卡片），引导语和实际操作位置完全错位。
+**问题 2：AI 暂不可用：Failed to fetch**
+network 抓包显示 `POST /api/chat-stream` 返回 `Failed to fetch`（不是 4xx/5xx，是 TCP/Worker 直接断开）。chat-stream 路由在以下场景会触发同类异常：
+- upstream `ai.gateway.lovable.dev` 调用挂起超过 worker 边界 timeout；
+- POST handler 在 try 之外抛出未捕获异常（例如 `requireUserFromRequest` 之外的同步错误）；
+- 前端 `chatMessage` 把 `TypeError: Failed to fetch` 直接当成原始错误显示，没有重试、没有友好兜底。
 
----
+**问题 3：项目详情页点 task 闪退**
+`handleOpenTask` 已加 `canRestoreTaskRecord` 校验，但是：
+- `restoreTask` 对 `status === "running"` 的历史任务（其实是另一个会话还在跑的活动任务）也会 setState，把 `phase` 设成 "running" 但 timers/stages 都是空，工作区随后渲染半截的 running 任务、轮询触发 `undefined` 引用导致整页崩；
+- 路由 `index` 没有 `errorComponent`，一旦 Workspace 子树抛错就白屏 / 闪退。
 
 ## 修复方案
 
-### 1. Chat 真正驱动生成 loop（含完整流式思考 / 工具调用）
+### 1. 引导语统一渲染在选项上方
+- `src/components/sc/ChatOptionCard.tsx`：
+  - 删除选项**下方**的 `outro` 块；
+  - 在选项**上方**先后渲染 `intro` 和 `outro`（两段并列，outro 用次级灰度），确保所有引导文本都在 chips 之前；
+  - submit 之后保留 intro，作为已采纳状态的上下文。
+- `src/routes/api/chat-stream.ts` (preflight system prompt)：
+  - 把 outro 字段的语义改为"可选的轻量备注"，并明确**主要指引（点选 + Continue）必须写在 intro 里**；
+  - 默认兜底 `intro = "好的，先确认几个关键方向，选完点 Continue 我就开始制作。"`，outro 默认空字符串而不是带"Continue"的句子。
 
-**1.1 新增 agent-side intent 路由器（前端 store）**
+### 2. chat-stream 稳定性 + Failed to fetch 兜底
+- `src/routes/api/chat-stream.ts`：
+  - 在 POST handler 最外层用 `try/catch` 包住整段逻辑，任何未预期异常都返回 `Response.json({ error: "internal", detail }, { status: 500 })`，**绝不**让 worker 静默断流；
+  - upstream `fetch(ai.gateway.lovable.dev)` 加 `AbortController`（45s 超时）+ 上游网络错误时 `emit("error", …)` 并 `controller.close()`；
+  - 流读取 `while (true)` 也包 try/catch，错误同样走 `emit("error")`。
+- `src/lib/sc/store.ts.chatMessage`：
+  - 捕获 `fetch` 自身抛出的 `TypeError`（Failed to fetch），统一走 `failWith("网络异常，请稍后重试")`；
+  - 在 catch 分支里**自动重试一次**（最多 1 次，间隔 800ms），仍失败再展示错误；
+  - failWith 的文案改成 "AI 暂时无法响应：{reason}，请重试或检查网络"，并附一个 "重试" chip（action 触发 `chatMessage(原 prompt)`）。
 
-在 `src/lib/sc/store.ts` 的 `chatMessage` 里：调用 `/api/chat-stream` 时新增 `mode: "agent-loop"` 分支（保留 chat 模式做兜底），并把当前 task 状态（`phase / failedStageId / 最后一个 ready stage / assets 概要`）一并送进 context。后端返回的 `directives` schema 扩展以下"真动作"：
-
-```text
-{
-  "actions": [
-    { "kind": "resume-from", "stageId": "..." },        // 从指定阶段继续/重做
-    { "kind": "rerun-all" },                            // 整任务重跑（带新 prompt）
-    { "kind": "generate-next-episode", "prompt": "..." }, // 复用现 assets 起新一集
-    { "kind": "retry-stage", "stageId": "..." },        // 已有
-    ...
-  ],
-  "patch": { ... },          // 已有
-  "imageEdits": [ ... ]      // 已有
-}
-```
-
-`applyAgentPatch` 新增 `actions` 处理：
-
-- `resume-from` / `retry-stage` → 调 `get().retryStage(sid)`，并把 `phase` 切到 `running`。
-- `rerun-all` → 用合并后的 prompt 调 `get().submit(...)`（保留 attachments）。
-- `generate-next-episode` → 调 `get().submit(prompt, { kind: "series", inheritFromTaskId })`（已有 series 路径）。
-
-**1.2 让 chatMessage 在 task 不是 `empty` 也能触发真正的 agentic loop**
-
-`CommandInput.doSubmit` 改为：
-
-- `phase === "empty"` → `submit()`（不变）。
-- 其它 phase → 仍调 `chatMessage()`，但 `chatMessage` 内部根据后端返回的 `actions` 直接驱动 pipeline，不再要求用户额外点 chip。
-
-**1.3 真正的流式"思考过程 + 工具/技能"展示**
-
-后端 `chat-stream.ts` 的 agent-loop 分支按下列顺序 emit（复用现有 phase / phase-start / thinking / phase-done / token 事件，前端已支持）：
-
-```text
-phase: { id: "intent",  label: "理解你的指令" }
-phase: { id: "context", label: "读取当前任务状态" }
-phase: { id: "plan",    label: "选择要调用的 skill / tool" }
-phase: { id: "act",     label: "执行任务" }
-phase: { id: "reply",   label: "总结结果" }
-```
-
-System prompt 要求模型把每个阶段写进 `<thinking>## …</thinking>`，前端 `ChatAgentMessage` 已经把 `toolCalls`（即 phases）渲染成"Using skill xxx / Used skill xxx + 折叠摘要"——任务完成后变成"Used skill"灰色折叠态，正好满足"思考完成后折叠"的要求。act 阶段每调用一个真实动作（`retry-stage` / `submit` / `image-edit`）就额外 emit 一条 `phase` 子项展示具体 tool 名（`tool: retryStage(life)` 等）。
-
-**1.4 中断任务专属入口**
-
-`restoreTask` 里给 `interrupted` 状态的 task 主动追加一条 agent 消息 + 两个 chip：「从中断处继续」「整任务重跑」，让用户即使不打字也能一键续跑；同时这条消息走和 chatMessage 一样的流式 loop，保证视觉一致。
-
-### 2. Preflight 提示语顺序修正
-
-`src/routes/api/chat-stream.ts` 的 preflight 分支：把 option-card emit **之前**只 emit `intro`，**之后**才 emit `outro`。同时在前端 `ChatAgentMessage` 把消息正文拆成 `introText` / `outroText`，渲染顺序变成：
-
-```text
-[skill 行]
-[introText]              ← "好的！…请点选您喜欢的选项："
-[optionCards]            ← 选项 chip 卡
-[outroText]              ← "选择好后，请点击继续…"
-[awaiting-input 药丸]
-```
-
-实现方式：`ChatMsg` 增加 `outroText?: string` 字段；后端在 emit option-card 之后改用新事件 `event: outro` 携带 outro 文本，前端把它写到 `outroText`，渲染时放在 `optionCards` 之后。对老消息（没有 outroText）兼容：仍走旧的 visibleText 路径。
-
-附带兜底：当 preflight 模型 JSON 解析失败 `questions = []` 时，直接放弃 option-card，把 intro+outro 合成一段普通文本并 fallback 到 `startRunning()`，避免出现"提示用户选但没有可选项"的死局（这正是截图当前的样子）。
-
----
-
-## 涉及文件
-
-- `src/routes/api/chat-stream.ts` — 新增 `agent-loop` 模式 & system prompt；preflight 改用 `event: outro`；空 questions fallback。
-- `src/lib/sc/store.ts` — `chatMessage` 走 agent-loop；`applyAgentPatch` 处理 `actions`；`restoreTask` 给 interrupted 加入口；`ChatMsg` 增 `outroText`。
-- `src/lib/sc/types.ts` — `ChatMsg.outroText`、`AgentDirectives.actions`。
-- `src/components/sc/ChatAgentMessage.tsx` — 调整渲染顺序（intro → optionCards → outro）。
-- `src/components/sc/CommandInput.tsx` — 文案微调（chat 输入框 placeholder 提示"可以下指令让 AI 继续/重跑"）。
-
-不动：StageRow、Sidebar、项目详情页、wan/tasks functions、DB schema。
+### 3. 项目详情页点 task 不再闪退
+- `src/lib/sc/store.ts`：
+  - `canRestoreTaskRecord`：若 `rec.status === "running"` 且 `rec.id !== get().taskId`，返回 false（活动任务不能在新会话冷启动恢复）；
+  - `restoreTask`：把"另一个会话残留的 running" 视同 `interrupted`，restoredPhase 走 `failed` 兜底分支，所有 stage 中 `running/recovering` 强制降级为 `failed/pending`，并清空 `videoTasks` / 计时器。
+- `src/routes/projects.$projectId.tsx.handleOpenTask`：
+  - 当 `candidate.status === "running"` 且不是当前 task，直接 `toast` 提示"该任务正在另一会话中生成，请稍后再来查看"，不跳转；
+  - try/catch 失败时同样 toast 而不是静默 console.error。
+- `src/routes/index.tsx`：
+  - 给 `createFileRoute("/")` 补 `errorComponent`，渲染"工作区加载失败 + 返回首页 + 重置"按钮，避免 Workspace 子树异常时整页白屏。
+- `src/components/sc/Workspace.tsx`（仅根层）：包一层 `StageBoundary`/通用 ErrorBoundary，让 stage 渲染错误不会冒泡到 route 级别。
 
 ## 验收
 
-1. 打开一个 `done` / `interrupted` 项目，在输入框说"继续生成下一集" → agent 出现 5 段流式思考、最终折叠，pipeline 真正 `submit()` 起来。
-2. 在 `failed` 项目说"重做最后一步" → 触发 `retryStage(failedStage)`，life 阶段重新跑视频生成。
-3. 首次提交 brief 后看到 preflight 卡：intro 在上、选项卡在中、"选择好后点继续"在下，questions 为空时不出现误导文案、直接进入制作。
+1. 进入新任务、确认 brief 后，**所有引导文本都在选项 chips 之前**；点击选项后引导文本保留为已采纳上下文。
+2. 故意制造网络异常（或 upstream 503）→ 聊天框不再只显示 "Failed to fetch"，而是友好提示 + 自动重试 + 重试按钮。
+3. 从 `/projects/:id` 列表点击：
+   - 已完成任务：正常进入工作区回放，不闪退；
+   - 失败 / 中断任务：进入后看到 stage 恢复 + 重做 chips；
+   - 仍在另一会话运行中的任务：toast 提示且不跳转；
+   - 工作区内部如有渲染错误：route errorComponent 提供"重试 / 返回首页"，绝不白屏。
+
+## 不动的范围
+
+不动 Sidebar、视频生成 pipeline、credit ledger、storage 桶策略、其他路由与样式系统；只触达上面列出的文件。
