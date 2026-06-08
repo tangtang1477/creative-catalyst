@@ -198,7 +198,7 @@ interface SCState {
   setRailOpen: (v: boolean) => void;
   focusAsset: (id: string) => void;
   forceState: (s: string) => void;
-  restoreTask: (id: string) => void;
+  restoreTask: (id: string) => boolean;
   deleteTask: (id: string) => void;
   toggleFavoriteTask: (id: string) => void;
   enterProject: (projectId: string) => void;
@@ -3282,11 +3282,13 @@ export const useSC = create<SCState>((set, get) => {
       const found = get().taskHistory.find((t) => t.id === id);
       if (!found) {
         console.warn("[restoreTask] task not found in local history", id);
-        return;
+        return false;
       }
-      if (!canRestoreTaskRecord(found)) {
-        console.warn("[restoreTask] task is not restorable", id, found);
-        return;
+      // 即使 canRestoreTaskRecord 不通过，也走"最小可视恢复"分支：
+      // 把 phase 接管到 done，避免 caller 已 navigate("/") 之后落回 empty 首页。
+      const minimalRestore = !canRestoreTaskRecord(found);
+      if (minimalRestore) {
+        console.warn("[restoreTask] minimal restore (snapshot incomplete)", id);
       }
       const rec = normalizeTaskRecord(found);
       clearTimers();
