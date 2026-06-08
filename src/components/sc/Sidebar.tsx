@@ -335,8 +335,8 @@ export function Sidebar() {
                   const isFailed = t.status === "failed";
                   const disabled = isActive;
                   return (
-                    <div key={t.id} className="flex flex-col">
                     <div
+
                       className={cn(
                         "group relative flex items-center gap-1 rounded-lg pl-1.5 pr-1 transition-colors",
                         isActive ? "bg-surface-2" : "hover:bg-surface-2/60",
