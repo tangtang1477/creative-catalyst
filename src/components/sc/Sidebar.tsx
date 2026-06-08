@@ -17,7 +17,7 @@ import {
   Star,
 } from "lucide-react";
 import { SCButton } from "./Button";
-import { canRestoreTaskRecord, useSC } from "@/lib/sc/store";
+import { useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
 import { Logo } from "./Logo";
 import { PulseDot } from "./PulseDot";
@@ -358,11 +358,15 @@ export function Sidebar() {
                               return;
                             }
                             const candidate = useSC.getState().taskHistory.find((task) => task.id === t.id);
-                            if (!candidate || !canRestoreTaskRecord(candidate)) {
-                              console.warn("[sidebar] skipped non-restorable task", t.id, candidate);
+                            if (!candidate) {
+                              console.warn("[sidebar] task not found in local history", t.id);
                               return;
                             }
-                            restoreTask(t.id);
+                            const ok = restoreTask(t.id);
+                            if (!ok) {
+                              console.warn("[sidebar] restoreTask failed", t.id);
+                              return;
+                            }
                             void navigate({ to: "/" });
                           } catch (error) {
                             console.error("[sidebar] restore task failed", error);
