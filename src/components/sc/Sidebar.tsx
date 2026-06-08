@@ -138,7 +138,9 @@ export function Sidebar() {
             kind: "oneoff" as const,
             assets: [],
             favorite: false,
+            failureReason: undefined as string | undefined,
           }]
+
         : [];
     const rest = taskHistory.filter((t) => t.id !== taskId);
     const favorites = rest.filter((t) => t.favorite);
