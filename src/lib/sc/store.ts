@@ -3446,7 +3446,12 @@ export const useSC = create<SCState>((set, get) => {
           id: `restore-done-${rec.id}`,
           role: "agent",
           ts: Date.now(),
-          text: `「${rec.title}」已完成。如果想继续生成下一集、重做某一步，或者改其中某个镜头，直接在下方输入框告诉我即可。`,
+          text: minimalRestore
+            ? `「${rec.title}」的归档数据不完整（远端 snapshot 缺失），但项目上下文已恢复。可以直接在下方输入框告诉我下一步要做什么，或选择整任务重跑。`
+            : `「${rec.title}」已完成。如果想继续生成下一集、重做某一步，或者改其中某个镜头，直接在下方输入框告诉我即可。`,
+          actions: minimalRestore
+            ? [{ label: "整任务重跑", kind: "rerun-all" as const }]
+            : undefined,
         });
       }
       set((s) => ({
@@ -3476,6 +3481,7 @@ export const useSC = create<SCState>((set, get) => {
           useProjects.getState().setCurrentProject(rec.projectId ?? null);
         } catch { /* ignore */ }
       })();
+      return true;
     },
 
 
