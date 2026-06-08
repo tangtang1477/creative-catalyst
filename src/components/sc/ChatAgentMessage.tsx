@@ -73,6 +73,8 @@ export function ChatAgentMessage({
     const openIdx = t.indexOf("<directives>");
     if (openIdx >= 0) t = t.slice(0, openIdx);
     t = t.replace(/<\/?directives>/g, "");
+    // 模型偶尔忘记 <directives> 包裹，会把 `{"actions":...}` / `{"patch":...}` 裸写在正文末尾。
+    t = t.replace(/\{[\s\S]{0,40}"(actions|patch|rerun|imageEdits)"[\s\S]*\}\s*$/g, "");
     return t.trimEnd();
   })();
 

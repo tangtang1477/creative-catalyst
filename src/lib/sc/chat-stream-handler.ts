@@ -39,6 +39,7 @@ let body: {
     failedStage?: string;
     runningStage?: string;
     taskTitle?: string;
+    refs?: Array<{ id: string; kind?: string; name?: string; url?: string; assetId?: string }>;
   };
 };
 try {
@@ -90,6 +91,19 @@ if (ctx?.assets?.length) {
     );
   }
 }
+if (ctx?.refs?.length) {
+  ctxLines.push(
+    "用户引用素材（必须在 imageEdits.assetId 中使用这些 id）：" +
+      ctx.refs
+        .map(
+          (r) =>
+            `${r.assetId ?? r.id}(${r.kind ?? "asset"})${r.name ? " " + r.name : ""}`,
+        )
+        .join("；"),
+  );
+}
+
+
 
 // ===== Preflight options 分支：让模型直接产出 JSON 问题卡 =====
 if (mode === "preflight-options") {
@@ -214,7 +228,7 @@ const PHASES = [
 ] as const;
 
 const systemPrompt = [
-  "你是 Vibe Aideo 的 AI 广告导演助手。请按以下严格格式输出，不要省略任何标签：",
+  "你是 Vibe Aideo 的 AI 广告导演助手。**无论用户消息多短，都必须先完整输出 `<thinking>...</thinking>` 思考块、且思考块内必须含全部 3 个 `## ` 小节，缺一不可。** 然后再输出最终回复。pipeline 指令必须严格用 `<directives>{...}</directives>` 包裹，**禁止把任何 JSON（如 `{\"actions\":...}` / `{\"patch\":...}`）裸写在 thinking 块外的回复正文里**。请按以下严格格式输出，不要省略任何标签：",
   "",
   "<thinking>",
   "## 理解用户需求",
@@ -356,16 +370,23 @@ const stream = new ReadableStream<Uint8Array>({
       }
       const combined = replyTail + chunk;
       const openIdx = combined.indexOf("<directives>");
-      if (openIdx >= 0) {
-        const visible = combined.slice(0, openIdx);
+      // 裸 JSON 兜底：模型偶尔会忘记 <directives> 包裹，直接吐 `{"actions":...}` /
+      // `{"patch":...}` 等。命中后从该 `{` 处截断，后续内容全部进 replyAcc 待最后解析。
+      const bareIdx = combined.search(
+        /\{[\s\S]{0,40}"(actions|patch|rerun|imageEdits)"/,
+      );
+      const cutIdx =
+        openIdx >= 0 && (bareIdx < 0 || openIdx <= bareIdx) ? openIdx : bareIdx;
+      if (cutIdx >= 0) {
+        const visible = combined.slice(0, cutIdx);
         if (visible) emit("token", { text: visible });
         replyTail = "";
-        replyAcc += combined; // 保留全量含 tag，后处理解析
+        replyAcc += combined; // 保留全量
         directivesOpen = true;
         return;
       }
-      // 保留最后 SAFE 个字符在 tail，避免 "<directives" 跨 chunk 漏判
-      const SAFE = 16; // len("<directives>") + 4 安全余量
+      // 保留最后 SAFE 个字符在 tail，避免 "<directives" / `{"actions` 跨 chunk 漏判
+      const SAFE = 24;
       if (combined.length > SAFE) {
         const visible = combined.slice(0, combined.length - SAFE);
         emit("token", { text: visible });
@@ -383,6 +404,7 @@ const stream = new ReadableStream<Uint8Array>({
         replyTail = "";
       }
     };
+
 
     const flushSection = (idx: number) => {
       if (idx <= lastSectionFlushIdx) return;
@@ -518,7 +540,10 @@ const stream = new ReadableStream<Uint8Array>({
         }
       } else if (currentPhaseIdx < 3) {
         // 模型没有按格式输出 thinking，所有内容当 reply
-        for (let i = currentPhaseIdx; i < 3; i++) phaseDone(i, "（跳过）");
+        for (let i = currentPhaseIdx; i < 3; i++) {
+          phaseStart(i);
+          phaseDone(i, "（跳过）");
+        }
         currentPhaseIdx = 3;
         phaseStart(3);
         if (!replyAcc) {
@@ -531,19 +556,35 @@ const stream = new ReadableStream<Uint8Array>({
       flushReplyTail();
 
       // 解析 directives 块（如果有）并 emit
+      let dirEmitted = false;
       const dirMatch = fullText.match(/<directives>([\s\S]*?)<\/directives>/);
       if (dirMatch) {
-        const rawJson = dirMatch[1].trim();
         try {
-          const parsedDir = JSON.parse(rawJson);
-          emit("directives", parsedDir);
+          emit("directives", JSON.parse(dirMatch[1].trim()));
+          dirEmitted = true;
         } catch (e) {
           console.warn("[chat-stream] directives JSON parse failed", e);
         }
       }
+      // 裸 JSON 兜底解析：模型忘记 <directives> 包裹时
+      if (!dirEmitted) {
+        const bareMatch = fullText.match(
+          /\{[\s\S]{0,40}"(actions|patch|rerun|imageEdits)"[\s\S]*\}\s*$/,
+        );
+        if (bareMatch) {
+          try {
+            emit("directives", JSON.parse(bareMatch[0]));
+          } catch (e) {
+            console.warn("[chat-stream] bare directives parse failed", e);
+          }
+        }
+      }
 
-      // replyAcc 用于 summary，去掉 directives 块
-      const cleanReply = replyAcc.replace(/<directives>[\s\S]*?<\/directives>/g, "").trim();
+      // replyAcc 用于 summary，去掉 directives 块（含 <directives> 标签 和 裸 JSON 尾部）
+      const cleanReply = replyAcc
+        .replace(/<directives>[\s\S]*?<\/directives>/g, "")
+        .replace(/\{[\s\S]{0,40}"(actions|patch|rerun|imageEdits)"[\s\S]*\}\s*$/g, "")
+        .trim();
       phaseDone(3, cleanReply.slice(0, 80));
       emit("done", { text: cleanReply });
       controller.close();
