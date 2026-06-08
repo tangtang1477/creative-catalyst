@@ -2902,17 +2902,11 @@ export const useSC = create<SCState>((set, get) => {
         } catch (err) {
           const isNetwork =
             err instanceof TypeError ||
-            (err instanceof Error && /Failed to fetch|NetworkError|fetch failed/i.test(err.message));
+            (err instanceof Error && /Failed to fetch|NetworkError|fetch failed|aborted/i.test(err.message));
           const reason = err instanceof Error ? err.message : "未知错误";
-          const friendly = isNetwork ? "网络异常，请稍后重试" : reason;
-          failWith(friendly);
-          patchAgent((m) => ({
-            actions: [
-              ...(m.actions ?? []),
-              { label: "重新发送", kind: "rerun-all" as const },
-            ],
-          }));
+          failWith(isNetwork ? "网络异常，请稍后重试" : reason);
         }
+
 
       })();
     },
