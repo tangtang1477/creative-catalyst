@@ -2394,15 +2394,36 @@ export const useSC = create<SCState>((set, get) => {
             `${asset.id} WAN task: ${submitRes.taskId}${mode === "text-only" ? "（已降级为纯文本）" : ""}`,
           );
           const started = Date.now();
+          let transient = 0;
+          let lastTransientMsg = "";
           while (true) {
             if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
-            await pausableSleep(3000);
+            await pausableSleep(POLL_INTERVAL_MS);
             if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
             let r;
             try {
               r = await pollVideoTask({ data: { taskId: submitRes.taskId } });
+              if (transient > 0) {
+                transient = 0;
+                updateAsset(asset.id, { status: "Processing", errorMessage: undefined, errorCode: undefined });
+              }
             } catch (e) {
-              console.error(`[life] segment ${asset.id} poll error`, e);
+              transient += 1;
+              lastTransientMsg = (e as Error).message ?? "网络异常";
+              console.error(`[life] segment ${asset.id} poll error (${transient}/${POLL_MAX_TRANSIENT})`, e);
+              if (transient > POLL_MAX_TRANSIENT) {
+                return {
+                  ok: false,
+                  code: "poll_failed",
+                  message: `WAN 轮询连续异常，已停止重试：${lastTransientMsg.slice(0, 120)}`,
+                };
+              }
+              updateAsset(asset.id, {
+                status: "Recovering",
+                errorMessage: `网络异常，自动重试 ${transient}/${POLL_MAX_TRANSIENT} …`,
+                errorCode: "poll_transient",
+              });
+              await pausableSleep(POLL_BACKOFFS[Math.min(transient - 1, POLL_BACKOFFS.length - 1)]);
               continue;
             }
             if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
@@ -2414,11 +2435,12 @@ export const useSC = create<SCState>((set, get) => {
                 message: r.errorMessage ?? "WAN 渲染失败",
               };
             }
-            if (Date.now() - started > 5 * 60_000) {
+            if (Date.now() - started > POLL_TIMEOUT_MS) {
               return { ok: false, code: "timeout", message: "WAN 轮询超时（5min）" };
             }
             updateAsset(asset.id, { status: "Processing" });
           }
+
         } catch (e) {
           const raw = (e as Error).message ?? "";
           const m = raw.match(/^\[(policy_real_person|policy_violation|quota_exceeded|submit_failed)\]\s*([^:]+)/);
