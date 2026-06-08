@@ -132,11 +132,8 @@ export function ChatOptionCard({ msgId, card }: Props) {
         })}
       </ol>
 
-      {!submitted && card.outro && (
-        <div className="mt-3 text-[12px] leading-relaxed text-muted-foreground">
-          {card.outro}
-        </div>
-      )}
+
+
 
 
 
