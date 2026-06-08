@@ -116,12 +116,14 @@ export const Route = createFileRoute("/api/chat-stream")({
             "你是 Vibe Aideo 的 AI 广告导演。用户刚确认了一个视频 brief，",
             "现在请你**主动**提出 3 个关键创意选择题，让用户点选而不是自己输入。",
             "严格输出 JSON（不要 markdown 代码块），形如：",
-            '{"intro":"…一句话开场，呼应用户的需求…","questions":[',
+            '{"intro":"…一句话开场 + 直接告诉用户「请点选下面几个偏好，选完点 Continue 我就开始制作」…","questions":[',
             '  {"id":"duration","label":"…","options":[{"id":"opt1","label":"…"},…],"allowOther":true},',
             '  {"id":"tone","label":"…","options":[…],"allowOther":true},',
             '  {"id":"style","label":"…","options":[…],"allowOther":true}',
-            '],"outro":"…一句话告诉用户点 Continue 即可开始制作…"}',
+            '],"outro":""}',
             "要求：",
+            "- intro 必须把「请点选 + 点 Continue 开始」的**操作指引**写清楚，因为前端会把 intro 渲染在选项**上方**；",
+            "- outro 默认留空字符串。只有当确实有必要补充说明（例如「可以选多个」「跳过将走默认值」）时才写一句，且不要重复 intro 的指引；",
             "- 每题 3–4 个选项，选项 label 控制在 14 字以内，可在括号里补充细节；",
             "- 问题必须紧扣用户的 prompt（古风短剧就别问 \"是否需要英文配音\"）；",
             q1Rule,
@@ -131,6 +133,7 @@ export const Route = createFileRoute("/api/chat-stream")({
             `\n—— 当前内容类型 ——\n${isSeries ? "连续剧（可问集数）" : "非连续剧（禁止问集数）"}`,
             ctxLines.length ? "\n—— 当前任务上下文 ——\n" + ctxLines.join("\n") : "",
           ].filter(Boolean).join("\n");
+
 
           const userMsg = messages.length
             ? messages[messages.length - 1].content
