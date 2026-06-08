@@ -556,19 +556,35 @@ const stream = new ReadableStream<Uint8Array>({
       flushReplyTail();
 
       // 解析 directives 块（如果有）并 emit
+      let dirEmitted = false;
       const dirMatch = fullText.match(/<directives>([\s\S]*?)<\/directives>/);
       if (dirMatch) {
-        const rawJson = dirMatch[1].trim();
         try {
-          const parsedDir = JSON.parse(rawJson);
-          emit("directives", parsedDir);
+          emit("directives", JSON.parse(dirMatch[1].trim()));
+          dirEmitted = true;
         } catch (e) {
           console.warn("[chat-stream] directives JSON parse failed", e);
         }
       }
+      // 裸 JSON 兜底解析：模型忘记 <directives> 包裹时
+      if (!dirEmitted) {
+        const bareMatch = fullText.match(
+          /\{[\s\S]{0,40}"(actions|patch|rerun|imageEdits)"[\s\S]*\}\s*$/,
+        );
+        if (bareMatch) {
+          try {
+            emit("directives", JSON.parse(bareMatch[0]));
+          } catch (e) {
+            console.warn("[chat-stream] bare directives parse failed", e);
+          }
+        }
+      }
 
-      // replyAcc 用于 summary，去掉 directives 块
-      const cleanReply = replyAcc.replace(/<directives>[\s\S]*?<\/directives>/g, "").trim();
+      // replyAcc 用于 summary，去掉 directives 块（含 <directives> 标签 和 裸 JSON 尾部）
+      const cleanReply = replyAcc
+        .replace(/<directives>[\s\S]*?<\/directives>/g, "")
+        .replace(/\{[\s\S]{0,40}"(actions|patch|rerun|imageEdits)"[\s\S]*\}\s*$/g, "")
+        .trim();
       phaseDone(3, cleanReply.slice(0, 80));
       emit("done", { text: cleanReply });
       controller.close();
