@@ -37,6 +37,21 @@ const POLL_MAX_TRANSIENT = 5;
 const POLL_BACKOFFS = [3000, 5000, 8000, 13000, 20000];
 const POLL_TIMEOUT_MS = 5 * 60_000;
 
+/** 在 life 阶段失败的资产里挑出现频最高的 errorMessage，用作 task 卡片上的失败原因。 */
+function pickTopFailReason(assets: Asset[]): string | null {
+  const reasons = assets
+    .filter((a) => a.stageId === "life" && a.status === "Failed" && a.errorMessage)
+    .map((a) => a.errorMessage as string);
+  if (reasons.length === 0) return null;
+  const tally = new Map<string, number>();
+  for (const r of reasons) tally.set(r, (tally.get(r) ?? 0) + 1);
+  let top = reasons[0];
+  let best = 0;
+  for (const [k, v] of tally) if (v > best) { best = v; top = k; }
+  return top.length > 80 ? `${top.slice(0, 80)}…` : top;
+}
+
+
 
 /** Chat agent 解析出来的"真指令"。后端 chat-stream.ts 端的 schema 同步。 */
 export interface AgentDirectives {
