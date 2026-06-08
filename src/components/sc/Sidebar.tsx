@@ -424,7 +424,17 @@ export function Sidebar() {
                         </button>
                       )}
                     </div>
+                    {isFailed && t.failureReason && (
+                      <p
+                        className="mt-0.5 px-3 text-[11px] leading-tight text-status-failed/90 truncate"
+                        title={t.failureReason}
+                      >
+                        失败原因：{t.failureReason}
+                      </p>
+                    )}
+                    </div>
                   );
+
                 })}
               </div>
             )}
