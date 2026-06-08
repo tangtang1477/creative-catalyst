@@ -1,64 +1,57 @@
-## 现象与根因定位
+## 目标
 
-从录屏可以看到：在项目详情页点击 task 卡片 → 跳到 `/`，但工作区直接显示「Victoria, what are we creating today?」首页空状态（phase=empty），任务并没有被恢复。这就是用户感知的「闪退回首页」。
+让 WAN 视频段在轮询期间遇到网络/接口异常时自动指数退避重试，超出上限后归类为可识别的失败码并展示在 asset 卡片与 sidebar/项目页的 task 卡片上。
 
-走查后定位到根因链路（按概率排序，本次一并修掉）：
+## 现状
 
-1. **`handleOpenTask` 用 id 二次查表，存在竞态与不一致**
-   `projects.$projectId.tsx#handleOpenTask` 当前是：
-   ```ts
-   const candidate = useSC.getState().taskHistory.find(t => t.id === taskId);
-   if (!candidate) { toast.error(...); return; }
-   if (!canRestoreTaskRecord(candidate)) { toast.error(...); return; }
-   restoreTask(taskId);
-   navigate({ to: "/" });
-   ```
-   渲染出来的 `tasks` 来自 `useMemo([...taskHistory], project)`，而点击时再去 `useSC.getState().taskHistory.find` 取一次。理论上一致，但当远端 ingest 的写入与 React 渲染之间出现一帧错位，或者用户在 loading 完成前点击，`candidate` 可能是 `undefined`，这时函数 return，可看到 toast；但更隐蔽的是：即便能查到，`restoreTask` 内部又做了一次 `canRestoreTaskRecord(found)` 校验（store.ts:3287），任一关失败就**静默 `return`**，**而上层 `navigate({ to: "/" })` 已无条件执行** —— 这就是「跳到 / 但工作区是空首页」的直接原因。
+- `src/lib/sc/store.ts` 中两处轮询循环（`runLife` ~L2007、`retryLifeSegment` ~L2347）对 `pollVideoTask` 抛出的错误只做 `console.error + continue`，没有上限、没有任何用户可见信号，要硬等 5 分钟超时。
+- 后端返回 `status:"failed"` 时直接终止，但当上游是 5xx/超时这种瞬态故障时也会被等同处理。
+- asset 上有 `errorMessage / errorCode`，task 级 `failureReason` 已在 `persistCurrent` 时从最后一条 stage summary 取；项目页 `projects.$projectId.tsx` L341 已显示，sidebar 没有。
 
-2. **远端 ingest 出来的 TaskRecord 可能 `snapshot` 为空**
-   `listProjectTasks` 返回的旧记录里 `snapshot` 可能是 `null`，`projects.$projectId.tsx` 的 `ingest()` 会把它 normalize 成 `assets:[] / stageSummaries:{} / stageSnapshots:{} / script:null`。然后 `restoreTask` 走到末尾，把 `phase` 置为 `"done"`，但 `chatLog` / `stages` / `assets` 全空 —— 视觉上虽然不是首页，但只有一句「已完成…可以继续」的孤立提示，用户也容易误判为「没进去」。再加上路径 1 的静默 return，整体就是闪退。
+## 改动
 
-3. **`restoreTask` 失败时没有任何用户反馈，也没回写 phase**
-   静默 return 后 caller 仍然 navigate，导致跳到 `/` 后 phase 维持 caller 之前的值（在 SSR 首次进入项目详情时 phase 一直是初始 `empty`），表现就是「点了一下，回到首页」。
+### 1. `src/lib/sc/store.ts` — 轮询加入重试/退避
 
-## 修复方案（仅改三个文件，不动样式 / 文案 / 其它模块）
+抽出一个本地工具：
 
-### 1) `src/lib/sc/store.ts`
-- 将 `restoreTask` 的静默 `return` 改为返回 **布尔值**（`true = 已恢复 / false = 数据不足`），保留 normalize 容错；同时把校验放宽到「只要有 id 就尝试恢复」，对缺数据的旧记录走「**最小可视恢复**」分支：
-  - `phase` 强制设为 `"done"`（即使 `assets=[]`），保证 Workspace 进入 inFlow 渲染、不会回落到首页空状态。
-  - chatLog 注入一条友好提示：「该任务的归档数据已不可用，但仍可基于当前项目继续创作 / 重做某一步」。
-  - 不再因 `canRestoreTaskRecord=false` 就 return；这条防线移交给 caller 决定是否提示，**store 端永远把 phase 接管到非 empty 状态**。
-- 修改签名：`restoreTask: (id: string) => boolean`。
+```ts
+const POLL_INTERVAL_MS = 3000;
+const POLL_MAX_TRANSIENT = 5;          // 连续异常上限
+const POLL_BACKOFFS = [3000, 5000, 8000, 13000, 20000];
+const POLL_TIMEOUT_MS = 5 * 60_000;
+```
 
-### 2) `src/routes/projects.$projectId.tsx`
-- `handleOpenTask` 改为：
-  - 直接拿 `useMemo` 渲染时手里的 `TaskRecord`（把整条记录传进 onClick，不再用 id 二次查表，避免任何竞态）。
-  - 调用 `restoreTask(record.id)` 并读返回值；只有返回 `true` 才 `navigate({ to: "/" })`，否则在原地 toast `已知失败原因`，**不再无条件跳走**。
-  - 对 store 已统一兜底为 `done` 的记录，返回值始终是 `true`，从而保证：只要 task 卡片可见，点击就一定能落到 Workspace 的非空界面。
-- `tasks.map(...)` 把当前 `t` 直接传给 `handleOpenTask(t)`。
+在两个循环里替换 `try/catch{ continue }` 为：
 
-### 3) `src/components/sc/Sidebar.tsx`
-- 同步收口 Sidebar 的 task 点击逻辑：消费 `restoreTask` 的布尔返回值，仅在成功时 `navigate({ to: "/" })`；与项目详情页保持一致，避免另一处再触发同样的闪退。
+- 维护 `transientFails` 计数与最近一条 `lastTransientMsg`。
+- `pollVideoTask` 抛错时：`transientFails++`，按 `POLL_BACKOFFS[min(idx, last)]` 等待；同时 `updateAsset(id, { status: "Recovering", errorMessage: "网络异常，自动重试 N/M …", errorCode: "poll_transient" })` 给出可见降级提示。
+- 成功一次轮询则把计数清零，并清除 `errorCode === "poll_transient"` 的临时错误信息。
+- `transientFails > POLL_MAX_TRANSIENT` → 返回 `{ ok:false, code:"poll_failed", message:"WAN 轮询连续异常，已停止重试" }`。
+- 整体仍受 `POLL_TIMEOUT_MS` 兜底。
 
-## 不动的部分
+后端返回 `status:"failed"` 的分支保持不变（已分类好 `errorCode/errorMessage`）。
 
-- 不动 `__root.tsx`、Workspace、Sidebar 样式与文案。
-- 不动 hydrateFromStorage / Index useEffect / projects-store。
-- 不动远端 ingest / backfill 逻辑（数据完整性问题用「最小可视恢复」覆盖即可，无需改 server）。
+### 2. 失败原因写入 task 卡片
 
-## 验证步骤
+`runLife` 末尾已经 `updateStage("life", { status:"failed", errorMessage: msg })`，`persistCurrent("failed")` 会把 `msg` 抓为 `failureReason`。在新增的 `poll_failed` / `timeout` 分支里，确保失败汇总文本带上失败原因，例如：
 
-实施完成后，按 memory 要求实地验证：
+- 全部失败：`"全部视频段渲染失败：<最多见的 errorMessage>"`（按 `errorCode` 分桶取 mode）。
+- 部分失败：保持当前提示，但追加 `"，常见原因：<msg>"`。
 
-1. 在项目详情页点击「做一个30秒 9:16 的连续剧第一集」→ 应进入 `/`，Workspace 显示该 task 的恢复界面（最少能看到一条引导消息和顶栏 task 名），**不再回到「Victoria…」首页**。
-2. Sidebar 点同一个 task → 行为一致。
-3. 点击任意其它历史 task（含 localStorage 旧记录、远端 snapshot 为空的记录）→ 都不再闪退。
-4. 故意删 localStorage `sc.tasks` 后再点远端 task，验证「最小可视恢复」生效。
+这样 sidebar/项目页读到 `failureReason` 就有真原因，而不只是“全部视频段渲染失败”。
 
-## 与既有 memory 的关系
+### 3. Sidebar 任务卡片显示 failureReason
 
-完全遵守 `mem://constraints/task-restore-safe.md`：
-- 仍 normalize 残缺 TaskRecord；
-- 仍保留 `canRestoreTaskRecord` 作为「值不值得给出明确错误提示」的参考，但**不再用它作为静默退出条件**；
-- 项目详情页 / Sidebar 仍 `navigate({ to: "/" })`，但**只在恢复成功后**；
-- 时间格式化、errorComponent、SSR 守卫保持不变。
+`src/components/sc/Sidebar.tsx`：在 task list item 中，对 `t.status === "failed" && t.failureReason` 追加一行 `text-xs text-destructive truncate` 提示，与项目页 L341 视觉一致（同一段文案，不改交互）。
+
+### 4. 不动的部分
+
+- `src/lib/wan.functions.ts` 后端逻辑、`classifyWanError` 分类、`submitVideoTask` 行为不变。
+- `policy_real_person / policy_violation` 自动降级 `refs → text-only` 逻辑保留。
+- 不引入新的 toast / dialog；只复用现有 `errorMessage` 字段与已有 UI。
+
+## 验证
+
+1. 临时把 `WAN_HOST` 指向不可达地址，触发 `pollVideoTask` 抛错：asset 卡片应出现“网络异常，自动重试 N/5 …”，5 次后整体失败，task 卡片显示 `失败原因：WAN 轮询连续异常…`，sidebar 同步展示。
+2. 正常视频任务：重试计数应在成功一次轮询后清零，不留下残余 `errorMessage`。
+3. 后端真返回 `status:"failed"` 时：仍按现有分类直接失败，不再多余等待。
