@@ -55,9 +55,18 @@ export function ChatOptionCard({ msgId, card }: Props) {
         submitted && "opacity-80",
       )}
     >
-      {card.intro && (
-        <div className="mb-3 text-[12.5px] leading-relaxed text-foreground/85">
-          {card.intro}
+      {(card.intro || (!submitted && card.outro)) && (
+        <div className="mb-3 space-y-1.5">
+          {card.intro && (
+            <div className="text-[12.5px] leading-relaxed text-foreground/85">
+              {card.intro}
+            </div>
+          )}
+          {!submitted && card.outro && (
+            <div className="text-[12px] leading-relaxed text-muted-foreground">
+              {card.outro}
+            </div>
+          )}
         </div>
       )}
       <ol className="space-y-3.5">
