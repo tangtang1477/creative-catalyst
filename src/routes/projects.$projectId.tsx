@@ -9,6 +9,7 @@ import { useSC, titleMatchesProject, normalizeTaskRecord, canRestoreTaskRecord }
 import { listProjectTasks, backfillLegacyTasksForProject, attachTaskToProject } from "@/lib/tasks.functions";
 import type { TaskRecord } from "@/lib/sc/types";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 const EMPTY_TASKS: TaskRecord[] = [];
