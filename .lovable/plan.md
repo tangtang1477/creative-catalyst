@@ -1,53 +1,55 @@
-## 问题排查
+# 计划：视频分镜预览修复 + 完整成片真实合成
 
-### 问题 1：用户在对话框追加指令时，思考过程没有按约定流式展示，并且出现 raw JSON 泄漏
+## 目标
+1. 分镜卡片里的视频能正常显示时长 / 首帧 / 内联播放（当前显示 0:00）。
+2. "合成完整成片" 区域真的合成成片：默认用顺序连播预览（零等待），并提供 `导出合并 MP4` 按钮触发 ffmpeg.wasm 真实拼接 + 下载。
 
-观察用户截图：`Used skill chat-director` 之下直接是一句回复，没有任何"理解需求 / 匹配镜头 / 评估改动范围"思考阶段药丸，并且把 `{"actions":[{"kind":"rerun-all"}]}` 这种原始指令 JSON 直接打到了正文里。
+## 改动范围（仅触及用户点名的两处）
 
-读 `src/lib/sc/chat-stream-handler.ts` 与 `src/lib/sc/store.ts#chatMessage`，根因有两个：
+### 1. `src/components/sc/AssetCard.tsx` — 修分镜视频预览
+将视频元素改为：
+```tsx
+<video
+  src={asset.url}
+  poster={asset.poster}
+  controls
+  playsInline
+  preload="metadata"
+  crossOrigin="anonymous"
+  className="block w-full bg-black"
+  style={{ aspectRatio: aspectCss, maxHeight: maxH }}
+/>
+```
+只动这一段 `<video>` 标签，不动其它逻辑/样式。
 
-1. 模型对**追加聊天**这种短消息有时会跳过 `<thinking>…</thinking>` 直接吐回复 + JSON。handler 在 L519 的 fallback 把三段全部 `phaseDone(i, "（跳过）")`，且**只 phaseStart(0) 过 1 次**，phase 1/2 从未 start → ChatAgentMessage 里 `runningTool` 找不到、`toolCalls` 列表也根本没渲染（因为我们把它当成 skillSub/loading pill 用，没有展开 thinking 文本本体）。
-2. handler 只对**字面 `<directives>` 标签**做剥离（L347 起 emitReplyToken 检测 `<directives>`）。当模型偷懒输出裸 JSON（如 `{"actions":[...]}`）时，整段 JSON 跟着 token 透传到前端，`ChatAgentMessage.visibleText` 也只过滤 `<directives>` 标签 → JSON 直接出现在气泡里。
+### 2. 新增 `src/components/sc/MergedFilmPlayer.tsx`
+自定义顺序播放器：
+- 接收 `segments: { id, url, duration }[]`。
+- 单 `<video>` 元素，播完一段自动切到下一段（监听 `onEnded`），用 `<source>` 替换 `src`。
+- 顶部一条总进度条（已播放秒数 / 总秒数），带分段刻度。
+- 控制条：播放/暂停、当前段标签（V01/V02…）、全屏、`导出合并 MP4` 按钮。
+- 导出按钮点击时动态 `import('@ffmpeg/ffmpeg')` 并加载 `@ffmpeg/util`，下载各分镜 → `concat demuxer` 拼接 → 生成 Blob → 触发下载 `final.mp4`。期间显示进度（`ffmpeg.on('progress')`）。
+- wasm 失败时回退提示"导出失败，可逐段下载"。
 
-### 问题 2：从素材"add to task"塞进输入框的附件不会随用户消息进入对话
+### 3. `src/components/sc/Workspace.tsx` — details 阶段嵌入播放器
+仅修改 `id === "details"` 分支内 `<div className="rounded-2xl ...">` 那段：
+- 保留标题 + 段数徽章 + 一句状态文案。
+- 当 `st.status === "ready"` 且 `lifeAssets.length > 0` 时，在文案下方渲染 `<MergedFilmPlayer segments={lifeAssets.map(...)} />`。
+- 其余分支（running / 待确认）不变。
+- 不改其它阶段、不改 QC 位置（保留在播放器下方）。
 
-读 `src/lib/sc/store.ts#chatMessage`（L2718）发现：它**完全没有读 `get().attachments`，也没 clearAttachments**。而 `submit()`（首条 prompt）那条路径才用 attachments。所以一旦进入 chat 模式：
-- 附件 chip 永远卡在 `AttachmentChips` 上方；
-- 发送的 payload `context` 里不带 asset 引用，模型不知道用户在指哪张图；
-- 用户继续打字、再次发送，chip 仍在那里 → 像"附件没跟随发出"。
+### 4. 依赖
+```bash
+bun add @ffmpeg/ffmpeg @ffmpeg/util
+```
+ffmpeg core 文件走官方 CDN（`unpkg.com/@ffmpeg/core@x.x.x/dist/esm`），不打包进首屏 bundle，仅点击导出时按需加载。
 
----
+## 不动的部分
+- 不改 store、types、chat、其它阶段、Sidebar、AssetThumbCard、AssetActions、StageRow 等。
+- 不改文案/间距/字号，除上述指定位置。
+- 不改业务逻辑，仅前端展示与新增合成播放器。
 
-## 改动计划
-
-只动这三处，不碰其它模块、样式、文案，不引入新功能。
-
-### 1) `src/lib/sc/chat-stream-handler.ts` — 让思考过程稳定出现 + 屏蔽裸 JSON
-- **强约束系统提示**：在 systemPrompt 顶部加一句"**必须先输出 `<thinking>...</thinking>`，思考块内必须包含 3 个 `## ` 小节，缺一不可；最终回复后如需驱动 pipeline，必须用 `<directives>{...}</directives>` 包裹，禁止把 JSON 裸写在正文里。**"
-- **fallback 也补齐阶段事件**：模型没按格式输出 thinking 时（L519 分支），先 `phaseStart(i)` 再 `phaseDone(i, "（跳过）")`，保证前端拿到完整 4 段事件、`Used skill` 那一行能跟上正在跑的子阶段。
-- **裸 JSON 剥离**：扩展 `emitReplyToken` 的 directives 检测，除了 `<directives>` 还匹配以 `\n{` 或开头 `{` 出现、且包含 `"actions"|"patch"|"rerun"|"imageEdits"` 关键字的尾部 JSON 块；命中后停止 token 透传、把整段塞进 `replyAcc` 末尾，结束时按 directives 再解析一次（同样 emit `directives` 事件）。
-- 客户端兜底：`ChatAgentMessage.visibleText` 已经会去 `<directives>`，再额外加一行 `text = text.replace(/\{\s*"(actions|patch|rerun|imageEdits)"[\s\S]*?\}\s*$/m, "").trimEnd()`，保证旧消息也不再露 JSON（只在 `ChatAgentMessage.tsx` 内部修，行为只是过滤，不影响布局）。
-
-### 2) `src/lib/sc/store.ts#chatMessage` — 让附件跟随聊天发送
-- 取消息时先 `const refs = get().attachments`。
-- userMsg 仍按原样渲染文本气泡（不动 UI）；同时在拼 `payload.context` 时新增：
-  ```
-  refs: refs.map(a => ({ id: a.id, kind: a.kind, name: a.displayName ?? a.name, url: a.url, assetId: a.assetId }))
-  ```
-- 拼 history 时，若有 refs，把最后一条 user content 改写成 `"[引用素材：A03, W01] " + t`，让模型在 chat-director 思考里知道用户指的是哪个素材。
-- 发送成功后 `set({ attachments: [] })`（沿用现有 `clearAttachments`），输入框上的 chip 自然消失。
-- 不引入新的 ChatMsg 字段、不改 `ChatItemBoundary` 的 user 气泡渲染，避免动到样式。
-
-### 3) `src/lib/sc/chat-stream-handler.ts` body schema — 读取 refs
-- `body.context` 类型补一个可选 `refs?: Array<{ id; kind?; name?; url?; assetId? }>`。
-- ctxLines 里追加：`if (ctx?.refs?.length) ctxLines.push("用户引用素材：" + ctx.refs.map(r => \`${r.assetId ?? r.id}(${r.kind ?? "asset"})${r.name ? " " + r.name : ""}\`).join("；"))`。
-- 模型据此把 `imageEdits.assetId` / `actions.retry-stage` 等指向正确的素材。
-
-### 不动的部分
-- `AttachmentChips`、`CommandInput`、`Sidebar`、项目详情页、`wan.functions.ts`、轮询/失败原因逻辑全部保持原样。
-- 不新增 chat 气泡里的素材展示组件；用户气泡仍只显示文本。如果后续想在用户气泡里同步显示小缩略图，再开一轮单独改。
-
-### 验证
-- 在正在跑的任务里发"把 A03 妆容再淡一些"：浏览器 Network 看 `/api/chat-stream` SSE 应能看到 `phase / phase-start / thinking / phase-done / token / done` 完整事件；ChatAgentMessage 顶部 `Used skill chat-director · 匹配当前镜头与品牌` 等子阶段会随流切换。
-- 同一句话末尾不再出现裸 `{"actions":...}`。
-- 在素材卡点 "Add to task" → 输入框出现缩略图 chip → 在输入框输入"把这张换成雨夜背景" → 发送：chip 消失，气泡只显示文字；模型回复中能识别到 A03/W01 并下发对应的 `imageEdits` directive。
+## 验收
+1. 任意已生成的视频分镜卡片：能看到时长，能在卡片里点击播放。
+2. details 阶段 ready 时，下方出现连播播放器；点播放从 V01 → V02 无缝连放。
+3. 点击"导出合并 MP4" → 显示进度 → 自动下载单个 mp4 文件，时长 ≈ 各分镜时长之和。

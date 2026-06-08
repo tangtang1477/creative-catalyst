@@ -13,6 +13,7 @@ import { ApprovalChips } from "./ApprovalChips";
 import { SeriesBible } from "./SeriesBible";
 import { WardrobePanel } from "./WardrobePanel";
 import { QCPanel } from "./QCPanel";
+import { MergedFilmPlayer, buildSegmentsFromAssets } from "./MergedFilmPlayer";
 import { ViewModeToggle } from "./ViewModeToggle";
 import { CanvasView } from "./canvas/CanvasView";
 import { STAGE_ORDER } from "@/lib/sc/types";
@@ -339,6 +340,9 @@ export function Workspace() {
 
                     if (id === "details") {
                       const lifeAssets = assets.filter((a) => a.stageId === "life" && a.status === "Ready");
+                      const videoSegments = buildSegmentsFromAssets(
+                        lifeAssets.filter((a) => a.kind === "video" && a.url),
+                      );
                       return (
                         <StageBoundary key={id} stageId={id}>
                           <StageRow id={id} state={st} keepChildrenWhenCollapsed>
@@ -358,12 +362,16 @@ export function Workspace() {
                                       : "等待用户确认后开始合成。"}
                                 </div>
                               </div>
+                              {st.status === "ready" && videoSegments.length > 0 && (
+                                <MergedFilmPlayer segments={videoSegments} />
+                              )}
                               {st.status === "ready" && <QualityCheck />}
                             </div>
                           </StageRow>
                         </StageBoundary>
                       );
                     }
+
 
 
                     return (
