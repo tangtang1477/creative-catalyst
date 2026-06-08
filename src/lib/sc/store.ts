@@ -3418,7 +3418,7 @@ export const useSC = create<SCState>((set, get) => {
             { label: "整任务重跑", kind: "rerun-all" as const },
           ],
         });
-      } else if (rec.status === "interrupted") {
+      } else if (rec.status === "interrupted" || rec.status === "running") {
         // 中断的任务：找到第一个非 ready 的 stage 作为续跑起点
         const interruptedStage =
           STAGE_ORDER.find((sid) => {
