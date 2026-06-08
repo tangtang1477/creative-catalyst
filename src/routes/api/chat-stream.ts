@@ -267,25 +267,39 @@ export const Route = createFileRoute("/api/chat-stream")({
           .filter(Boolean)
           .join("\n");
 
-        const upstream = await fetch(
-          "https://ai.gateway.lovable.dev/v1/chat/completions",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${key}`,
-              "Content-Type": "application/json",
+        const upstreamCtrl = new AbortController();
+        const upstreamTimeout = setTimeout(() => upstreamCtrl.abort(), 45_000);
+        request.signal?.addEventListener("abort", () => upstreamCtrl.abort());
+        let upstream: Response;
+        try {
+          upstream = await fetch(
+            "https://ai.gateway.lovable.dev/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${key}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "google/gemini-2.5-flash",
+                stream: true,
+                messages: [
+                  { role: "system", content: systemPrompt },
+                  ...messages,
+                ],
+              }),
+              signal: upstreamCtrl.signal,
             },
-            body: JSON.stringify({
-              model: "google/gemini-2.5-flash",
-              stream: true,
-              messages: [
-                { role: "system", content: systemPrompt },
-                ...messages,
-              ],
-            }),
-            signal: request.signal,
-          },
-        );
+          );
+        } catch (err) {
+          clearTimeout(upstreamTimeout);
+          const msg = err instanceof Error ? err.message : "upstream_fetch_failed";
+          return new Response(
+            JSON.stringify({ error: "upstream_unreachable", detail: msg.slice(0, 300) }),
+            { status: 502, headers: { "Content-Type": "application/json" } },
+          );
+        }
+
 
         if (!upstream.ok || !upstream.body) {
           const text = await upstream.text().catch(() => "");
