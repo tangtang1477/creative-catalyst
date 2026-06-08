@@ -566,7 +566,18 @@ export const Route = createFileRoute("/api/chat-stream")({
             Connection: "keep-alive",
           },
         });
+        } catch (err) {
+          console.error("[chat-stream] unhandled error", err);
+          return new Response(
+            JSON.stringify({
+              error: "internal",
+              detail: err instanceof Error ? err.message : String(err),
+            }),
+            { status: 500, headers: { "Content-Type": "application/json" } },
+          );
+        }
       },
+
     },
   },
 });
