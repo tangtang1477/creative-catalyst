@@ -31,6 +31,13 @@ import { parseFormatDuration, parseFormatRatio, formatDurationLabel } from "@/li
 import { useProjects } from "@/lib/sc/projects-store";
 import { upsertTaskSnapshot, listProjectTasks, backfillLegacyTasksForProject } from "@/lib/tasks.functions";
 
+/** WAN 视频段轮询：基础节奏 + 瞬态错误退避表 + 兜底超时。 */
+const POLL_INTERVAL_MS = 3000;
+const POLL_MAX_TRANSIENT = 5;
+const POLL_BACKOFFS = [3000, 5000, 8000, 13000, 20000];
+const POLL_TIMEOUT_MS = 5 * 60_000;
+
+
 /** Chat agent 解析出来的"真指令"。后端 chat-stream.ts 端的 schema 同步。 */
 export interface AgentDirectives {
   patch?: {
