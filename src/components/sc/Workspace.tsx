@@ -13,6 +13,7 @@ import { ApprovalChips } from "./ApprovalChips";
 import { SeriesBible } from "./SeriesBible";
 import { WardrobePanel } from "./WardrobePanel";
 import { QCPanel } from "./QCPanel";
+import { MergedFilmPlayer, buildSegmentsFromAssets } from "./MergedFilmPlayer";
 import { ViewModeToggle } from "./ViewModeToggle";
 import { CanvasView } from "./canvas/CanvasView";
 import { STAGE_ORDER } from "@/lib/sc/types";
