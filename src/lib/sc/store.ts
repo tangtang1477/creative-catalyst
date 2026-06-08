@@ -2814,6 +2814,7 @@ export const useSC = create<SCState>((set, get) => {
             failedStage,
             runningStage,
             taskTitle: s.taskTitle || undefined,
+            refs: refsCtx.length ? refsCtx : undefined,
           },
         };
 
