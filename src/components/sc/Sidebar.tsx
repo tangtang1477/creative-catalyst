@@ -138,7 +138,9 @@ export function Sidebar() {
             kind: "oneoff" as const,
             assets: [],
             favorite: false,
+            failureReason: undefined as string | undefined,
           }]
+
         : [];
     const rest = taskHistory.filter((t) => t.id !== taskId);
     const favorites = rest.filter((t) => t.favorite);
@@ -333,13 +335,14 @@ export function Sidebar() {
                   const isFailed = t.status === "failed";
                   const disabled = isActive;
                   return (
+                    <div key={t.id} className="flex flex-col">
                     <div
-                      key={t.id}
                       className={cn(
                         "group relative flex items-center gap-1 rounded-lg pl-1.5 pr-1 transition-colors",
                         isActive ? "bg-surface-2" : "hover:bg-surface-2/60",
                       )}
                     >
+
                       {/* active line indicator */}
                       <span
                         className={cn(
@@ -423,7 +426,17 @@ export function Sidebar() {
                         </button>
                       )}
                     </div>
+                    {isFailed && t.failureReason && (
+                      <p
+                        className="mt-0.5 px-3 text-[11px] leading-tight text-status-failed/90 truncate"
+                        title={t.failureReason}
+                      >
+                        失败原因：{t.failureReason}
+                      </p>
+                    )}
+                    </div>
                   );
+
                 })}
               </div>
             )}

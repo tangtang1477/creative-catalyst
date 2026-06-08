@@ -31,6 +31,28 @@ import { parseFormatDuration, parseFormatRatio, formatDurationLabel } from "@/li
 import { useProjects } from "@/lib/sc/projects-store";
 import { upsertTaskSnapshot, listProjectTasks, backfillLegacyTasksForProject } from "@/lib/tasks.functions";
 
+/** WAN 视频段轮询：基础节奏 + 瞬态错误退避表 + 兜底超时。 */
+const POLL_INTERVAL_MS = 3000;
+const POLL_MAX_TRANSIENT = 5;
+const POLL_BACKOFFS = [3000, 5000, 8000, 13000, 20000];
+const POLL_TIMEOUT_MS = 5 * 60_000;
+
+/** 在 life 阶段失败的资产里挑出现频最高的 errorMessage，用作 task 卡片上的失败原因。 */
+function pickTopFailReason(assets: Asset[]): string | null {
+  const reasons = assets
+    .filter((a) => a.stageId === "life" && a.status === "Failed" && a.errorMessage)
+    .map((a) => a.errorMessage as string);
+  if (reasons.length === 0) return null;
+  const tally = new Map<string, number>();
+  for (const r of reasons) tally.set(r, (tally.get(r) ?? 0) + 1);
+  let top = reasons[0];
+  let best = 0;
+  for (const [k, v] of tally) if (v > best) { best = v; top = k; }
+  return top.length > 80 ? `${top.slice(0, 80)}…` : top;
+}
+
+
+
 /** Chat agent 解析出来的"真指令"。后端 chat-stream.ts 端的 schema 同步。 */
 export interface AgentDirectives {
   patch?: {
@@ -2004,15 +2026,36 @@ export const useSC = create<SCState>((set, get) => {
             appendSummary("life", `${sa.id} WAN task: ${submitRes.taskId}${mode === "text-only" ? "（已降级为纯文本）" : ""}`);
 
             const started = Date.now();
+            let transient = 0;
+            let lastTransientMsg = "";
             while (true) {
               if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
-              await pausableSleep(3000);
+              await pausableSleep(POLL_INTERVAL_MS);
               if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
               let r;
               try {
                 r = await pollVideoTask({ data: { taskId: submitRes.taskId } });
+                if (transient > 0) {
+                  transient = 0;
+                  updateAsset(sa.id, { status: "Processing", errorMessage: undefined, errorCode: undefined });
+                }
               } catch (e) {
-                console.error(`[life] ${sa.id} poll error`, e);
+                transient += 1;
+                lastTransientMsg = (e as Error).message ?? "网络异常";
+                console.error(`[life] ${sa.id} poll error (${transient}/${POLL_MAX_TRANSIENT})`, e);
+                if (transient > POLL_MAX_TRANSIENT) {
+                  return {
+                    ok: false,
+                    code: "poll_failed",
+                    message: `WAN 轮询连续异常，已停止重试：${lastTransientMsg.slice(0, 120)}`,
+                  };
+                }
+                updateAsset(sa.id, {
+                  status: "Recovering",
+                  errorMessage: `网络异常，自动重试 ${transient}/${POLL_MAX_TRANSIENT} …`,
+                  errorCode: "poll_transient",
+                });
+                await pausableSleep(POLL_BACKOFFS[Math.min(transient - 1, POLL_BACKOFFS.length - 1)]);
                 continue;
               }
               if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
@@ -2026,11 +2069,12 @@ export const useSC = create<SCState>((set, get) => {
                   message: r.errorMessage ?? "WAN 渲染失败",
                 };
               }
-              if (Date.now() - started > 5 * 60_000) {
+              if (Date.now() - started > POLL_TIMEOUT_MS) {
                 return { ok: false, code: "timeout", message: "WAN 轮询超时（5min）" };
               }
               updateAsset(sa.id, { status: "Processing" });
             }
+
           } catch (e) {
             const raw = (e as Error).message ?? "";
             // 解析 submitVideoTask 抛出的前缀 `[code] msg :: upstream`
@@ -2085,20 +2129,26 @@ export const useSC = create<SCState>((set, get) => {
         const policyHits = get().assets.filter(
           (a) => a.stageId === "life" && (a.errorCode === "policy_real_person" || a.errorCode === "policy_violation"),
         ).length;
-        const msg =
+        const topReason = pickTopFailReason(get().assets);
+        const baseMsg =
           policyHits > 0
             ? `${policyHits}/${segAssets.length} 段被上游安全审核拒绝（参考图疑似真人或违规），可在下方更换参考图后单独重做。`
             : "全部视频段渲染失败，可在下方单独重做某一段";
+        const msg = topReason ? `${baseMsg}：${topReason}` : baseMsg;
         updateStage("life", { status: "failed", errorMessage: msg });
         appendSummary("life", msg);
         set({ phase: "failed" });
         persistCurrent("failed");
       } else {
-        const partial = `${okCount}/${segAssets.length} 段成功，其余失败 · 可点击单段重试`;
+        const topReason = pickTopFailReason(get().assets);
+        const partial = topReason
+          ? `${okCount}/${segAssets.length} 段成功，其余失败 · 常见原因：${topReason} · 可点击单段重试`
+          : `${okCount}/${segAssets.length} 段成功，其余失败 · 可点击单段重试`;
         updateStage("life", { status: "failed", errorMessage: partial });
         appendSummary("life", partial);
         set({ phase: "failed" });
         persistCurrent("failed");
+
       }
     })();
   };
@@ -2344,15 +2394,36 @@ export const useSC = create<SCState>((set, get) => {
             `${asset.id} WAN task: ${submitRes.taskId}${mode === "text-only" ? "（已降级为纯文本）" : ""}`,
           );
           const started = Date.now();
+          let transient = 0;
+          let lastTransientMsg = "";
           while (true) {
             if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
-            await pausableSleep(3000);
+            await pausableSleep(POLL_INTERVAL_MS);
             if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
             let r;
             try {
               r = await pollVideoTask({ data: { taskId: submitRes.taskId } });
+              if (transient > 0) {
+                transient = 0;
+                updateAsset(asset.id, { status: "Processing", errorMessage: undefined, errorCode: undefined });
+              }
             } catch (e) {
-              console.error(`[life] segment ${asset.id} poll error`, e);
+              transient += 1;
+              lastTransientMsg = (e as Error).message ?? "网络异常";
+              console.error(`[life] segment ${asset.id} poll error (${transient}/${POLL_MAX_TRANSIENT})`, e);
+              if (transient > POLL_MAX_TRANSIENT) {
+                return {
+                  ok: false,
+                  code: "poll_failed",
+                  message: `WAN 轮询连续异常，已停止重试：${lastTransientMsg.slice(0, 120)}`,
+                };
+              }
+              updateAsset(asset.id, {
+                status: "Recovering",
+                errorMessage: `网络异常，自动重试 ${transient}/${POLL_MAX_TRANSIENT} …`,
+                errorCode: "poll_transient",
+              });
+              await pausableSleep(POLL_BACKOFFS[Math.min(transient - 1, POLL_BACKOFFS.length - 1)]);
               continue;
             }
             if (get().runId !== startedRunId) return { ok: false, code: "cancelled", message: "" };
@@ -2364,11 +2435,12 @@ export const useSC = create<SCState>((set, get) => {
                 message: r.errorMessage ?? "WAN 渲染失败",
               };
             }
-            if (Date.now() - started > 5 * 60_000) {
+            if (Date.now() - started > POLL_TIMEOUT_MS) {
               return { ok: false, code: "timeout", message: "WAN 轮询超时（5min）" };
             }
             updateAsset(asset.id, { status: "Processing" });
           }
+
         } catch (e) {
           const raw = (e as Error).message ?? "";
           const m = raw.match(/^\[(policy_real_person|policy_violation|quota_exceeded|submit_failed)\]\s*([^:]+)/);
