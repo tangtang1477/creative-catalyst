@@ -83,6 +83,8 @@ export interface StageState {
   thoughts: Thought[];
   /** Human-readable error message displayed inline when status === 'failed'. */
   errorMessage?: string;
+  /** Wall-clock ms when the stage first transitioned to "running". 0/undefined for legacy snapshots. */
+  startedAt?: number;
 }
 
 
