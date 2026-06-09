@@ -88,6 +88,7 @@ function ProjectDetailPage() {
   useEffect(() => {
     if (projectsLoaded) return;
     let cancelled = false;
+    let unsub: (() => void) | null = null;
     (async () => {
       const { data } = await supabase.auth.getSession();
       if (cancelled) return;
@@ -95,21 +96,22 @@ function ProjectDetailPage() {
         void fetchProjects();
         return;
       }
-      // No session yet — listen once for SIGNED_IN / INITIAL_SESSION then fetch.
+      // No session yet — wait for SIGNED_IN / INITIAL_SESSION, then fetch.
+      // Do NOT fall back to firing listProjects without a session; that
+      // throws "Unauthorized: No authorization header provided" and crashes
+      // the page with the dev error overlay.
       const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
         if (cancelled || !session) return;
         sub.subscription.unsubscribe();
+        unsub = null;
         void fetchProjects();
       });
-      // Safety: if neither getSession nor listener fired with a session in 2s,
-      // try fetching anyway (will surface a real error in the UI instead of
-      // hanging on the loading spinner).
-      setTimeout(() => {
-        if (cancelled) return;
-        if (!useProjects.getState().loaded) void fetchProjects();
-      }, 2000);
+      unsub = () => sub.subscription.unsubscribe();
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (unsub) unsub();
+    };
   }, [projectsLoaded, fetchProjects]);
 
   // Pull remote tasks and merge into local taskHistory (similar to enterProject).
