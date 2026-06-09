@@ -918,17 +918,17 @@ export const useSC = create<SCState>((set, get) => {
         }
         const newAsset: Asset = {
           id: audioId,
-          kind: "audio" as unknown as Asset["kind"],
+          kind: "audio",
           label: videoAsset.id,
           caption: `对白 · ${videoAsset.caption ?? videoAsset.label ?? videoAsset.id}`,
           status: "Ready",
           url,
           stageId: "life",
           sourceShotId: videoAsset.id,
-        } as Asset;
-        // store mime on a side channel so AudioPanel <audio> just works via url
+        };
         void mime;
         set((s) => ({ assets: [...s.assets, newAsset] }));
+
       } catch (e) {
         console.warn("[extract-audio] asset", videoAsset.id, e);
       }
