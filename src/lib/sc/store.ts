@@ -770,9 +770,14 @@ export const useSC = create<SCState>((set, get) => {
   };
 
   const updateStage = (id: StageId, patch: Partial<StageState>) =>
-    set((s) => ({
-      stages: { ...s.stages, [id]: { ...s.stages[id], ...patch } },
-    }));
+    set((s) => {
+      const cur = s.stages[id];
+      const next: StageState = { ...cur, ...patch };
+      if (patch.status === "running" && !cur.startedAt) {
+        next.startedAt = Date.now();
+      }
+      return { stages: { ...s.stages, [id]: next } };
+    });
 
   const appendSummary = (id: StageId, line: string, thumbs?: string[]) =>
     set((s) => {
