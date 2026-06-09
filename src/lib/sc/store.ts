@@ -2665,6 +2665,12 @@ export const useSC = create<SCState>((set, get) => {
 
     hydrateFromStorage: () => {
       if (typeof window === "undefined") return;
+      // Idempotent: once hydrated (or once an active task has been restored
+      // via restoreTask, which also sets hydrated=true), do NOT re-overwrite
+      // taskHistory / viewMode / autoMode. This prevents the project-detail
+      // → restoreTask → navigate("/") → Index useEffect → hydrateFromStorage
+      // race that previously could clobber the freshly restored task state.
+      if (get().hydrated) return;
       const history = loadHistory().map((task) => normalizeTaskRecord(task));
       set({
         taskHistory: history,
