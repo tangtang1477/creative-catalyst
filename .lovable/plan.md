@@ -1,73 +1,61 @@
-# 修复计划：项目页点击 task 后跳回首页 empty
+# 修复 refining brief 选项卡的渲染顺序
+
+## 问题
+
+当前 `Workspace.tsx` 把工作区输出拆成两段渲染：
+
+1. 顶部：`STAGE_ORDER` 各阶段卡片（structure / wardrobe / cast / paint / qc / life / details）
+2. 底部：`chatLog` 中的所有用户/Agent 消息（含已确认的 option cards）
+
+中间额外塞了一段「awaiting 状态的 option cards 钉在 stages 上方」的逻辑。
+
+带来的体验问题（截图所示）：
+
+- `chat-director · refining brief` 这张选项卡，实际创建时间在 `structure` 阶段开始**之前**，但渲染时：
+  - awaiting 时被拉到 stages 上方一个特殊位置；
+  - 一旦用户点了 Continue / Skip，它马上跳到 `chatLog` 区块——也就是整页**最底部**，出现在 structuring / cast / paint 等所有阶段下方。
+- 同理，过程中其它 `chat-director` 消息（等待确认、image-edit 等）也都被堆在最底部，时间线被打乱。
 
 ## 目标
-修复你现在遇到的问题：从项目详情页点击任意 task 后，会跳回首页，但工作区被重置成 empty，而不是恢复该任务内容。
 
-## 我确认到的现象
-- 你描述的是：**每一个 task 都会复现**。
-- 复现路径是：**首次进入项目页立即点击** 和 **停留几秒后再点击** 都会出现。
-- 我在代码里查到当前流程是：
-  1. 项目详情页先调用 `restoreTask(taskId)`
-  2. 然后 `navigate({ to: "/" })`
-  3. 首页 `/` 挂载后会再执行一次 `hydrateFromStorage()`
-- 这个顺序很容易导致：**刚恢复进内存的任务状态，被首页 hydration 用 localStorage 里的旧状态覆盖掉**，最终落回 empty。
+按真实时间顺序展示所有输出。具体到这张卡：
 
-## 我会怎么修
+- 时间上它在 `structure` 阶段开始之前 → UI 上也必须出现在 structure 卡片之前；
+- 用户确认后不要"位置漂移"，仍留在原位，只是状态从 awaiting → 已采纳。
+- 其它 agent 消息也按各自时间戳，正确插入到对应 stage 之间。
 
-### 1. 修正首页 hydration 覆盖恢复态的问题
-在 `/` 页的初始化逻辑里加保护，避免在“刚从项目页 restore 完任务”的情况下，再用 storage 把当前内存态覆盖回 empty。
+## 方案：按时间戳合并 chatLog 与 stages，单一时间线渲染
 
-会采用下面这类思路之一，并选最小改动方案：
-- 如果 store 已经处于非 empty / 已有 active task，则首页不再做破坏性 hydration
-- 或者只 hydration `taskHistory / viewMode / autoMode / hydrated`，不覆盖当前已恢复的活动任务上下文
-- 保证进入 `/` 后，restore 出来的 `phase / taskId / taskTitle / brief / stages / assets / chatLog` 仍然保留
+在 `src/components/sc/Workspace.tsx` 的 `inFlow` 渲染块里：
 
-### 2. 补强项目页点击 task 的恢复前校验
-在项目详情页点击 task 时，继续收紧恢复前判断，避免因为“列表记录存在但不可安全恢复”而把用户送回 `/` 空页。
+1. **删除两处旧渲染**
+   - 删掉"awaiting option cards 钉在上方"的 `chatLog.flatMap(...)` 块（约 215–226 行）。
+   - 删掉底部"chatLog.map 渲染用户/agent 消息"的块（约 387–411 行）。
 
-会检查：
-- 目标任务是否真实存在于当前列表 / store
-- 恢复是否成功
-- 只有成功恢复后才导航到 `/`
+2. **构建统一时间线数组** `timeline: Array<{ ts: number; kind: "chat" | "stage"; ... }>`
+   - chatLog 中的每条消息 → `{ ts: m.ts, kind: "chat", msg: m }`
+   - `STAGE_ORDER` 中状态不为 `pending` 的每个 stage → `{ ts: stages[id].startedAt || fallback, kind: "stage", stageId: id }`
+     - `startedAt` 为 0 时（旧快照）回退到一个稳定值，保持原 `STAGE_ORDER` 相对顺序（例如用 `index * 1` + 一个不大于任一 chat ts 的基准），避免老项目被打乱。
+   - 按 `ts` 升序排序。
 
-### 3. 做实际回归验证
-我会按你描述的真实路径回归：
-- 进入项目详情页后立即点击 task
-- 进入项目详情页停留几秒再点击 task
-- 验证是否仍然跳回 `/`
-- 验证 `/` 打开后显示的是恢复后的任务内容，而不是 empty
-- 验证不会顺带破坏 Sidebar 中已有的 task 恢复流程
+3. **单次 map 渲染**
+   - `kind === "chat"`：
+     - user 消息 → 现有的右侧气泡；
+     - agent 消息 → `<ChatAgentMessage ...>`，`optionCards` 直接传 `m.optionCards ?? []`（**不再按 status 过滤**）——awaiting / 已采纳都在原位展示，由 `ChatOptionCard` 自己根据 status 切换样式（保持现有视觉：未确认显示选项 + Continue/Skip，已确认显示「✓ 已采纳，开始下一步」）。
+   - `kind === "stage"`：保留现有 `STAGE_ORDER.map` 内对每个 stageId 的分支逻辑（structure → ScriptTable + StoryboardTable，wardrobe → WardrobePanel，等等），原样搬过来按 stageId 分派即可。
 
-## 影响范围
-只改和这次问题直接相关的恢复链路：
-- `src/routes/index.tsx`
-- 可能涉及 `src/lib/sc/store.ts`
-- 如有必要，少量调整 `src/routes/projects.$projectId.tsx`
+4. **`ApprovalChips` 与 `endRef`** 保持在时间线之后，位置不变。
 
-不会顺带改别的样式、文案或功能。
+5. **`stagesKey` 自动滚动 effect** 增加对 `chatLog` 已经存在的依赖；新增 `stages[id].startedAt` 进 `stagesKey`，确保新 stage 启动时能正确触发滚动（其它逻辑不动）。
 
-## 技术细节
-```text
-当前高风险链路：
-project detail click
-  -> restoreTask(taskId) 写入 zustand 内存态
-  -> navigate('/')
-  -> index useEffect hydrateFromStorage()
-  -> 用 localStorage 内容覆盖当前内存态
-  -> phase 回到 empty
-```
+## 兼容性 / 不动的地方
 
-修复后的目标：
-```text
-project detail click
-  -> restoreTask(taskId)
-  -> navigate('/')
-  -> index hydration 只补历史数据/偏好，不能覆盖当前 active task
-  -> 工作区稳定展示恢复后的 task
-```
+- `store.ts`、option card 的数据结构、`ChatOptionCard` 内部交互、`ChatAgentMessage`、stage 渲染细节均不改。
+- 仅 `Workspace.tsx` 的 `inFlow` JSX 调整渲染顺序与过滤逻辑。
+- 老项目快照里 stage 没有 `startedAt`（=0）的情况通过 fallback 保留原 STAGE_ORDER 顺序，不会出现错乱。
 
-## 交付结果
-修完后，你从项目页点击任意 task，应当：
-- 回到 `/` 工作区
-- 直接看到该 task 的完整恢复内容
-- 不再落回 empty 状态
+## 验收
+
+- 输入 brief → 进入 running：refining brief 卡片出现在 SeriesBible/Selected Brief 之后、structure stage 之前。
+- 点 Continue/Skip 后：该卡片**留在原位**显示「✓ 已采纳，开始下一步」，structure 阶段在它**下方**展开。
+- 后续 `chat-director · 等待确认` / `image-edit` 等 agent 消息按时间戳穿插在对应 stage 之间，不再统一堆到最底部。
