@@ -2145,6 +2145,7 @@ export const useSC = create<SCState>((set, get) => {
           });
           consume("life", `Video ${sa.id} · wan`, VIDEO_COST_PER_SEG, get().taskId);
           appendSummary("life", `${sa.id} Ready`);
+          extractForVideoAsset({ id: sa.id, url: r.ossUrl, label: sa.label, caption: sa.caption });
           return true;
         }
         if (r.code === "cancelled") return false;
