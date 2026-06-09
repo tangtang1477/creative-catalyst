@@ -46,6 +46,16 @@ export const useProjects = create<ProjectsState>((set, get) => ({
 
   fetchProjects: async () => {
     if (get().loading) return;
+    // Guard: never call the protected serverFn without a session, or it
+    // throws "Unauthorized: No authorization header provided" and the dev
+    // overlay surfaces it as a runtime error / blank screen.
+    try {
+      const { supabase } = await import("@/integrations/supabase/client");
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) return;
+    } catch {
+      return;
+    }
     set({ loading: true, error: null });
     try {
       const { projects } = await fnList();
