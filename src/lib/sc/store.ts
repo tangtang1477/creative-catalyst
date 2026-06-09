@@ -28,7 +28,6 @@ import { streamGenerateImage, uploadBase64Image } from "@/lib/upload-image";
 import { submitVideoTask, pollVideoTask } from "@/lib/wan.functions";
 import { generateScript, type GeneratedScript } from "@/lib/script.functions";
 import { parseFormatDuration, parseFormatRatio, formatDurationLabel } from "@/lib/sc/format-utils";
-import { extractAudioFromVideo } from "@/lib/sc/extract-audio";
 import { useProjects } from "@/lib/sc/projects-store";
 import { upsertTaskSnapshot, listProjectTasks, backfillLegacyTasksForProject } from "@/lib/tasks.functions";
 
@@ -897,44 +896,6 @@ export const useSC = create<SCState>((set, get) => {
         return { ...a, ...extra, url: nextUrl, versions };
       }),
     }));
-
-  /**
-   * Extract audio from a Ready video segment via ffmpeg.wasm and push a new
-   * `kind:"audio"` asset so the 「音频 / 任务音频 / 对白」 panel can render it.
-   * Silent on failure (no audio track / network) — never blocks the pipeline.
-   */
-  const extractForVideoAsset = (videoAsset: { id: string; url?: string; label?: string; caption?: string }) => {
-    if (!videoAsset.url) return;
-    const audioId = `audio:${videoAsset.id}`;
-    if (get().assets.some((a) => a.id === audioId)) return;
-    void (async () => {
-      try {
-        const { url, mime } = await extractAudioFromVideo(videoAsset.url!, videoAsset.id);
-        if (!url) return;
-        // Re-check after async work in case the task was reset
-        if (get().assets.some((a) => a.id === audioId)) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-        const newAsset: Asset = {
-          id: audioId,
-          kind: "audio",
-          label: videoAsset.id,
-          caption: `对白 · ${videoAsset.caption ?? videoAsset.label ?? videoAsset.id}`,
-          status: "Ready",
-          url,
-          stageId: "life",
-          sourceShotId: videoAsset.id,
-        };
-        void mime;
-        set((s) => ({ assets: [...s.assets, newAsset] }));
-
-      } catch (e) {
-        console.warn("[extract-audio] asset", videoAsset.id, e);
-      }
-    })();
-  };
-
 
   const streamLines = (
     id: StageId,
@@ -2145,7 +2106,6 @@ export const useSC = create<SCState>((set, get) => {
           });
           consume("life", `Video ${sa.id} · wan`, VIDEO_COST_PER_SEG, get().taskId);
           appendSummary("life", `${sa.id} Ready`);
-          extractForVideoAsset({ id: sa.id, url: r.ossUrl, label: sa.label, caption: sa.caption });
           return true;
         }
         if (r.code === "cancelled") return false;
@@ -2509,9 +2469,6 @@ export const useSC = create<SCState>((set, get) => {
         });
         consume("life", `Video ${asset.id} · wan retry`, VIDEO_COST_PER_SEG, get().taskId);
         appendSummary("life", `${asset.id} Ready`);
-        // drop any stale audio for this segment so it re-extracts from new url
-        set((s) => ({ assets: s.assets.filter((a) => a.id !== `audio:${asset.id}`) }));
-        extractForVideoAsset({ id: asset.id, url: r.ossUrl, label: asset.label, caption: asset.caption });
         const allLife = get().assets.filter((a) => a.stageId === "life");
         if (allLife.every((a) => a.status === "Ready")) {
           updateStage("life", { status: "ready", errorMessage: undefined });
