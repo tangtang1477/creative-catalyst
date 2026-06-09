@@ -898,6 +898,44 @@ export const useSC = create<SCState>((set, get) => {
       }),
     }));
 
+  /**
+   * Extract audio from a Ready video segment via ffmpeg.wasm and push a new
+   * `kind:"audio"` asset so the 「音频 / 任务音频 / 对白」 panel can render it.
+   * Silent on failure (no audio track / network) — never blocks the pipeline.
+   */
+  const extractForVideoAsset = (videoAsset: { id: string; url?: string; label?: string; caption?: string }) => {
+    if (!videoAsset.url) return;
+    const audioId = `audio:${videoAsset.id}`;
+    if (get().assets.some((a) => a.id === audioId)) return;
+    void (async () => {
+      try {
+        const { url, mime } = await extractAudioFromVideo(videoAsset.url!, videoAsset.id);
+        if (!url) return;
+        // Re-check after async work in case the task was reset
+        if (get().assets.some((a) => a.id === audioId)) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        const newAsset: Asset = {
+          id: audioId,
+          kind: "audio" as unknown as Asset["kind"],
+          label: videoAsset.id,
+          caption: `对白 · ${videoAsset.caption ?? videoAsset.label ?? videoAsset.id}`,
+          status: "Ready",
+          url,
+          stageId: "life",
+          sourceShotId: videoAsset.id,
+        } as Asset;
+        // store mime on a side channel so AudioPanel <audio> just works via url
+        void mime;
+        set((s) => ({ assets: [...s.assets, newAsset] }));
+      } catch (e) {
+        console.warn("[extract-audio] asset", videoAsset.id, e);
+      }
+    })();
+  };
+
+
   const streamLines = (
     id: StageId,
     lines: string[],
