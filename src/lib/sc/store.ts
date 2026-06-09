@@ -2509,6 +2509,9 @@ export const useSC = create<SCState>((set, get) => {
         });
         consume("life", `Video ${asset.id} · wan retry`, VIDEO_COST_PER_SEG, get().taskId);
         appendSummary("life", `${asset.id} Ready`);
+        // drop any stale audio for this segment so it re-extracts from new url
+        set((s) => ({ assets: s.assets.filter((a) => a.id !== `audio:${asset.id}`) }));
+        extractForVideoAsset({ id: asset.id, url: r.ossUrl, label: asset.label, caption: asset.caption });
         const allLife = get().assets.filter((a) => a.stageId === "life");
         if (allLife.every((a) => a.status === "Ready")) {
           updateStage("life", { status: "ready", errorMessage: undefined });
