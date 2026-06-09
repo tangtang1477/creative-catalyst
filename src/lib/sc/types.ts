@@ -97,7 +97,7 @@ export type AssetAspect = "16:9" | "9:16" | "1:1" | "3:4" | "4:3";
 
 export interface Asset {
   id: string;
-  kind: "image" | "video";
+  kind: "image" | "video" | "audio";
   label: string;
   caption?: string;
   status: AssetStatus;
