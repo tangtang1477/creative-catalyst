@@ -31,7 +31,7 @@ import { ChatAgentMessage } from "./ChatAgentMessage";
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import { ProjectGuideCard } from "./ProjectGuideCard";
 import { AssetPreviewDialog } from "./AssetPreviewDialog";
-import { ChatOptionCard } from "./ChatOptionCard";
+
 import { useProjects } from "@/lib/sc/projects-store";
 import { Folder as FolderIcon, FolderPlus as FolderPlusIcon, Clapperboard, Megaphone, GraduationCap, Music2 } from "lucide-react";
 
