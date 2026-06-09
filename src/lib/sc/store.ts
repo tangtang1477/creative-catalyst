@@ -28,6 +28,7 @@ import { streamGenerateImage, uploadBase64Image } from "@/lib/upload-image";
 import { submitVideoTask, pollVideoTask } from "@/lib/wan.functions";
 import { generateScript, type GeneratedScript } from "@/lib/script.functions";
 import { parseFormatDuration, parseFormatRatio, formatDurationLabel } from "@/lib/sc/format-utils";
+import { extractAudioFromVideo } from "@/lib/sc/extract-audio";
 import { useProjects } from "@/lib/sc/projects-store";
 import { upsertTaskSnapshot, listProjectTasks, backfillLegacyTasksForProject } from "@/lib/tasks.functions";
 
