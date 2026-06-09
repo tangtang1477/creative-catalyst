@@ -36,25 +36,35 @@ export const Route = createFileRoute("/api/generate-image")({
           return new Response("prompt is required", { status: 400 });
         }
 
-        const upstream = await fetch(
-          "https://ai.gateway.lovable.dev/v1/images/generations",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${key}`,
-              "Content-Type": "application/json",
+        let upstream: Response;
+        try {
+          upstream = await fetch(
+            "https://ai.gateway.lovable.dev/v1/images/generations",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${key}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "openai/gpt-image-2",
+                prompt,
+                size: body.size ?? "1024x1024",
+                quality: body.quality ?? "low",
+                stream: true,
+                partial_images: 2,
+              }),
+              signal: request.signal,
             },
-            body: JSON.stringify({
-              model: "openai/gpt-image-2",
-              prompt,
-              size: body.size ?? "1024x1024",
-              quality: body.quality ?? "low",
-              stream: true,
-              partial_images: 2,
-            }),
-            signal: request.signal,
-          },
-        );
+          );
+        } catch (err) {
+          if ((err as { name?: string })?.name === "AbortError") {
+            return new Response("client aborted", { status: 499 });
+          }
+          console.error("[generate-image] upstream fetch failed", err);
+          return new Response("Upstream fetch failed", { status: 502 });
+        }
+
 
         if (!upstream.ok || !upstream.body) {
           const text = await upstream.text();
