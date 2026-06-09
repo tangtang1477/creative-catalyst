@@ -389,203 +389,38 @@ export function Workspace() {
 
                   <SeriesBible />
 
-                  {/* Refining brief / preflight option cards — only the AWAITING ones are pinned above; once submitted/skipped they stay in their original chat position so users see the confirmation in context, not at the very bottom. */}
-                  {chatLog
-                    .flatMap((m) =>
-                      (m.optionCards ?? [])
-                        .filter((c) => c.status === "awaiting")
-                        .map((c) => ({ msgId: m.id, card: c })),
-                    )
-                    .map(({ msgId, card }) => (
-                      <ChatItemBoundary key={`${msgId}-${card.id}-top`}>
-                        <ChatOptionCard msgId={msgId} card={card} />
-                      </ChatItemBoundary>
-                    ))}
-
-
-                  {STAGE_ORDER.map((id) => {
-                    const st = stages[id];
-                    if (st.status === "pending") return null;
-
-
-                    if (id === "structure") {
+                  {/* Unified timeline: chat messages (incl. option cards) and stage rows, ordered by ts. */}
+                  {timeline.map((item) => {
+                    if (item.kind === "stage") {
+                      return renderStage(item.stageId);
+                    }
+                    const m = item.msg;
+                    if (m.role === "user") {
                       return (
-                        <StageBoundary key={id} stageId={id}>
-                          <StageRow
-                            id={id}
-                            state={st}
-                            details={
-                              <pre className="whitespace-pre-wrap font-sans">
-                                脚本完整版（含分镜机位、镜头时长、音效层、混音建议）。
-                              </pre>
-                            }
-                            detailsLabel="Full scene plan"
-                          >
-                            <div className="space-y-2">
-                              <ScriptTable />
-                              <StoryboardTable />
-                            </div>
-                          </StageRow>
-                        </StageBoundary>
+                        <ChatItemBoundary key={item.key}>
+                          <div className="ml-auto w-fit max-w-[80%] rounded-2xl bg-surface-2 px-3.5 py-2 text-[13px] [animation:stream-fade_280ms_ease-out_both]">
+                            {m.text}
+                          </div>
+                        </ChatItemBoundary>
                       );
                     }
-
-                    if (id === "wardrobe") {
-                      return (
-                        <StageBoundary key={id} stageId={id}>
-                          <StageRow id={id} state={st} keepChildrenWhenCollapsed>
-                            <WardrobePanel />
-                          </StageRow>
-                        </StageBoundary>
-                      );
-                    }
-
-                    if (id === "cast") {
-                      const castAssets = assets.filter((a) => a.stageId === "cast");
-                      return (
-                        <StageBoundary key={id} stageId={id}>
-                          <StageRow id={id} state={st} keepChildrenWhenCollapsed>
-                            {castAssets.length > 0 && (
-                              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                                {castAssets.map((a) => (
-                                  <AssetCard key={a.id} asset={a} compact />
-                                ))}
-                              </div>
-                            )}
-                          </StageRow>
-                        </StageBoundary>
-                      );
-                    }
-
-                    if (id === "paint") {
-                      return (
-                        <StageBoundary key={id} stageId={id}>
-                          <StageRow
-                            id={id}
-                            state={st}
-                            details={script?.shots?.[0]?.prompt ?? FALLBACK_PROMPT_DETAIL}
-                            detailsLabel="Prompt details"
-                            keepChildrenWhenCollapsed
-                          >
-                            {paintAssets.length > 0 && (
-                              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                                {paintAssets.map((a) => (
-                                  <AssetCard key={a.id} asset={a} compact />
-                                ))}
-                              </div>
-                            )}
-                          </StageRow>
-                        </StageBoundary>
-                      );
-                    }
-
-                    if (id === "qc") {
-                      return (
-                        <StageBoundary key={id} stageId={id}>
-                          <StageRow id={id} state={st} keepChildrenWhenCollapsed>
-                            <QCPanel />
-                          </StageRow>
-                        </StageBoundary>
-                      );
-                    }
-
-                    if (id === "life") {
-                      const lowCredit = st.status === "recovering" && remaining < 30;
-                      const lifeAssets = assets.filter((a) => a.stageId === "life");
-                      return (
-                        <StageBoundary key={id} stageId={id}>
-                          <StageRow
-                            id={id}
-                            state={st}
-                            details={lowCredit ? undefined : RECOVERY_NOTES}
-                            detailsLabel="Recovery notes"
-                            keepChildrenWhenCollapsed
-                          >
-                            {lowCredit ? (
-                              <InlineLowCredit />
-                            ) : lifeAssets.length > 0 ? (
-                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                {lifeAssets.map((a) => (
-                                  <AssetCard key={a.id} asset={a} compact />
-                                ))}
-                              </div>
-                            ) : null}
-                          </StageRow>
-                        </StageBoundary>
-                      );
-                    }
-
-                    if (id === "details") {
-                      const lifeAssets = assets.filter((a) => a.stageId === "life" && a.status === "Ready");
-                      const videoSegments = buildSegmentsFromAssets(
-                        lifeAssets.filter((a) => a.kind === "video" && a.url),
-                      );
-                      return (
-                        <StageBoundary key={id} stageId={id}>
-                          <StageRow id={id} state={st} keepChildrenWhenCollapsed>
-                            <div className="space-y-2">
-                              <div className="rounded-2xl border border-border bg-surface px-3 py-2.5 text-[12.5px]">
-                                <div className="mb-1 flex items-center gap-2">
-                                  <span className="font-medium">合成完整成片</span>
-                                  <span className="rounded-md bg-accent/15 px-1.5 py-0.5 font-mono text-[10.5px] uppercase text-accent">
-                                    {lifeAssets.length} 段
-                                  </span>
-                                </div>
-                                <div className="text-muted-foreground">
-                                  {st.status === "ready"
-                                    ? "全部分镜已合并为完整成片。"
-                                    : st.status === "running"
-                                      ? "正在按时间线拼接所有分镜片段…"
-                                      : "等待用户确认后开始合成。"}
-                                </div>
-                              </div>
-                              {st.status === "ready" && videoSegments.length > 0 && (
-                                <MergedFilmPlayer segments={videoSegments} />
-                              )}
-                              {st.status === "ready" && <QualityCheck />}
-                            </div>
-                          </StageRow>
-                        </StageBoundary>
-                      );
-                    }
-
-
-
                     return (
-                      <StageBoundary key={id} stageId={id}>
-                        <StageRow id={id} state={st} />
-                      </StageBoundary>
-                    );
-                  })}
-
-                  {gate && <ApprovalChips />}
-
-                  {/* In-task chat (merged into main timeline, ChatGPT-style) */}
-                  {chatLog.map((m) =>
-                    m.role === "user" ? (
-                      <ChatItemBoundary key={m.id}>
-                        <div
-                          className="ml-auto w-fit max-w-[80%] rounded-2xl bg-surface-2 px-3.5 py-2 text-[13px] [animation:stream-fade_280ms_ease-out_both]"
-                        >
-                          {m.text}
-                        </div>
-                      </ChatItemBoundary>
-                    ) : (
-                      <ChatItemBoundary key={m.id}>
+                      <ChatItemBoundary key={item.key}>
                         <ChatAgentMessage
                           id={m.id}
                           text={m.text}
                           streaming={m.streaming}
                           toolCalls={m.toolCalls}
-                          // Option cards that are still awaiting are pinned at the top;
-                          // submitted/skipped cards render here in their original chat position.
-                          optionCards={(m.optionCards ?? []).filter((c) => c.status !== "awaiting")}
+                          optionCards={m.optionCards ?? []}
                           skill={m.skill}
                           actions={m.actions}
                         />
                       </ChatItemBoundary>
-                    ),
-                  )}
+                    );
+                  })}
+
+                  {gate && <ApprovalChips />}
+
 
 
                   <div ref={endRef} className="h-px" />
