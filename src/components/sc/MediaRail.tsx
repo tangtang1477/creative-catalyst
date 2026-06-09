@@ -122,7 +122,7 @@ export function MediaRail() {
       case "audio":
         return audios;
       default:
-        return assets;
+        return assets.filter((a) => (a.kind as string) !== "audio");
     }
   }, [assets, filter, images, videos, audios]);
 
