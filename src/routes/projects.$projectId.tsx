@@ -82,11 +82,34 @@ function ProjectDetailPage() {
     setCurrentProject(projectId);
   }, [projectId, setCurrentProject]);
 
-  // Load projects if needed.
+  // Load projects if needed. Wait for the Supabase session to hydrate from
+  // localStorage before firing — otherwise listProjects 401s and projectsLoaded
+  // stays false forever, leaving the page stuck on "加载中…".
   useEffect(() => {
-    if (!projectsLoaded) {
-      void fetchProjects();
-    }
+    if (projectsLoaded) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (data.session) {
+        void fetchProjects();
+        return;
+      }
+      // No session yet — listen once for SIGNED_IN / INITIAL_SESSION then fetch.
+      const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (cancelled || !session) return;
+        sub.subscription.unsubscribe();
+        void fetchProjects();
+      });
+      // Safety: if neither getSession nor listener fired with a session in 2s,
+      // try fetching anyway (will surface a real error in the UI instead of
+      // hanging on the loading spinner).
+      setTimeout(() => {
+        if (cancelled) return;
+        if (!useProjects.getState().loaded) void fetchProjects();
+      }, 2000);
+    })();
+    return () => { cancelled = true; };
   }, [projectsLoaded, fetchProjects]);
 
   // Pull remote tasks and merge into local taskHistory (similar to enterProject).

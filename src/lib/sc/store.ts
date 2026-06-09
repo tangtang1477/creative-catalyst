@@ -2665,6 +2665,12 @@ export const useSC = create<SCState>((set, get) => {
 
     hydrateFromStorage: () => {
       if (typeof window === "undefined") return;
+      // Idempotent: once hydrated (or once an active task has been restored
+      // via restoreTask, which also sets hydrated=true), do NOT re-overwrite
+      // taskHistory / viewMode / autoMode. This prevents the project-detail
+      // → restoreTask → navigate("/") → Index useEffect → hydrateFromStorage
+      // race that previously could clobber the freshly restored task state.
+      if (get().hydrated) return;
       const history = loadHistory().map((task) => normalizeTaskRecord(task));
       set({
         taskHistory: history,
@@ -3567,7 +3573,17 @@ export const useSC = create<SCState>((set, get) => {
         versionDrawerAssetId: null,
         previewAssetId: null,
         pendingScript: null,
+        // Mark hydrated so a subsequent hydrateFromStorage call on /
+        // (or in __root) cannot wipe taskHistory/preferences mid-restore.
+        hydrated: true,
       }));
+      console.info(
+        "[restoreTask] restored",
+        rec.id,
+        "phase=", restoredPhase,
+        "assets=", rec.assets.length,
+        "stages=", Object.fromEntries(STAGE_ORDER.map((sid) => [sid, stages[sid].status])),
+      );
       // Sync the active project so sidebar highlight + ProjectGuideCard follow.
       void (async () => {
         try {
