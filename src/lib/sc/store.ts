@@ -3573,7 +3573,17 @@ export const useSC = create<SCState>((set, get) => {
         versionDrawerAssetId: null,
         previewAssetId: null,
         pendingScript: null,
+        // Mark hydrated so a subsequent hydrateFromStorage call on /
+        // (or in __root) cannot wipe taskHistory/preferences mid-restore.
+        hydrated: true,
       }));
+      console.info(
+        "[restoreTask] restored",
+        rec.id,
+        "phase=", restoredPhase,
+        "assets=", rec.assets.length,
+        "stages=", Object.fromEntries(STAGE_ORDER.map((sid) => [sid, stages[sid].status])),
+      );
       // Sync the active project so sidebar highlight + ProjectGuideCard follow.
       void (async () => {
         try {
