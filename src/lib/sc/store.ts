@@ -2629,8 +2629,6 @@ export const useSC = create<SCState>((set, get) => {
               status: "Generating",
               stageId: "details",
             };
-            // 实际上 MediaRail/TaskAudioPanel 期望 import("@/lib/sc/types").Asset
-            // 通过 url 判断是否 audio。我们用 audio MIME 上传后给一个 .mp3 url。
             set((s) => ({ assets: [...s.assets, asset] }));
             try {
               if (!voiceId) throw new Error("无可用音色");
