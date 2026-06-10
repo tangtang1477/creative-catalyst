@@ -150,6 +150,8 @@ interface SCState {
   attachments: Attachment[];
   gate: Gate;
   softGate: SoftGate | null;
+  /** life 阶段的分镜段总数 / 已生成数；驱动 life-scope / life-continue gate 的提示与按钮。 */
+  lifePlan: { total: number; produced: number } | null;
   rail: RailState;
   viewMode: ViewMode;
   autoMode: AutoMode;
