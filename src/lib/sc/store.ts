@@ -2566,13 +2566,163 @@ export const useSC = create<SCState>((set, get) => {
       "视频链接已验证 ✓",
     ];
     streamLines("details", checks, 500, 200, () => {
+      // 走 TTS：给每个绑定音色的角色生成一条对白，再生成一条旁白。
+      // 失败 / 没绑定不阻塞，最终都进入 done。
+      void (async () => {
+        try {
+          const userId = await ensureUserId();
+          const taskId = get().taskId ?? undefined;
+          const script = get().script;
+          const brief = get().brief;
+          if (!userId || !script) {
+            finishDetails();
+            return;
+          }
+
+          const [
+            { listCharacterVoices },
+            { synthesizeDialogue },
+            { useVoices },
+            { uploadBase64Audio },
+          ] = await Promise.all([
+            import("@/lib/characters.functions"),
+            import("@/lib/voices.functions"),
+            import("@/lib/sc/voices-store"),
+            import("@/lib/upload-audio"),
+          ]);
+
+          const bindings = await listCharacterVoices({ data: {} })
+            .then((r) => r.bindings as Array<{ character_name: string; voice_id: string }>)
+            .catch(() => []);
+
+          // 兜底默认 voice：用 voices-store 第一个 ready 的预设。
+          await useVoices.getState().fetch().catch(() => void 0);
+          const readyVoices = useVoices
+            .getState()
+            .voices.filter((v) => v.status === "ready");
+          const defaultVoice =
+            readyVoices.find((v) => v.source === "preset") ?? readyVoices[0];
+
+          // 角色 = wardrobe 里 W 开头的条目。
+          const characters = (script.wardrobe ?? []).filter((w) =>
+            /^w/i.test(w.id),
+          );
+
+          appendSummary(
+            "details",
+            `开始合成音轨：${characters.length} 个角色对白 + 1 条旁白`,
+          );
+
+          // 1) 角色对白
+          let dialogueIdx = 0;
+          for (const c of characters) {
+            dialogueIdx += 1;
+            const label = `D${dialogueIdx.toString().padStart(2, "0")}`;
+            const binding = bindings.find((b) => b.character_name === c.caption);
+            const voiceId = binding?.voice_id ?? defaultVoice?.id;
+            const text = `${c.caption}：${(brief?.prompt ?? script.mood ?? "").slice(0, 120)}`;
+            const asset: Asset = {
+              id: label,
+              kind: "image", // 仅占位；实际通过 url 判 audio。store 的 Asset 没有 audio kind。
+              label,
+              caption: `${c.caption} · ${c.id}`,
+              status: "Generating",
+              stageId: "details",
+            };
+            // 实际上 MediaRail/TaskAudioPanel 期望 import("@/lib/sc/types").Asset
+            // 通过 url 判断是否 audio。我们用 audio MIME 上传后给一个 .mp3 url。
+            set((s) => ({ assets: [...s.assets, asset] }));
+            try {
+              if (!voiceId) throw new Error("无可用音色");
+              const { audioBase64, mime } = await synthesizeDialogue({
+                data: { voice_id: voiceId, text },
+              });
+              const url = await uploadBase64Audio({
+                base64: audioBase64,
+                mime,
+                userId,
+                taskId,
+                fileName: `${label}-${crypto.randomUUID()}.mp3`,
+              });
+              updateAsset(label, { status: "Ready", url });
+              appendSummary(
+                "details",
+                `${label} · ${c.caption} 对白 Ready${
+                  binding ? "" : "（未绑定音色，使用默认 voice）"
+                }`,
+              );
+            } catch (e) {
+              updateAsset(label, {
+                status: "Failed",
+                errorMessage: (e as Error).message,
+              });
+              appendSummary(
+                "details",
+                `${label} · ${c.caption} 对白失败：${(e as Error).message}`,
+              );
+            }
+          }
+
+          // 2) 旁白：用 structureSummary 第一条 + brief 拼一段。
+          const narrationText = [
+            script.structureSummary?.[0],
+            script.structureSummary?.[1],
+            brief?.prompt,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .slice(0, 280);
+          if (narrationText) {
+            const nLabel = "N01";
+            const nAsset: Asset = {
+              id: nLabel,
+              kind: "image",
+              label: nLabel,
+              caption: `旁白 · ${script.mood ?? ""}`.trim(),
+              status: "Generating",
+              stageId: "details",
+            };
+            set((s) => ({ assets: [...s.assets, nAsset] }));
+            try {
+              if (!defaultVoice) throw new Error("无可用音色");
+              const { audioBase64, mime } = await synthesizeDialogue({
+                data: { voice_id: defaultVoice.id, text: narrationText },
+              });
+              const url = await uploadBase64Audio({
+                base64: audioBase64,
+                mime,
+                userId,
+                taskId,
+                fileName: `${nLabel}-${crypto.randomUUID()}.mp3`,
+              });
+              updateAsset(nLabel, { status: "Ready", url });
+              appendSummary("details", `${nLabel} · 旁白 Ready`);
+            } catch (e) {
+              updateAsset(nLabel, {
+                status: "Failed",
+                errorMessage: (e as Error).message,
+              });
+              appendSummary("details", `旁白失败：${(e as Error).message}`);
+            }
+          }
+        } catch (e) {
+          appendSummary("details", `音轨合成异常：${(e as Error).message}`);
+        } finally {
+          finishDetails();
+        }
+      })();
+    });
+
+    function finishDetails() {
       updateStage("details", { status: "ready" });
       consume("details", "Final QC pass", 5, get().taskId);
       set({ phase: "done" });
       collapseAfter("details", 1600);
       persistCurrent("done");
-    });
+    }
   };
+
+
 
   const startRunning = () => {
     set({ phase: "running" });
