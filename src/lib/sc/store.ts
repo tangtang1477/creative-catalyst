@@ -1685,7 +1685,7 @@ export const useSC = create<SCState>((set, get) => {
         appendSummary("qc", "未找到可检查的真实关键帧 · 跳过 QC");
         updateStage("qc", { status: "ready" });
         collapseAfter("qc", 1400);
-        schedule(() => runLife(), 1100);
+        schedule(() => openGate("life-scope", () => runLife({ mode: "all" })), 1100);
         return;
       }
 
@@ -1733,7 +1733,7 @@ export const useSC = create<SCState>((set, get) => {
         );
         updateStage("qc", { status: "ready" });
         collapseAfter("qc", 1400);
-        schedule(() => runLife(), 1100);
+        schedule(() => openGate("life-scope", () => runLife({ mode: "all" })), 1100);
         return;
       }
 
@@ -1756,7 +1756,7 @@ export const useSC = create<SCState>((set, get) => {
       appendSummary("qc", "无待修正项 · 直接进入下一步");
       updateStage("qc", { status: "ready" });
       collapseAfter("qc", 1400);
-      schedule(() => runLife(), 1100);
+      schedule(() => openGate("life-scope", () => runLife({ mode: "all" })), 1100);
       return;
     }
 
@@ -1849,7 +1849,7 @@ export const useSC = create<SCState>((set, get) => {
       appendSummary("qc", "修正完成 · 一致性全部通过 ✓");
       updateStage("qc", { status: "ready" });
       collapseAfter("qc", 1400);
-      schedule(() => runLife(), 1100);
+      schedule(() => openGate("life-scope", () => runLife({ mode: "all" })), 1100);
     })();
   };
 
@@ -3297,7 +3297,7 @@ export const useSC = create<SCState>((set, get) => {
       appendSummary("qc", "用户保留原样 · 跳过修正");
       updateStage("qc", { status: "ready" });
       collapseAfter("qc", 1400);
-      schedule(() => runLife(), 1100);
+      schedule(() => openGate("life-scope", () => runLife({ mode: "all" })), 1100);
     },
     approveMerge: () => {
       closeGate();
