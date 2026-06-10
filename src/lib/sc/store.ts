@@ -1177,7 +1177,7 @@ export const useSC = create<SCState>((set, get) => {
       const isProp = /^P/i.test(w.id);
       return {
         id: w.id,
-        kind: "audio",
+        kind: "image",
         label: w.id,
         caption: w.caption,
         status: "Queued",
