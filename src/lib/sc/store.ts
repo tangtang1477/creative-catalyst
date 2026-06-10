@@ -4272,7 +4272,7 @@ export const useSC = create<SCState>((set, get) => {
         wardrobe: runWardrobe,
         paint: runPaint,
         qc: runQC,
-        life: runLife,
+        life: () => openGate("life-scope", () => runLife({ mode: "all" })),
         details: runDetails,
       };
       const runner = runners[id];
