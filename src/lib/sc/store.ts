@@ -3103,6 +3103,7 @@ export const useSC = create<SCState>((set, get) => {
         assets: [],
         gate: null,
         softGate: null,
+        lifePlan: null,
         selection: [],
         chatLog: [],
         rail: { open: false, flashId: undefined, focusedAssetId: undefined },
@@ -3339,6 +3340,7 @@ export const useSC = create<SCState>((set, get) => {
           phase: "failed",
           gate: null,
           softGate: null,
+        lifePlan: null,
         };
       });
       persistCurrent("failed");
@@ -3363,6 +3365,7 @@ export const useSC = create<SCState>((set, get) => {
         attachments: [],
         gate: null,
         softGate: null,
+        lifePlan: null,
         selection: [],
         rail: { open: false, flashId: undefined, focusedAssetId: undefined },
         intakeSel: {},
@@ -3626,6 +3629,7 @@ export const useSC = create<SCState>((set, get) => {
         assets: rec.assets,
         gate: null,
         softGate: null,
+        lifePlan: null,
         selection: [],
         chatLog,
         rail: { open: rec.assets.length > 0, flashId: undefined, focusedAssetId: undefined },
@@ -4061,6 +4065,7 @@ export const useSC = create<SCState>((set, get) => {
         phase: "running",
         gate: null,
         softGate: null,
+        lifePlan: null,
         // 清掉该 stage 的 assets，并把该 stage 之后的 stages 全部置回 pending
         assets: s.assets.filter((a) => a.stageId !== id),
         stages: STAGE_ORDER.reduce(
@@ -4243,6 +4248,7 @@ export const useSC = create<SCState>((set, get) => {
         taskTitle: "Demo task",
         gate: null as Gate,
         softGate: null,
+        lifePlan: null,
         rail: { open: true } as RailState,
         runId: (get().runId ?? 0) + 1,
       };
