@@ -1177,7 +1177,7 @@ export const useSC = create<SCState>((set, get) => {
       const isProp = /^P/i.test(w.id);
       return {
         id: w.id,
-        kind: "image",
+        kind: "audio",
         label: w.id,
         caption: w.caption,
         status: "Queued",
@@ -1341,7 +1341,7 @@ export const useSC = create<SCState>((set, get) => {
 
     const castAssets: Asset[] = castSpec.map((c) => ({
       id: c.id,
-      kind: "image",
+      kind: "audio",
       label: c.id,
       caption: c.caption,
       status: "Queued",
@@ -2623,7 +2623,7 @@ export const useSC = create<SCState>((set, get) => {
             const text = `${c.caption}：${(brief?.prompt ?? script.mood ?? "").slice(0, 120)}`;
             const asset: Asset = {
               id: label,
-              kind: "image", // 仅占位；实际通过 url 判 audio。store 的 Asset 没有 audio kind。
+              kind: "audio",
               label,
               caption: `${c.caption} · ${c.id}`,
               status: "Generating",
@@ -2676,7 +2676,7 @@ export const useSC = create<SCState>((set, get) => {
             const nLabel = "N01";
             const nAsset: Asset = {
               id: nLabel,
-              kind: "image",
+              kind: "audio",
               label: nLabel,
               caption: `旁白 · ${script.mood ?? ""}`.trim(),
               status: "Generating",
