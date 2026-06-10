@@ -2699,6 +2699,7 @@ export const useSC = create<SCState>((set, get) => {
     attachments: [],
     gate: null,
     softGate: null,
+    lifePlan: null,
     rail: { open: false },
     viewMode: "list",
     autoMode: "auto",
