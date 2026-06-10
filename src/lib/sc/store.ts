@@ -2164,11 +2164,26 @@ export const useSC = create<SCState>((set, get) => {
       if (get().runId !== startedRunId) return;
       const okCount = results.filter(Boolean).length;
       if (okCount === segAssets.length) {
-        updateStage("life", { status: "ready" });
-        appendSummary("life", `全部 ${okCount} 段 Ready · 合计 ≈ ${totalSeconds}s`);
-        collapseAfter("life", 1800);
-        persistCurrent("running");
-        openGate("merge", () => runDetails());
+        const newProduced = effectiveStart + okCount;
+        set({ lifePlan: { total: segments.length, produced: newProduced } });
+        if (newProduced >= segments.length) {
+          updateStage("life", { status: "ready" });
+          appendSummary("life", `全部 ${newProduced} 段 Ready · 合计 ≈ ${totalSeconds}s`);
+          collapseAfter("life", 1800);
+          persistCurrent("running");
+          openGate("merge", () => runDetails());
+        } else {
+          // 仍有剩余分镜：保持 stage 为 running，弹出 life-continue gate 让用户决定。
+          appendSummary(
+            "life",
+            `本批 ${okCount} 段 Ready · 已生成 ${newProduced}/${segments.length}`,
+          );
+          persistCurrent("running");
+          openGate("life-continue", () =>
+            runLife({ mode: "all", startIndex: newProduced }),
+          );
+        }
+
       } else if (okCount === 0) {
         const policyHits = get().assets.filter(
           (a) => a.stageId === "life" && (a.errorCode === "policy_real_person" || a.errorCode === "policy_violation"),
