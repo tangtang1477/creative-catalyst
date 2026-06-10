@@ -3321,7 +3321,33 @@ export const useSC = create<SCState>((set, get) => {
       closeGate();
       appendSummary("life", "用户暂不合成完整成片 · 可在分镜列表中继续编辑");
     },
+    approveLifeAll: () => {
+      closeGate();
+      runLife({ mode: "all" });
+    },
+    approveLifeOne: () => {
+      closeGate();
+      runLife({ mode: "single" });
+    },
+    continueNextSegment: () => {
+      const produced = get().lifePlan?.produced ?? 0;
+      closeGate();
+      runLife({ mode: "single", startIndex: produced });
+    },
+    continueAllSegments: () => {
+      const produced = get().lifePlan?.produced ?? 0;
+      closeGate();
+      runLife({ mode: "all", startIndex: produced });
+    },
+    pauseLife: () => {
+      closeGate();
+      appendSummary("life", "用户选择暂停分镜生成，直接进入合成");
+      updateStage("life", { status: "ready" });
+      collapseAfter("life", 1200);
+      openGate("merge", () => runDetails());
+    },
     cancelSoftGate: () => set({ softGate: null }),
+
 
     cancel: () => {
       clearTimers();
