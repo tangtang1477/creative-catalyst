@@ -2596,7 +2596,7 @@ export const useSC = create<SCState>((set, get) => {
             .catch(() => []);
 
           // 兜底默认 voice：用 voices-store 第一个 ready 的预设。
-          await useVoices.getState().fetch().catch(() => void 0);
+          await useVoices.getState().fetchVoices().catch(() => void 0);
           const readyVoices = useVoices
             .getState()
             .voices.filter((v) => v.status === "ready");
