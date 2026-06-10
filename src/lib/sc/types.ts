@@ -99,7 +99,7 @@ export type AssetAspect = "16:9" | "9:16" | "1:1" | "3:4" | "4:3";
 
 export interface Asset {
   id: string;
-  kind: "image" | "video";
+  kind: "image" | "video" | "audio";
   label: string;
   caption?: string;
   status: AssetStatus;
@@ -184,7 +184,16 @@ export type Phase =
   | "done"
   | "failed";
 
-export type Gate = "script" | "wardrobe" | "cast" | "keyframe" | "qc-fix" | "merge" | null;
+export type Gate =
+  | "script"
+  | "wardrobe"
+  | "cast"
+  | "keyframe"
+  | "qc-fix"
+  | "life-scope"
+  | "life-continue"
+  | "merge"
+  | null;
 
 export type AutoMode = "auto" | "confirm";
 

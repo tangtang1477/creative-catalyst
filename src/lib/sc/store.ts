@@ -150,6 +150,8 @@ interface SCState {
   attachments: Attachment[];
   gate: Gate;
   softGate: SoftGate | null;
+  /** life 阶段的分镜段总数 / 已生成数；驱动 life-scope / life-continue gate 的提示与按钮。 */
+  lifePlan: { total: number; produced: number } | null;
   rail: RailState;
   viewMode: ViewMode;
   autoMode: AutoMode;
@@ -205,6 +207,16 @@ interface SCState {
   keepAsIs: () => void;
   approveMerge: () => void;
   cancelMerge: () => void;
+  /** life-scope gate：用户选"全部生成"。 */
+  approveLifeAll: () => void;
+  /** life-scope gate：用户选"先生成 1 段"。 */
+  approveLifeOne: () => void;
+  /** life-continue gate：生成下一段。 */
+  continueNextSegment: () => void;
+  /** life-continue gate：把剩余全部生成。 */
+  continueAllSegments: () => void;
+  /** life-continue gate：跳过剩余分镜，直接进入合成。 */
+  pauseLife: () => void;
   cancelSoftGate: () => void;
   cancel: () => void;
   paused: boolean;
@@ -1685,7 +1697,7 @@ export const useSC = create<SCState>((set, get) => {
         appendSummary("qc", "未找到可检查的真实关键帧 · 跳过 QC");
         updateStage("qc", { status: "ready" });
         collapseAfter("qc", 1400);
-        schedule(() => runLife(), 1100);
+        schedule(() => openGate("life-scope", () => runLife({ mode: "all" })), 1100);
         return;
       }
 
@@ -1733,7 +1745,7 @@ export const useSC = create<SCState>((set, get) => {
         );
         updateStage("qc", { status: "ready" });
         collapseAfter("qc", 1400);
-        schedule(() => runLife(), 1100);
+        schedule(() => openGate("life-scope", () => runLife({ mode: "all" })), 1100);
         return;
       }
 
@@ -1756,7 +1768,7 @@ export const useSC = create<SCState>((set, get) => {
       appendSummary("qc", "无待修正项 · 直接进入下一步");
       updateStage("qc", { status: "ready" });
       collapseAfter("qc", 1400);
-      schedule(() => runLife(), 1100);
+      schedule(() => openGate("life-scope", () => runLife({ mode: "all" })), 1100);
       return;
     }
 
@@ -1849,11 +1861,12 @@ export const useSC = create<SCState>((set, get) => {
       appendSummary("qc", "修正完成 · 一致性全部通过 ✓");
       updateStage("qc", { status: "ready" });
       collapseAfter("qc", 1400);
-      schedule(() => runLife(), 1100);
+      schedule(() => openGate("life-scope", () => runLife({ mode: "all" })), 1100);
     })();
   };
 
-  const runLife = () => {
+  const runLife = (opts: { mode?: "single" | "all"; startIndex?: number } = {}) => {
+    const mode = opts.mode ?? "all";
     closeGate();
     const VIDEO_COST_PER_SEG = 5;
     const briefFormat = get().brief?.format ?? "";
@@ -1888,7 +1901,28 @@ export const useSC = create<SCState>((set, get) => {
     const maxSegs = Math.max(1, Math.min(planDurations.length, Math.max(shotsRef.length, 1)));
     const segments = planDurations.slice(0, maxSegs);
     if (segments.length === 0) segments.push(10);
-    const totalCost = VIDEO_COST_PER_SEG * segments.length;
+
+    // 已经存在的 life 资产（包括之前生成的 Ready / Failed / Processing）。
+    const existingLife = get().assets.filter((a) => a.stageId === "life");
+    const existingMaxIndex = existingLife.reduce(
+      (mx, a) => Math.max(mx, typeof a.segmentIndex === "number" ? a.segmentIndex + 1 : 0),
+      0,
+    );
+    const effectiveStart = Math.max(
+      opts.startIndex ?? existingMaxIndex,
+      existingMaxIndex,
+    );
+    if (effectiveStart >= segments.length) {
+      // 没有剩余可生成，直接到合成 gate。
+      updateStage("life", { status: "ready" });
+      set({ lifePlan: { total: segments.length, produced: effectiveStart } });
+      openGate("merge", () => runDetails());
+      return;
+    }
+    const endIndex =
+      mode === "single" ? effectiveStart + 1 : segments.length;
+    const rangeSegments = segments.slice(effectiveStart, endIndex);
+    const totalCost = VIDEO_COST_PER_SEG * rangeSegments.length;
 
     if (!canAfford(totalCost)) {
       updateStage("life", { status: "recovering", expanded: true, summary: [] });
@@ -1899,18 +1933,32 @@ export const useSC = create<SCState>((set, get) => {
       return;
     }
 
+    set({ lifePlan: { total: segments.length, produced: effectiveStart } });
     updateStage("life", { status: "running", expanded: true });
     runTool("life", "skill", "reference-image-to-video · WAN", 1200, 0);
 
     const totalSeconds = segments.reduce((s, n) => s + n, 0);
-    appendSummary(
-      "life",
-      `计划：${segments.length} 段 · ${segments.join("+")}s ≈ ${totalSeconds}s ${
-        totalSeconds === requestedDuration
-          ? ""
-          : `（用户期望 ${requestedDuration}s，按 WAN 8s/10s 颗粒拼接）`
-      }`.trim(),
-    );
+    const rangeSeconds = rangeSegments.reduce((s, n) => s + n, 0);
+    if (mode === "single") {
+      appendSummary(
+        "life",
+        `计划：共 ${segments.length} 段，本次生成第 ${effectiveStart + 1} 段（${rangeSegments[0]}s）`,
+      );
+    } else if (effectiveStart > 0) {
+      appendSummary(
+        "life",
+        `继续生成剩余 ${rangeSegments.length} 段（${effectiveStart + 1}–${segments.length}）· ${rangeSegments.join("+")}s ≈ ${rangeSeconds}s`,
+      );
+    } else {
+      appendSummary(
+        "life",
+        `计划：${segments.length} 段 · ${segments.join("+")}s ≈ ${totalSeconds}s ${
+          totalSeconds === requestedDuration
+            ? ""
+            : `（用户期望 ${requestedDuration}s，按 WAN 8s/10s 颗粒拼接）`
+        }`.trim(),
+      );
+    }
 
     // Collect wardrobe refs once
     const wardrobeRefs = get()
@@ -1921,11 +1969,12 @@ export const useSC = create<SCState>((set, get) => {
       .map((a) => a.url as string)
       .slice(0, 4);
 
-    // Pre-insert all V0N assets (Queued)
-    const segAssets: Asset[] = segments.map((dur, i) => {
-      const idx = i + 1;
+    // Pre-insert V0N assets only for this range (Queued)
+    const segAssets: Asset[] = rangeSegments.map((dur, i) => {
+      const absIndex = effectiveStart + i;
+      const idx = absIndex + 1;
       const segId = `V${idx.toString().padStart(2, "0")}`;
-      const shot = shotsRef[i] ?? shotsRef[shotsRef.length - 1];
+      const shot = shotsRef[absIndex] ?? shotsRef[shotsRef.length - 1];
       const keyUrl = pickKeyframe(shot?.shot);
       return {
         id: segId,
@@ -1937,7 +1986,7 @@ export const useSC = create<SCState>((set, get) => {
         status: "Queued" as const,
         stageId: "life" as const,
         duration: formatDurationLabel(dur),
-        segmentIndex: i,
+        segmentIndex: absIndex,
         sourceShotId: shot?.shot,
         poster: keyUrl,
       };
@@ -2127,11 +2176,26 @@ export const useSC = create<SCState>((set, get) => {
       if (get().runId !== startedRunId) return;
       const okCount = results.filter(Boolean).length;
       if (okCount === segAssets.length) {
-        updateStage("life", { status: "ready" });
-        appendSummary("life", `全部 ${okCount} 段 Ready · 合计 ≈ ${totalSeconds}s`);
-        collapseAfter("life", 1800);
-        persistCurrent("running");
-        openGate("merge", () => runDetails());
+        const newProduced = effectiveStart + okCount;
+        set({ lifePlan: { total: segments.length, produced: newProduced } });
+        if (newProduced >= segments.length) {
+          updateStage("life", { status: "ready" });
+          appendSummary("life", `全部 ${newProduced} 段 Ready · 合计 ≈ ${totalSeconds}s`);
+          collapseAfter("life", 1800);
+          persistCurrent("running");
+          openGate("merge", () => runDetails());
+        } else {
+          // 仍有剩余分镜：保持 stage 为 running，弹出 life-continue gate 让用户决定。
+          appendSummary(
+            "life",
+            `本批 ${okCount} 段 Ready · 已生成 ${newProduced}/${segments.length}`,
+          );
+          persistCurrent("running");
+          openGate("life-continue", () =>
+            runLife({ mode: "all", startIndex: newProduced }),
+          );
+        }
+
       } else if (okCount === 0) {
         const policyHits = get().assets.filter(
           (a) => a.stageId === "life" && (a.errorCode === "policy_real_person" || a.errorCode === "policy_violation"),
@@ -2502,13 +2566,161 @@ export const useSC = create<SCState>((set, get) => {
       "视频链接已验证 ✓",
     ];
     streamLines("details", checks, 500, 200, () => {
+      // 走 TTS：给每个绑定音色的角色生成一条对白，再生成一条旁白。
+      // 失败 / 没绑定不阻塞，最终都进入 done。
+      void (async () => {
+        try {
+          const userId = await ensureUserId();
+          const taskId = get().taskId ?? undefined;
+          const script = get().script;
+          const brief = get().brief;
+          if (!userId || !script) {
+            finishDetails();
+            return;
+          }
+
+          const [
+            { listCharacterVoices },
+            { synthesizeDialogue },
+            { useVoices },
+            { uploadBase64Audio },
+          ] = await Promise.all([
+            import("@/lib/characters.functions"),
+            import("@/lib/voices.functions"),
+            import("@/lib/sc/voices-store"),
+            import("@/lib/upload-audio"),
+          ]);
+
+          const bindings = await listCharacterVoices({ data: {} })
+            .then((r) => r.bindings as Array<{ character_name: string; voice_id: string }>)
+            .catch(() => []);
+
+          // 兜底默认 voice：用 voices-store 第一个 ready 的预设。
+          await useVoices.getState().fetchVoices().catch(() => void 0);
+          const readyVoices = useVoices
+            .getState()
+            .voices.filter((v) => v.status === "ready");
+          const defaultVoice =
+            readyVoices.find((v) => v.source === "preset") ?? readyVoices[0];
+
+          // 角色 = wardrobe 里 W 开头的条目。
+          const characters = (script.wardrobe ?? []).filter((w) =>
+            /^w/i.test(w.id),
+          );
+
+          appendSummary(
+            "details",
+            `开始合成音轨：${characters.length} 个角色对白 + 1 条旁白`,
+          );
+
+          // 1) 角色对白
+          let dialogueIdx = 0;
+          for (const c of characters) {
+            dialogueIdx += 1;
+            const label = `D${dialogueIdx.toString().padStart(2, "0")}`;
+            const binding = bindings.find((b) => b.character_name === c.caption);
+            const voiceId = binding?.voice_id ?? defaultVoice?.id;
+            const text = `${c.caption}：${(brief?.prompt ?? script.mood ?? "").slice(0, 120)}`;
+            const asset: Asset = {
+              id: label,
+              kind: "audio",
+              label,
+              caption: `${c.caption} · ${c.id}`,
+              status: "Generating",
+              stageId: "details",
+            };
+            set((s) => ({ assets: [...s.assets, asset] }));
+            try {
+              if (!voiceId) throw new Error("无可用音色");
+              const { audioBase64, mime } = await synthesizeDialogue({
+                data: { voice_id: voiceId, text },
+              });
+              const url = await uploadBase64Audio({
+                base64: audioBase64,
+                mime,
+                userId,
+                taskId,
+                fileName: `${label}-${crypto.randomUUID()}.mp3`,
+              });
+              updateAsset(label, { status: "Ready", url });
+              appendSummary(
+                "details",
+                `${label} · ${c.caption} 对白 Ready${
+                  binding ? "" : "（未绑定音色，使用默认 voice）"
+                }`,
+              );
+            } catch (e) {
+              updateAsset(label, {
+                status: "Failed",
+                errorMessage: (e as Error).message,
+              });
+              appendSummary(
+                "details",
+                `${label} · ${c.caption} 对白失败：${(e as Error).message}`,
+              );
+            }
+          }
+
+          // 2) 旁白：用 structureSummary 第一条 + brief 拼一段。
+          const narrationText = [
+            script.structureSummary?.[0],
+            script.structureSummary?.[1],
+            brief?.prompt,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .slice(0, 280);
+          if (narrationText) {
+            const nLabel = "N01";
+            const nAsset: Asset = {
+              id: nLabel,
+              kind: "audio",
+              label: nLabel,
+              caption: `旁白 · ${script.mood ?? ""}`.trim(),
+              status: "Generating",
+              stageId: "details",
+            };
+            set((s) => ({ assets: [...s.assets, nAsset] }));
+            try {
+              if (!defaultVoice) throw new Error("无可用音色");
+              const { audioBase64, mime } = await synthesizeDialogue({
+                data: { voice_id: defaultVoice.id, text: narrationText },
+              });
+              const url = await uploadBase64Audio({
+                base64: audioBase64,
+                mime,
+                userId,
+                taskId,
+                fileName: `${nLabel}-${crypto.randomUUID()}.mp3`,
+              });
+              updateAsset(nLabel, { status: "Ready", url });
+              appendSummary("details", `${nLabel} · 旁白 Ready`);
+            } catch (e) {
+              updateAsset(nLabel, {
+                status: "Failed",
+                errorMessage: (e as Error).message,
+              });
+              appendSummary("details", `旁白失败：${(e as Error).message}`);
+            }
+          }
+        } catch (e) {
+          appendSummary("details", `音轨合成异常：${(e as Error).message}`);
+        } finally {
+          finishDetails();
+        }
+      })();
+    });
+
+    function finishDetails() {
       updateStage("details", { status: "ready" });
       consume("details", "Final QC pass", 5, get().taskId);
       set({ phase: "done" });
       collapseAfter("details", 1600);
       persistCurrent("done");
-    });
+    }
   };
+
+
 
   const startRunning = () => {
     set({ phase: "running" });
@@ -2645,6 +2857,7 @@ export const useSC = create<SCState>((set, get) => {
     attachments: [],
     gate: null,
     softGate: null,
+    lifePlan: null,
     rail: { open: false },
     viewMode: "list",
     autoMode: "auto",
@@ -3048,6 +3261,7 @@ export const useSC = create<SCState>((set, get) => {
         assets: [],
         gate: null,
         softGate: null,
+        lifePlan: null,
         selection: [],
         chatLog: [],
         rail: { open: false, flashId: undefined, focusedAssetId: undefined },
@@ -3245,7 +3459,7 @@ export const useSC = create<SCState>((set, get) => {
       appendSummary("qc", "用户保留原样 · 跳过修正");
       updateStage("qc", { status: "ready" });
       collapseAfter("qc", 1400);
-      schedule(() => runLife(), 1100);
+      schedule(() => openGate("life-scope", () => runLife({ mode: "all" })), 1100);
     },
     approveMerge: () => {
       closeGate();
@@ -3255,7 +3469,33 @@ export const useSC = create<SCState>((set, get) => {
       closeGate();
       appendSummary("life", "用户暂不合成完整成片 · 可在分镜列表中继续编辑");
     },
+    approveLifeAll: () => {
+      closeGate();
+      runLife({ mode: "all" });
+    },
+    approveLifeOne: () => {
+      closeGate();
+      runLife({ mode: "single" });
+    },
+    continueNextSegment: () => {
+      const produced = get().lifePlan?.produced ?? 0;
+      closeGate();
+      runLife({ mode: "single", startIndex: produced });
+    },
+    continueAllSegments: () => {
+      const produced = get().lifePlan?.produced ?? 0;
+      closeGate();
+      runLife({ mode: "all", startIndex: produced });
+    },
+    pauseLife: () => {
+      closeGate();
+      appendSummary("life", "用户选择暂停分镜生成，直接进入合成");
+      updateStage("life", { status: "ready" });
+      collapseAfter("life", 1200);
+      openGate("merge", () => runDetails());
+    },
     cancelSoftGate: () => set({ softGate: null }),
+
 
     cancel: () => {
       clearTimers();
@@ -3284,6 +3524,7 @@ export const useSC = create<SCState>((set, get) => {
           phase: "failed",
           gate: null,
           softGate: null,
+        lifePlan: null,
         };
       });
       persistCurrent("failed");
@@ -3308,6 +3549,7 @@ export const useSC = create<SCState>((set, get) => {
         attachments: [],
         gate: null,
         softGate: null,
+        lifePlan: null,
         selection: [],
         rail: { open: false, flashId: undefined, focusedAssetId: undefined },
         intakeSel: {},
@@ -3571,6 +3813,7 @@ export const useSC = create<SCState>((set, get) => {
         assets: rec.assets,
         gate: null,
         softGate: null,
+        lifePlan: null,
         selection: [],
         chatLog,
         rail: { open: rec.assets.length > 0, flashId: undefined, focusedAssetId: undefined },
@@ -4006,6 +4249,7 @@ export const useSC = create<SCState>((set, get) => {
         phase: "running",
         gate: null,
         softGate: null,
+        lifePlan: null,
         // 清掉该 stage 的 assets，并把该 stage 之后的 stages 全部置回 pending
         assets: s.assets.filter((a) => a.stageId !== id),
         stages: STAGE_ORDER.reduce(
@@ -4028,7 +4272,7 @@ export const useSC = create<SCState>((set, get) => {
         wardrobe: runWardrobe,
         paint: runPaint,
         qc: runQC,
-        life: runLife,
+        life: () => openGate("life-scope", () => runLife({ mode: "all" })),
         details: runDetails,
       };
       const runner = runners[id];
@@ -4188,6 +4432,7 @@ export const useSC = create<SCState>((set, get) => {
         taskTitle: "Demo task",
         gate: null as Gate,
         softGate: null,
+        lifePlan: null,
         rail: { open: true } as RailState,
         runId: (get().runId ?? 0) + 1,
       };
