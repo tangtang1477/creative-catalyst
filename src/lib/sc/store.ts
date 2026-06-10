@@ -1341,7 +1341,7 @@ export const useSC = create<SCState>((set, get) => {
 
     const castAssets: Asset[] = castSpec.map((c) => ({
       id: c.id,
-      kind: "audio",
+      kind: "image",
       label: c.id,
       caption: c.caption,
       status: "Queued",
