@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, RotateCw, Pencil, X, Timer } from "lucide-react";
+import { Check, RotateCw, Pencil, X, Timer, Play, Layers, PauseCircle } from "lucide-react";
 import { SCButton } from "./Button";
 import { useSC } from "@/lib/sc/store";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,12 @@ export function ApprovalChips() {
     keepAsIs,
     approveMerge,
     cancelMerge,
+    approveLifeAll,
+    approveLifeOne,
+    continueNextSegment,
+    continueAllSegments,
+    pauseLife,
+    lifePlan,
     cancelSoftGate,
     paused,
     pausedAt,
@@ -44,17 +50,23 @@ export function ApprovalChips() {
     ? Math.max(0, Math.ceil((softGate.fireAt - refNow) / 1000))
     : 0;
 
-  const variants: Record<
-    NonNullable<typeof gate>,
-    {
-      tip: string;
-      secondaryLabel: string;
-      secondaryIcon: typeof Pencil;
-      secondaryAction: () => void;
-      primaryLabel: string;
-      primaryAction: () => void;
-    }
-  > = {
+  const total = lifePlan?.total ?? 0;
+  const produced = lifePlan?.produced ?? 0;
+
+  type Variant = {
+    tip: string;
+    secondaryLabel: string;
+    secondaryIcon: typeof Pencil;
+    secondaryAction: () => void;
+    primaryLabel: string;
+    primaryAction: () => void;
+    /** 可选第三个 chip，渲染在最左侧。 */
+    tertiaryLabel?: string;
+    tertiaryIcon?: typeof Pencil;
+    tertiaryAction?: () => void;
+  };
+
+  const variants: Record<NonNullable<typeof gate>, Variant> = {
     script: {
       tip: "脚本与分镜已就绪，是否继续？",
       secondaryLabel: "Tweak",
@@ -95,6 +107,29 @@ export function ApprovalChips() {
       primaryLabel: "按建议调整",
       primaryAction: applyQCFix,
     },
+    "life-scope": {
+      tip: total
+        ? `已规划 ${total} 段分镜，先生成第 1 段试看，还是一次全部生成？`
+        : "分镜准备就绪，先生成 1 段还是全部生成？",
+      secondaryLabel: "先生成 1 段",
+      secondaryIcon: Play,
+      secondaryAction: approveLifeOne,
+      primaryLabel: "全部生成",
+      primaryAction: approveLifeAll,
+    },
+    "life-continue": {
+      tip: total
+        ? `已生成 ${produced}/${total} 段，是否继续？`
+        : "本段已就绪，是否继续生成下一段？",
+      tertiaryLabel: "暂停 · 去合成",
+      tertiaryIcon: PauseCircle,
+      tertiaryAction: pauseLife,
+      secondaryLabel: "生成剩余全部",
+      secondaryIcon: Layers,
+      secondaryAction: continueAllSegments,
+      primaryLabel: "生成下一段",
+      primaryAction: continueNextSegment,
+    },
     merge: {
       tip: "所有分镜片段已生成，确认合成为完整成片？",
       secondaryLabel: "稍后再合成",
@@ -112,6 +147,12 @@ export function ApprovalChips() {
       <div className="flex items-center gap-1.5">
         <span className="text-[12px] text-foreground/85">{v.tip}</span>
         <div className="ml-auto flex items-center gap-1.5">
+          {v.tertiaryLabel && v.tertiaryIcon && v.tertiaryAction && (
+            <SCButton variant="chip" size="sm" onClick={v.tertiaryAction}>
+              <v.tertiaryIcon className="h-3 w-3" />
+              {v.tertiaryLabel}
+            </SCButton>
+          )}
           <SCButton variant="chip" size="sm" onClick={v.secondaryAction}>
             <v.secondaryIcon className="h-3 w-3" />
             {v.secondaryLabel}
