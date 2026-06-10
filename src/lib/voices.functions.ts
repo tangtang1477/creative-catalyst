@@ -70,6 +70,55 @@ export const previewVoice = createServerFn({ method: "POST" })
     return { audioBase64: base64, mime: "audio/mpeg" };
   });
 
+/**
+ * 合成阶段使用：给定 voice_id + 文本，调 ElevenLabs 返回 mp3 base64。
+ * 与 previewVoice 共用同一条链路，但允许更长的台词文本（≤ 2000 字）。
+ */
+export const synthesizeDialogue = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) =>
+    z
+      .object({
+        voice_id: z.string().uuid(),
+        text: z.string().trim().min(1).max(2000),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { data: voice, error: vErr } = await supabase
+      .from("voices")
+      .select("external_id,status")
+      .eq("id", data.voice_id)
+      .single();
+    if (vErr || !voice) throw new Error(vErr?.message ?? "Voice not found");
+    if (!voice.external_id) throw new Error("Voice has no external id yet");
+    if (voice.status !== "ready") throw new Error("Voice not ready");
+
+    const apiKey = getApiKey();
+    const res = await fetch(
+      `${ELEVEN_BASE}/text-to-speech/${voice.external_id}?output_format=mp3_44100_64`,
+      {
+        method: "POST",
+        headers: {
+          "xi-api-key": apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: data.text,
+          model_id: "eleven_turbo_v2_5",
+        }),
+      },
+    );
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(`TTS failed: ${res.status} ${t.slice(0, 200)}`);
+    }
+    const buf = await res.arrayBuffer();
+    const base64 = Buffer.from(buf).toString("base64");
+    return { audioBase64: base64, mime: "audio/mpeg" };
+  });
+
 export const cloneVoice = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) =>
