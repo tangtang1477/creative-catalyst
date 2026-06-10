@@ -207,6 +207,16 @@ interface SCState {
   keepAsIs: () => void;
   approveMerge: () => void;
   cancelMerge: () => void;
+  /** life-scope gate：用户选"全部生成"。 */
+  approveLifeAll: () => void;
+  /** life-scope gate：用户选"先生成 1 段"。 */
+  approveLifeOne: () => void;
+  /** life-continue gate：生成下一段。 */
+  continueNextSegment: () => void;
+  /** life-continue gate：把剩余全部生成。 */
+  continueAllSegments: () => void;
+  /** life-continue gate：跳过剩余分镜，直接进入合成。 */
+  pauseLife: () => void;
   cancelSoftGate: () => void;
   cancel: () => void;
   paused: boolean;
