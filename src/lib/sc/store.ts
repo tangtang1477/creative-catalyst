@@ -1853,7 +1853,8 @@ export const useSC = create<SCState>((set, get) => {
     })();
   };
 
-  const runLife = () => {
+  const runLife = (opts: { mode?: "single" | "all"; startIndex?: number } = {}) => {
+    const mode = opts.mode ?? "all";
     closeGate();
     const VIDEO_COST_PER_SEG = 5;
     const briefFormat = get().brief?.format ?? "";
@@ -1888,7 +1889,28 @@ export const useSC = create<SCState>((set, get) => {
     const maxSegs = Math.max(1, Math.min(planDurations.length, Math.max(shotsRef.length, 1)));
     const segments = planDurations.slice(0, maxSegs);
     if (segments.length === 0) segments.push(10);
-    const totalCost = VIDEO_COST_PER_SEG * segments.length;
+
+    // 已经存在的 life 资产（包括之前生成的 Ready / Failed / Processing）。
+    const existingLife = get().assets.filter((a) => a.stageId === "life");
+    const existingMaxIndex = existingLife.reduce(
+      (mx, a) => Math.max(mx, typeof a.segmentIndex === "number" ? a.segmentIndex + 1 : 0),
+      0,
+    );
+    const effectiveStart = Math.max(
+      opts.startIndex ?? existingMaxIndex,
+      existingMaxIndex,
+    );
+    if (effectiveStart >= segments.length) {
+      // 没有剩余可生成，直接到合成 gate。
+      updateStage("life", { status: "ready" });
+      set({ lifePlan: { total: segments.length, produced: effectiveStart } });
+      openGate("merge", () => runDetails());
+      return;
+    }
+    const endIndex =
+      mode === "single" ? effectiveStart + 1 : segments.length;
+    const rangeSegments = segments.slice(effectiveStart, endIndex);
+    const totalCost = VIDEO_COST_PER_SEG * rangeSegments.length;
 
     if (!canAfford(totalCost)) {
       updateStage("life", { status: "recovering", expanded: true, summary: [] });
@@ -1899,18 +1921,32 @@ export const useSC = create<SCState>((set, get) => {
       return;
     }
 
+    set({ lifePlan: { total: segments.length, produced: effectiveStart } });
     updateStage("life", { status: "running", expanded: true });
     runTool("life", "skill", "reference-image-to-video · WAN", 1200, 0);
 
     const totalSeconds = segments.reduce((s, n) => s + n, 0);
-    appendSummary(
-      "life",
-      `计划：${segments.length} 段 · ${segments.join("+")}s ≈ ${totalSeconds}s ${
-        totalSeconds === requestedDuration
-          ? ""
-          : `（用户期望 ${requestedDuration}s，按 WAN 8s/10s 颗粒拼接）`
-      }`.trim(),
-    );
+    const rangeSeconds = rangeSegments.reduce((s, n) => s + n, 0);
+    if (mode === "single") {
+      appendSummary(
+        "life",
+        `计划：共 ${segments.length} 段，本次生成第 ${effectiveStart + 1} 段（${rangeSegments[0]}s）`,
+      );
+    } else if (effectiveStart > 0) {
+      appendSummary(
+        "life",
+        `继续生成剩余 ${rangeSegments.length} 段（${effectiveStart + 1}–${segments.length}）· ${rangeSegments.join("+")}s ≈ ${rangeSeconds}s`,
+      );
+    } else {
+      appendSummary(
+        "life",
+        `计划：${segments.length} 段 · ${segments.join("+")}s ≈ ${totalSeconds}s ${
+          totalSeconds === requestedDuration
+            ? ""
+            : `（用户期望 ${requestedDuration}s，按 WAN 8s/10s 颗粒拼接）`
+        }`.trim(),
+      );
+    }
 
     // Collect wardrobe refs once
     const wardrobeRefs = get()
@@ -1921,11 +1957,12 @@ export const useSC = create<SCState>((set, get) => {
       .map((a) => a.url as string)
       .slice(0, 4);
 
-    // Pre-insert all V0N assets (Queued)
-    const segAssets: Asset[] = segments.map((dur, i) => {
-      const idx = i + 1;
+    // Pre-insert V0N assets only for this range (Queued)
+    const segAssets: Asset[] = rangeSegments.map((dur, i) => {
+      const absIndex = effectiveStart + i;
+      const idx = absIndex + 1;
       const segId = `V${idx.toString().padStart(2, "0")}`;
-      const shot = shotsRef[i] ?? shotsRef[shotsRef.length - 1];
+      const shot = shotsRef[absIndex] ?? shotsRef[shotsRef.length - 1];
       const keyUrl = pickKeyframe(shot?.shot);
       return {
         id: segId,
@@ -1937,7 +1974,7 @@ export const useSC = create<SCState>((set, get) => {
         status: "Queued" as const,
         stageId: "life" as const,
         duration: formatDurationLabel(dur),
-        segmentIndex: i,
+        segmentIndex: absIndex,
         sourceShotId: shot?.shot,
         poster: keyUrl,
       };
